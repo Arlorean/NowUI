@@ -26,6 +26,7 @@ struct appdata
     float4 data7 : TEXCOORD7;
     float3 normal : NORMAL;
     float4 tangent : TANGENT;
+    UNITY_VERTEX_INPUT_INSTANCE_ID
 };
 
 struct v2f
@@ -36,6 +37,7 @@ struct v2f
     float4 rect : TEXCOORD1;
     float4 mask : TEXCOORD2;
     float4 tint : TEXCOORD3;
+    UNITY_VERTEX_OUTPUT_STEREO
 };
 
 sampler2D _MainTex;
@@ -910,6 +912,8 @@ float NowSdfEvaluateDistanceV2(float2 sourceScenePosition)
 v2f vert(appdata v)
 {
     v2f o;
+    UNITY_SETUP_INSTANCE_ID(v);
+    UNITY_INITIALIZE_VERTEX_OUTPUT_STEREO(o);
     o.vertex = UnityObjectToClipPos(v.vertex);
 
     float isCanvas = step(0.5, _NowCanvasLayout);
@@ -945,6 +949,7 @@ float4 NOW_SDF_CUSTOM_FINAL_SHADE(
 
 fixed4 frag(v2f i) : SV_Target
 {
+    UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(i);
     float2 quadPos = i.rawUV * i.rect.zw;
     float2 scenePosBase = float2(quadPos.x, i.rect.w - quadPos.y);
     float2 scenePos = warpScenePos(scenePosBase);
