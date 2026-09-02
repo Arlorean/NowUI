@@ -491,6 +491,7 @@ namespace NowUI
         readonly bool _canvasVertexColorAlwaysGammaSpace;
 
         readonly Matrix4x4 _canvasNormalRestore;
+
         ControlIdScope _controlIdScope;
 
         bool _ownsControlIdScope;
