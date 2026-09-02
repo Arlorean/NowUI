@@ -84,10 +84,13 @@ namespace NowUI.Sdf
         float _smoothing;
         float _nextRotationDegrees;
         int _requiredMaterialAbi = 1;
+        float _onion;
         NowRect _bounds;
         bool _hasBounds;
 
         internal IReadOnlyList<NowSdfNode> nodes => _nodes;
+
+        internal float onion => _onion;
 
         internal Texture texture => _texture;
 
@@ -105,8 +108,29 @@ namespace NowUI.Sdf
             _nextRotationDegrees = 0f;
             _rotationStack.Clear();
             _requiredMaterialAbi = 1;
+            _onion = 0f;
             _bounds = default;
             _hasBounds = false;
+            return this;
+        }
+
+        /// <summary>
+        /// Hollows the graph out into a shell of the given half-thickness, evaluated on the graph's
+        /// combined field: <c>abs(d) - thickness</c>. Applying it to the combined field rather than
+        /// to each node is what distinguishes it from stroking the nodes separately — the internal
+        /// boundaries where two unioned shapes overlap survive, which is the whole visual point.
+        /// <para>Pass 0 to clear. The shell grows <paramref name="thickness"/> outside the original
+        /// surface, so the scene rect passed to <see cref="NowSdf.Scene(NowRect)"/> has to allow for
+        /// it; the graph's own measured bounds are not outset.</para>
+        /// </summary>
+        public NowSdfGraph SetOnion(float thickness)
+        {
+            _onion = Mathf.Max(0f, thickness);
+
+            // The shell is evaluated per graph, which only the V2 scene layout carries.
+            if (_onion > 0f)
+                _requiredMaterialAbi = Math.Max(_requiredMaterialAbi, 2);
+
             return this;
         }
 
@@ -1770,6 +1794,47 @@ namespace NowUI.Sdf
             return this;
         }
 
+        /// <summary>
+        /// Lights the shape as a dome of depth <paramref name="size"/> rather than as a bevelled rim.
+        /// The surface tilts from vertical at the edge to flat-on at full depth, so the terminator
+        /// sweeps across the body and concave regions — the cleft of a heart — shade the way the
+        /// convex ones do.
+        ///
+        /// <para>The lit fill is <c>ambient + strength * dot(surface, light)</c>. Carrying the two
+        /// terms separately is the point: a lambert normalised to sit at the unlit colour under a
+        /// grazing light cannot reach a terminator darker than the fill, which is what a photographed
+        /// dome does.</para>
+        ///
+        /// <para><paramref name="size"/> has to reach the deepest point of the shape. Short of that
+        /// the surface never turns to face the viewer and the shape shades like a cone seen from
+        /// above, with a point where the field's gradient flips through the middle.</para>
+        ///
+        /// <para><paramref name="ambient"/> above 0 selects the dome; 0 is the rim emboss.
+        /// <paramref name="elevation"/> lifts the light out of the plane. <paramref name="rim"/> adds
+        /// white at grazing angles on the lit side, falling off as <paramref name="rimPower"/>.</para>
+        ///
+        /// <para>The dome shades one surface over the whole scene, so it reads a field of its own in
+        /// which hard unions are rounded over <paramref name="size"/>. A union is <c>min()</c>, which
+        /// is the union's distance outside the shape but only a bound inside it — there it collapses
+        /// to whichever operand the fragment is deepest in, and each of them domes from its own
+        /// boundary with a crease along the medial line between them. Coverage, outline, glow, shadow
+        /// and contour keep the exact field, so the silhouette is unchanged; intersection and
+        /// subtraction are already exact inside and are left alone. It costs one more field
+        /// evaluation per fragment than <see cref="SetEmboss"/>.</para>
+        /// </summary>
+        public NowSdfBuilder SetEmbossDome(
+            Vector2 lightDirection,
+            float strength = 0.35f,
+            float size = 6f,
+            float ambient = 1f,
+            float elevation = 0.65f,
+            float rim = 0f,
+            float rimPower = 8f)
+        {
+            _cache.SetEmboss(lightDirection, strength, size, ambient, elevation, rim, rimPower);
+            return this;
+        }
+
         public NowSdfBuilder SetContours(float spacing, float width, Color color, float offset = 0f, int bandCount = 0)
         {
             _cache.SetContours(spacing, width, color, offset, bandCount);
@@ -1863,6 +1928,16 @@ namespace NowUI.Sdf
         public NowSdfBuilder PopRotation()
         {
             _cache.PopRotation();
+            return this;
+        }
+
+        /// <summary>
+        /// Hollows the shapes added so far into a shell of the given half-thickness, evaluated on the
+        /// combined field so internal boundaries survive — see <see cref="NowSdfGraph.SetOnion"/>.
+        /// </summary>
+        public NowSdfBuilder Onion(float thickness)
+        {
+            _cache.Onion(thickness);
             return this;
         }
 
@@ -2253,6 +2328,7 @@ namespace NowUI.Sdf
         static readonly int _innerShadowProp = Shader.PropertyToID("_SdfInnerShadow");
         static readonly int _innerShadowColorProp = Shader.PropertyToID("_SdfInnerShadowColor");
         static readonly int _embossProp = Shader.PropertyToID("_SdfEmboss");
+        static readonly int _embossDomeProp = Shader.PropertyToID("_SdfEmbossDome");
         static readonly int _contourProp = Shader.PropertyToID("_SdfContour");
         static readonly int _contourColorProp = Shader.PropertyToID("_SdfContourColor");
         static readonly int _contourMaskProp = Shader.PropertyToID("_SdfContourMask");
@@ -2310,6 +2386,7 @@ namespace NowUI.Sdf
         Vector4 _innerShadow;
         Vector4 _innerShadowColor;
         Vector4 _emboss;
+        Vector4 _embossDome;
         Vector4 _contour;
         Vector4 _contourColor;
         Vector4 _contourMask;
@@ -2355,6 +2432,7 @@ namespace NowUI.Sdf
             _innerShadow = default;
             _innerShadowColor = default;
             _emboss = default;
+            _embossDome = default;
             _contour = default;
             _contourColor = default;
             _contourMask = default;
@@ -2513,13 +2591,25 @@ namespace NowUI.Sdf
             _innerShadowColor = color;
         }
 
-        public void SetEmboss(Vector2 lightDirection, float strength, float size)
+        public void SetEmboss(
+            Vector2 lightDirection,
+            float strength,
+            float size,
+            float ambient = 0f,
+            float elevation = 0.65f,
+            float rim = 0f,
+            float rimPower = 8f)
         {
             if (lightDirection.sqrMagnitude <= 0.0001f)
                 lightDirection = new Vector2(-0.55f, -0.8f);
 
             lightDirection.Normalize();
             _emboss = new Vector4(lightDirection.x, lightDirection.y, Mathf.Max(0.0001f, size), Mathf.Max(0f, strength));
+            _embossDome = new Vector4(
+                Mathf.Max(0f, ambient),
+                elevation,
+                Mathf.Max(0f, rim),
+                Mathf.Max(0.0001f, rimPower));
         }
 
         public void SetContours(float spacing, float width, Vector4 color, float offset, int bandCount)
@@ -2575,6 +2665,16 @@ namespace NowUI.Sdf
             _rotationStack.RemoveAt(_rotationStack.Count - 1);
         }
 
+        /// <summary>
+        /// Hollows out the shapes added so far — see <see cref="NowSdfGraph.SetOnion"/>. Applies to
+        /// the graph being accumulated, so it has to follow the shapes it hollows and is cleared when
+        /// that graph is flushed into a layer.
+        /// </summary>
+        public void Onion(float thickness)
+        {
+            _activeGraph.SetOnion(thickness);
+        }
+
         public void Graph(NowSdfGraph graph)
         {
             ThrowIfPendingRotationCannotApplyTo("Graph");
@@ -2584,12 +2684,18 @@ namespace NowUI.Sdf
 
             graph.ThrowIfRotationScopesOpen("Graph");
 
+            // Captured before the flush: FlushActiveGraph adds a layer of its own, and AddLayer resets
+            // the pending modifiers, so reading the operation after it returns the reset Union rather
+            // than the one the caller asked for — SetOperation(Subtract).Graph(g) combined as a union.
+            NowSdfOperation pendingOperation = _pendingOperation;
+            float pendingSmoothing = _pendingSmoothing;
+
             FlushActiveGraph();
             AddLayer(new NowSdfLayer
             {
                 kind = NowSdfLayerKind.Graph,
-                operation = ConsumePendingOperation(),
-                smoothing = ConsumePendingSmoothing(),
+                operation = _layers.Count == 0 ? NowSdfOperation.Union : pendingOperation,
+                smoothing = _layers.Count == 0 ? 0f : pendingSmoothing,
                 graph = graph
             });
         }
@@ -2604,12 +2710,16 @@ namespace NowUI.Sdf
             from.ThrowIfRotationScopesOpen("Morph");
             to.ThrowIfRotationScopesOpen("Morph");
 
+            // Captured before the flush, for the same reason as in Graph above.
+            NowSdfOperation pendingOperation = _pendingOperation;
+            float pendingSmoothing = _pendingSmoothing;
+
             FlushActiveGraph();
             AddLayer(new NowSdfLayer
             {
                 kind = NowSdfLayerKind.Morph,
-                operation = ConsumePendingOperation(),
-                smoothing = ConsumePendingSmoothing(),
+                operation = _layers.Count == 0 ? NowSdfOperation.Union : pendingOperation,
+                smoothing = _layers.Count == 0 ? 0f : pendingSmoothing,
                 graph = from,
                 targetGraph = to,
                 morph = Mathf.Clamp01(t)
@@ -3205,13 +3315,17 @@ namespace NowUI.Sdf
                     ? GetGraphUpload(layer.targetGraph, ref shapeCount)
                     : new GraphUpload(-1, -1, 0);
 
+                // x carried the graph ids, which the shader never read — the packed ranges in
+                // _layerData1.zw already identify both graphs, and the upload hash covers those. The
+                // slots now carry each graph's onion thickness, which is why a shell needs no extra
+                // vector array and no ABI bump.
                 _layerData0[i] = new Vector4(
-                    graph.id,
+                    layer.graph.onion,
                     i == 0 ? (float)NowSdfOperation.Union : (float)layer.operation,
                     i == 0 ? 0f : layer.smoothing,
                     (float)layer.kind);
                 _layerData1[i] = new Vector4(
-                    target.id,
+                    layer.targetGraph != null ? layer.targetGraph.onion : 0f,
                     layer.morph,
                     PackGraphRange(graph),
                     PackGraphRange(target));
@@ -3247,6 +3361,7 @@ namespace NowUI.Sdf
             material.SetVector(_innerShadowProp, _innerShadow);
             material.SetVector(_innerShadowColorProp, _innerShadowColor);
             material.SetVector(_embossProp, _emboss);
+            material.SetVector(_embossDomeProp, _embossDome);
             material.SetVector(_contourProp, _contour);
             material.SetVector(_contourColorProp, _contourColor);
             material.SetVector(_contourMaskProp, _contourMask);
@@ -3305,6 +3420,7 @@ namespace NowUI.Sdf
             hash = HashValue(hash, _innerShadow);
             hash = HashValue(hash, _innerShadowColor);
             hash = HashValue(hash, _emboss);
+            hash = HashValue(hash, _embossDome);
             hash = HashValue(hash, _contour);
             hash = HashValue(hash, _contourColor);
             hash = HashValue(hash, _contourMask);
