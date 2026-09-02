@@ -10,8 +10,12 @@ Shader "NowUI/UI Glass"
         [HideInInspector] _NowMaterialGlassMode ("Material Glass Mode", Float) = 0
         [HideInInspector] _NowMaterialBackdropTex ("Material Backdrop", 2D) = "black" {}
         [HideInInspector] _NowMaterialGlassSharpBackdropTex ("Material Sharp Backdrop", 2D) = "black" {}
+        [HideInInspector] _NowMaterialBackdropArrayTex ("Material Backdrop Array", 2DArray) = "black" {}
+        [HideInInspector] _NowMaterialGlassSharpBackdropArrayTex ("Material Sharp Backdrop Array", 2DArray) = "black" {}
         [HideInInspector] _NowMaterialBackdropUVTransform ("Material Backdrop UV Transform", Vector) = (1, 1, 0, 0)
         [HideInInspector] _NowMaterialGlassUseBackdrop ("Material Use Backdrop", Float) = 0
+        [HideInInspector] _NowMaterialGlassUseStereoBackdrop ("Material Use Stereo Backdrop", Float) = 0
+        [HideInInspector] _NowMaterialGlassBackdropSliceCount ("Material Backdrop Slice Count", Float) = 1
         [HideInInspector] _NowMaterialGlassUseSceneDepth ("Material Use Scene Depth", Float) = 0
         [HideInInspector] _NowMaterialGlassDepthEpsilon ("Material Depth Epsilon", Float) = 0.02
     }
@@ -33,9 +37,11 @@ Shader "NowUI/UI Glass"
         Pass
         {
             CGPROGRAM
-            #pragma target 3.0
+            #pragma target 3.5
             #pragma vertex vert
             #pragma fragment frag
+            #pragma multi_compile_instancing
+            #pragma multi_compile_local_fragment _ NOWUI_GLASS_SCENE_DEPTH
 
             #include "UnityCG.cginc"
             #include "NowUIColorSpace.cginc"
@@ -52,6 +58,7 @@ Shader "NowUI/UI Glass"
                 float4 extras : TEXCOORD5;
                 float4 mask : TEXCOORD6;
                 float4 rawUV : TEXCOORD7;
+                UNITY_VERTEX_INPUT_INSTANCE_ID
             };
 
             struct v2f
@@ -66,20 +73,31 @@ Shader "NowUI/UI Glass"
                 float4 mask : TEXCOORD6;
                 float4 rawUV : TEXCOORD7;
                 float eyeDepth : TEXCOORD8;
+                UNITY_VERTEX_OUTPUT_STEREO
             };
 
             sampler2D _NowBackdropTex;
             sampler2D _NowGlassSharpBackdropTex;
+            UNITY_DECLARE_TEX2DARRAY(_NowBackdropArrayTex);
+            UNITY_DECLARE_TEX2DARRAY(_NowGlassSharpBackdropArrayTex);
             float _NowGlassUseBackdrop;
+            float _NowGlassUseStereoBackdrop;
+            float _NowGlassBackdropSliceCount;
             float4 _NowBackdropUVTransform;
+            #if defined(NOWUI_GLASS_SCENE_DEPTH)
             UNITY_DECLARE_DEPTH_TEXTURE(_CameraDepthTexture);
+            #endif
             float _NowGlassUseSceneDepth;
             float _NowGlassDepthEpsilon;
             float _NowMaterialGlassMode;
             sampler2D _NowMaterialBackdropTex;
             sampler2D _NowMaterialGlassSharpBackdropTex;
+            UNITY_DECLARE_TEX2DARRAY(_NowMaterialBackdropArrayTex);
+            UNITY_DECLARE_TEX2DARRAY(_NowMaterialGlassSharpBackdropArrayTex);
             float4 _NowMaterialBackdropUVTransform;
             float _NowMaterialGlassUseBackdrop;
+            float _NowMaterialGlassUseStereoBackdrop;
+            float _NowMaterialGlassBackdropSliceCount;
             float _NowMaterialGlassUseSceneDepth;
             float _NowMaterialGlassDepthEpsilon;
 
@@ -91,9 +109,18 @@ Shader "NowUI/UI Glass"
                 return min(max(q.x, q.y), 0.0) + length(max(q, 0.0)) - r.x;
             }
 
+            float NowGlassBackdropSlice(float sliceCount)
+            {
+                return min(
+                    (float)unity_StereoEyeIndex,
+                    max(0.0, sliceCount - 1.0));
+            }
+
             v2f vert(appdata v)
             {
                 v2f o;
+                UNITY_SETUP_INSTANCE_ID(v);
+                UNITY_INITIALIZE_VERTEX_OUTPUT_STEREO(o);
                 o.vertex = UnityObjectToClipPos(v.vertex);
                 o.screenPos = ComputeScreenPos(o.vertex);
                 o.rect = v.rect;
@@ -109,6 +136,7 @@ Shader "NowUI/UI Glass"
 
             fixed4 frag(v2f i) : SV_Target
             {
+                UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(i);
                 float4 rect = i.rect;
                 float4 mask = i.mask;
                 float2 rawUV = i.rawUV.xy;
@@ -147,9 +175,31 @@ Shader "NowUI/UI Glass"
                         : _NowBackdropUVTransform;
                     float2 backdropUV = screenUV * uvTransform.xy + uvTransform.zw;
                     float2 clampedBackdropUV = saturate(backdropUV);
-                    float4 backdrop = useMaterialBackdrop
-                        ? tex2D(_NowMaterialBackdropTex, clampedBackdropUV)
-                        : tex2D(_NowBackdropTex, clampedBackdropUV);
+                    float4 backdrop;
+
+                    if (useMaterialBackdrop && _NowMaterialGlassUseStereoBackdrop > 0.5)
+                    {
+                        backdrop = UNITY_SAMPLE_TEX2DARRAY(
+                            _NowMaterialBackdropArrayTex,
+                            float3(
+                                clampedBackdropUV,
+                                NowGlassBackdropSlice(_NowMaterialGlassBackdropSliceCount)));
+                    }
+                    else if (!useMaterialBackdrop && _NowGlassUseStereoBackdrop > 0.5)
+                    {
+                        backdrop = UNITY_SAMPLE_TEX2DARRAY(
+                            _NowBackdropArrayTex,
+                            float3(
+                                clampedBackdropUV,
+                                NowGlassBackdropSlice(_NowGlassBackdropSliceCount)));
+                    }
+                    else
+                    {
+                        backdrop = useMaterialBackdrop
+                            ? tex2D(_NowMaterialBackdropTex, clampedBackdropUV)
+                            : tex2D(_NowBackdropTex, clampedBackdropUV);
+                    }
+                    #if defined(NOWUI_GLASS_SCENE_DEPTH)
                     float useSceneDepth = useMaterialBackdrop
                         ? _NowMaterialGlassUseSceneDepth
                         : _NowGlassUseSceneDepth;
@@ -166,10 +216,32 @@ Shader "NowUI/UI Glass"
 
                         UNITY_BRANCH
                         if (foregroundScene)
-                            backdrop = useMaterialBackdrop
-                                ? tex2D(_NowMaterialGlassSharpBackdropTex, clampedBackdropUV)
-                                : tex2D(_NowGlassSharpBackdropTex, clampedBackdropUV);
+                        {
+                            if (useMaterialBackdrop && _NowMaterialGlassUseStereoBackdrop > 0.5)
+                            {
+                                backdrop = UNITY_SAMPLE_TEX2DARRAY(
+                                    _NowMaterialGlassSharpBackdropArrayTex,
+                                    float3(
+                                        clampedBackdropUV,
+                                        NowGlassBackdropSlice(_NowMaterialGlassBackdropSliceCount)));
+                            }
+                            else if (!useMaterialBackdrop && _NowGlassUseStereoBackdrop > 0.5)
+                            {
+                                backdrop = UNITY_SAMPLE_TEX2DARRAY(
+                                    _NowGlassSharpBackdropArrayTex,
+                                    float3(
+                                        clampedBackdropUV,
+                                        NowGlassBackdropSlice(_NowGlassBackdropSliceCount)));
+                            }
+                            else
+                            {
+                                backdrop = useMaterialBackdrop
+                                    ? tex2D(_NowMaterialGlassSharpBackdropTex, clampedBackdropUV)
+                                    : tex2D(_NowGlassSharpBackdropTex, clampedBackdropUV);
+                            }
+                        }
                     }
+                    #endif
 
                     float luminance = dot(backdrop.rgb, float3(0.299, 0.587, 0.114));
                     backdrop.rgb = lerp(luminance.xxx, backdrop.rgb, saturation) * brightness;

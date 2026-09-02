@@ -21,7 +21,7 @@ namespace NowUI
 
         readonly NowUIToolkitInputProvider _inputProvider = new NowUIToolkitInputProvider();
 
-        readonly int _scopeId = NowControls.AllocateHostScopeId();
+        readonly NowResolvedId _scopeId = NowControls.AllocateOwnerScope();
 
         const long ContinuousRepaintIntervalMilliseconds = 16;
 
@@ -118,14 +118,14 @@ namespace NowUI
         }
 
         /// <summary>Resolves a SetId value within this element's private control scope.</summary>
-        public int ResolveControlId(string id)
+        public NowResolvedId ResolveControlId(string id)
         {
-            return NowControls.ResolveHostControlId(_scopeId, id);
+            return _scopeId.Derive(NowIdDomain.Control, id);
         }
 
-        public int ResolveControlId(int id)
+        public NowResolvedId ResolveControlId(int id)
         {
-            return NowControls.ResolveHostControlId(_scopeId, id);
+            return _scopeId.Derive(NowIdDomain.Control, id);
         }
 
         [UxmlAttribute]
@@ -250,6 +250,7 @@ namespace NowUI
             _disposed = true;
             _continuousRepaintItem?.Pause();
             ClearInteractionRepaintRequest();
+            _inputProvider.Reset();
             ReleaseTarget();
 
             if (_renderer != null)
@@ -330,7 +331,10 @@ namespace NowUI
             var rect = contentRect;
 
             if (rect.width <= 0f || rect.height <= 0f)
+            {
+                NowOverlay.ReleaseRegistrationOwner(_inputProvider);
                 return;
+            }
 
             float pixelsPerPoint = GetPixelsPerPoint();
             int pixelWidth = Mathf.Max(1, Mathf.CeilToInt(rect.width * pixelsPerPoint));

@@ -19,24 +19,74 @@ namespace NowUI.Editor
         public static void Capture()
         {
             NowHarnessScenarios.renderScale = 2;
+            NowHarnessScenarios.brandCaptures = true;
             string outputRoot = NowHarnessScenarios.ReadArgument(
                 "-nowuiArtifactsPath",
                 Path.Combine(NowHarnessScenarios.ProjectPath(), "artifacts", "local", "visual"));
+            string scenarioFilter = NowHarnessScenarios.ReadArgument("-nowuiScenarioFilter", null);
 
             var captures = new List<NowHarnessCapture>();
             foreach (var scenario in NowHarnessScenarios.All())
             {
+                if (!MatchesScenarioFilter(scenario.name, scenarioFilter))
+                    continue;
+
                 string outputPath = Path.Combine(outputRoot, $"{scenario.name}.png");
                 captures.Add(NowHarnessScenarios.Capture(scenario, outputPath));
             }
+
+            if (captures.Count == 0)
+                throw new InvalidOperationException($"No visual scenarios matched '{scenarioFilter}'.");
 
             File.WriteAllText(Path.Combine(outputRoot, "manifest.json"), NowHarnessScenarios.BuildManifest(captures));
             Debug.Log($"NowUI visual harness wrote {captures.Count} captures to {outputRoot}.");
         }
 
+        public static void CaptureAnimations()
+        {
+            string outputRoot = NowHarnessScenarios.ReadArgument(
+                "-nowuiArtifactsPath",
+                Path.Combine(NowHarnessScenarios.ProjectPath(), "artifacts", "local", "animation"));
+            string scenarioFilter = NowHarnessScenarios.ReadArgument("-nowuiScenarioFilter", null);
+            Directory.CreateDirectory(outputRoot);
+
+            var captures = new List<NowHarnessAnimationCapture>();
+            foreach (NowHarnessAnimationScenario scenario in NowHarnessAnimationScenarios.All())
+            {
+                if (!MatchesScenarioFilter(scenario.name, scenarioFilter))
+                    continue;
+
+                string frameDirectory = Path.Combine(outputRoot, scenario.name);
+                string gifPath = Path.Combine(outputRoot, $"{scenario.name}.gif");
+                captures.Add(NowHarnessAnimationRenderer.Capture(scenario, frameDirectory, gifPath));
+            }
+
+            File.WriteAllText(
+                Path.Combine(outputRoot, "manifest.json"),
+                NowHarnessAnimationRenderer.BuildManifest(captures));
+
+            if (captures.Count == 0)
+            {
+                if (!string.IsNullOrWhiteSpace(scenarioFilter))
+                    throw new InvalidOperationException($"No animation scenarios matched '{scenarioFilter}'.");
+
+                Debug.LogWarning("NowUI animation harness has no registered scenarios.");
+                return;
+            }
+
+            Debug.Log($"NowUI animation harness wrote {captures.Count} frame sequences to {outputRoot}.");
+        }
+
+        static bool MatchesScenarioFilter(string scenarioName, string filter)
+        {
+            return string.IsNullOrWhiteSpace(filter) ||
+                scenarioName.IndexOf(filter.Trim(), StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
         public static void CompareGoldens()
         {
             NowHarnessScenarios.renderScale = 1;
+            NowHarnessScenarios.brandCaptures = false;
             bool update = NowHarnessScenarios.HasArgument("-nowuiUpdateBaselines");
             string outputRoot = NowHarnessScenarios.ReadArgument(
                 "-nowuiArtifactsPath",
@@ -48,7 +98,7 @@ namespace NowUI.Editor
             var failures = new List<string>();
             var captures = new List<NowHarnessCapture>();
 
-            foreach (var scenario in NowHarnessScenarios.All())
+            foreach (var scenario in NowHarnessScenarios.All(includeThemeReviews: false))
             {
                 if (!scenario.includeInGoldens)
                     continue;

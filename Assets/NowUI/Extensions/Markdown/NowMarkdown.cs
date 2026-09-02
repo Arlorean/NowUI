@@ -26,9 +26,14 @@ namespace NowUI.Markdown
         public readonly int index;
 
         /// <summary>Stable id of the parsed document instance hosting the embed.</summary>
-        public readonly int documentId;
+        public readonly NowResolvedId documentId;
 
-        internal NowMarkdownEmbedContext(NowRect rect, string source, string info, int index, int documentId)
+        internal NowMarkdownEmbedContext(
+            NowRect rect,
+            string source,
+            string info,
+            int index,
+            NowResolvedId documentId)
         {
             this.rect = rect;
             this.source = source;
@@ -38,7 +43,7 @@ namespace NowUI.Markdown
         }
 
         /// <summary>Identity unique to this embed instance — the key for any retained per-embed state.</summary>
-        public int embedId => NowInput.CombineId(documentId, index);
+        public NowResolvedId embedId => documentId.Child("embed").Child(index + 1);
     }
 
     /// <summary>
@@ -121,6 +126,7 @@ namespace NowUI.Markdown
         NowMarkdownStyle _style;
         bool _hasStyle;
         NowMarkdownEmbedSet _embeds;
+        NowControlIdentity _id;
 
         internal NowMarkdownBuilder(string markdown, string file, int line)
         {
@@ -131,6 +137,21 @@ namespace NowUI.Markdown
             _style = default;
             _hasStyle = false;
             _embeds = null;
+            _id = default;
+        }
+
+        /// <summary>Sets an authored identity for this document draw.</summary>
+        public NowMarkdownBuilder SetId(NowId id)
+        {
+            _id = id;
+            return this;
+        }
+
+        /// <summary>Uses an identity that was already resolved by the active host.</summary>
+        public NowMarkdownBuilder SetId(NowResolvedId id)
+        {
+            _id = id;
+            return this;
         }
 
         public NowMarkdownBuilder SetOptions(NowLayoutOptions options)
@@ -189,7 +210,7 @@ namespace NowUI.Markdown
         {
             var document = GetDocument();
             var content = NowLayout.ContentRect(_options, _file, _line);
-            var result = document.Draw(content.rect, _embeds);
+            var result = document.DrawResolved(content.rect, _embeds, ResolveId());
             content.End(result.height);
             return result;
         }
@@ -198,7 +219,12 @@ namespace NowUI.Markdown
         [NowConsumer]
         public NowMarkdownResult Draw(NowRect rect)
         {
-            return GetDocument().Draw(rect, _embeds);
+            return GetDocument().DrawResolved(rect, _embeds, ResolveId());
+        }
+
+        NowResolvedId ResolveId()
+        {
+            return _id.Resolve(NowControls.SiteId(_file, _line));
         }
 
         NowMarkdownDocument GetDocument()
@@ -283,14 +309,22 @@ namespace NowUI.Markdown
             return new NowMarkdownBuilder(markdown, file, line);
         }
 
+        /// <summary>
+        /// Parses through the registered text preprocessor
+        /// (<see cref="Now.SetTextPreprocessor"/>), like drawn documents; the
+        /// snapshot does not follow later invalidations — re-parse after a
+        /// language switch. <see cref="NowMarkdownDocument.Parse(string)"/>
+        /// parses verbatim.
+        /// </summary>
         public static NowMarkdownDocument Parse(string markdown)
         {
-            return NowMarkdownDocument.Parse(markdown ?? string.Empty);
+            return NowMarkdownDocument.Parse(Now.PreprocessText(markdown ?? string.Empty));
         }
 
+        /// <inheritdoc cref="Parse(string)"/>
         public static NowMarkdownDocument Parse(string markdown, NowMarkdownStyle style)
         {
-            return NowMarkdownDocument.Parse(markdown ?? string.Empty, style);
+            return NowMarkdownDocument.Parse(Now.PreprocessText(markdown ?? string.Empty), style);
         }
 
         internal static NowMarkdownDocument GetCached(string markdown)
@@ -300,7 +334,7 @@ namespace NowUI.Markdown
 
         internal static NowMarkdownDocument GetCached(string markdown, NowMarkdownStyle style)
         {
-            markdown ??= string.Empty;
+            markdown = Now.PreprocessText(markdown ?? string.Empty);
 
             for (int i = 0; i < _recent.Length; ++i)
             {

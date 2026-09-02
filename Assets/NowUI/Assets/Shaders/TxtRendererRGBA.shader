@@ -23,7 +23,7 @@ Shader "NowUI/Text Renderer RGBA"
         Lighting Off
         ZWrite Off
         ZTest [_ZTest]
-        Blend SrcAlpha OneMinusSrcAlpha
+        Blend One OneMinusSrcAlpha
 
         Pass
         {
@@ -31,6 +31,7 @@ Shader "NowUI/Text Renderer RGBA"
             #pragma target 3.0
             #pragma vertex vert
             #pragma fragment frag
+            #pragma multi_compile_instancing
 
             #include "UnityCG.cginc"
             #include "NowUIColorSpace.cginc"
@@ -48,6 +49,7 @@ Shader "NowUI/Text Renderer RGBA"
                 float4 extras : TEXCOORD5;
                 float4 mask : TEXCOORD6;
                 float4 rawUV : TEXCOORD7;
+                UNITY_VERTEX_INPUT_INSTANCE_ID
             };
 
             struct v2f
@@ -60,6 +62,7 @@ Shader "NowUI/Text Renderer RGBA"
                 float4 rawUV : TEXCOORD4;
                 float4 gradientPayload : TEXCOORD5;
                 float gradientEncodedRamp : TEXCOORD6;
+                UNITY_VERTEX_OUTPUT_STEREO
             };
 
             sampler2D _MainTex;
@@ -68,6 +71,8 @@ Shader "NowUI/Text Renderer RGBA"
             v2f vert(appdata v)
             {
                 v2f o;
+                UNITY_SETUP_INSTANCE_ID(v);
+                UNITY_INITIALIZE_VERTEX_OUTPUT_STEREO(o);
                 o.vertex = UnityObjectToClipPos(v.vertex);
                 o.uv = TRANSFORM_TEX(v.uv, _MainTex);
                 o.rect = v.rect;
@@ -81,6 +86,7 @@ Shader "NowUI/Text Renderer RGBA"
 
             float4 frag(v2f i) : SV_Target
             {
+                UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(i);
                 float2 pos = i.rect.xy + i.rawUV * i.rect.zw;
                 float4 mask = i.mask;
                 float2 uiPosition = float2(pos.x, -pos.y);
@@ -99,12 +105,17 @@ Shader "NowUI/Text Renderer RGBA"
                 }
                 else
                 {
-                    col = tex2D(_MainTex, i.uv) * i.color;
-                    col.rgb = col.a > 0 ? saturate(col.rgb / col.a) : col.rgb;
+                    // Intrinsically colored glyphs keep their RGB; solid text color supplies opacity.
+                    float4 glyph = tex2D(_MainTex, i.uv);
+                    float3 originalRgb = glyph.a > 0.0
+                        ? saturate(glyph.rgb / glyph.a)
+                        : float3(0.0, 0.0, 0.0);
+                    col = float4(originalRgb, glyph.a * i.color.a);
                 }
 
                 col.a *= NowUIMaskCoverage(uiPosition);
                 clip(col.a - 0.01);
+                col.rgb *= col.a;
                 return col;
             }
             ENDCG

@@ -1,3 +1,143 @@
+## [1.10.6](https://github.com/BlenMiner/NowUI/compare/nowui-v1.10.5...nowui-v1.10.6) (2026-08-31)
+
+
+### Bug Fixes
+
+* VR blurry background ([3d8cf0f](https://github.com/BlenMiner/NowUI/commit/3d8cf0f4c9ac6774439a58e17ed15f35b88cbc43))
+
+## [1.10.5](https://github.com/BlenMiner/NowUI/compare/nowui-v1.10.4...nowui-v1.10.5) (2026-08-31)
+
+
+### Bug Fixes
+
+* render in both eyes under XR single pass instanced ([5b0cfe3](https://github.com/BlenMiner/NowUI/commit/5b0cfe3cd9a3e67a275f053f0a1677bf4b8ffd67))
+
+## [1.10.4](https://github.com/BlenMiner/NowUI/compare/nowui-v1.10.3...nowui-v1.10.4) (2026-08-30)
+
+
+### Bug Fixes
+
+* text layout when used in SDF scenes ([25e6338](https://github.com/BlenMiner/NowUI/commit/25e6338431c829f7f77cf7b0c85ca52121d040e1))
+
+## [1.10.3](https://github.com/BlenMiner/NowUI/compare/nowui-v1.10.2...nowui-v1.10.3) (2026-08-30)
+
+
+### Bug Fixes
+
+* SDF and font margins ([a1abc43](https://github.com/BlenMiner/NowUI/commit/a1abc437b710a9e62655e89c0ae67e823e92226b))
+
+## [1.10.2](https://github.com/BlenMiner/NowUI/compare/nowui-v1.10.1...nowui-v1.10.2) (2026-08-30)
+
+
+### Bug Fixes
+
+* font outline + sdf padding improvements ([b5840e8](https://github.com/BlenMiner/NowUI/commit/b5840e8121cafdc45dd1c63745e69fdee4cbeeaa))
+
+## [1.10.1](https://github.com/BlenMiner/NowUI/compare/nowui-v1.10.0...nowui-v1.10.1) (2026-08-30)
+
+
+### Bug Fixes
+
+* adaptable font margins ([3e73447](https://github.com/BlenMiner/NowUI/commit/3e734476ef8e16fa7b62b0e4fe4a55634e68b168))
+
+# [1.10.0](https://github.com/BlenMiner/NowUI/compare/nowui-v1.9.6...nowui-v1.10.0) (2026-08-30)
+
+
+### Features
+
+* more languages out of the box (korean, simplified chinese, arabic) ([9c58111](https://github.com/BlenMiner/NowUI/commit/9c581119228493c31553d87f78ccdf56a7f93ec8))
+
+## [1.9.6](https://github.com/BlenMiner/NowUI/compare/nowui-v1.9.5...nowui-v1.9.6) (2026-08-29)
+
+
+### Bug Fixes
+
+* **editor-theme:** match Unity editor dark visuals ([41e1b4e](https://github.com/BlenMiner/NowUI/commit/41e1b4e6401615550ba9853fd5b4b85febecc96a))
+
+## [1.9.5](https://github.com/BlenMiner/NowUI/compare/nowui-v1.9.4...nowui-v1.9.5) (2026-08-29)
+
+
+### Bug Fixes
+
+* patch editor theme to match closer ([93bd711](https://github.com/BlenMiner/NowUI/commit/93bd7114c21abc8a2412be43a78a2378c1b83e6a))
+
+## [1.9.4](https://github.com/BlenMiner/NowUI/compare/nowui-v1.9.3...nowui-v1.9.4) (2026-08-29)
+
+
+### Bug Fixes
+
+* new dark unity editor theme ([4c23bff](https://github.com/BlenMiner/NowUI/commit/4c23bff5b51b7c7e7838096b18f80c31df1cc2cd))
+
+## [1.9.3](https://github.com/BlenMiner/NowUI/compare/nowui-v1.9.2...nowui-v1.9.3) (2026-08-29)
+
+
+### Bug Fixes
+
+* material theme improvements ([eaa26a1](https://github.com/BlenMiner/NowUI/commit/eaa26a150563abdc746c35b06451fec48b88dff5))
+
+## [1.9.2](https://github.com/BlenMiner/NowUI/compare/nowui-v1.9.1...nowui-v1.9.2) (2026-08-29)
+
+
+### Bug Fixes
+
+* more file dialog improvemenmts ([1b3553d](https://github.com/BlenMiner/NowUI/commit/1b3553d41cc5d1d2d08c7d5f0552980e62c77aaf))
+
+## [1.9.1](https://github.com/BlenMiner/NowUI/compare/nowui-v1.9.0...nowui-v1.9.1) (2026-08-26)
+
+
+### Bug Fixes
+
+* preset folders in file picker ([675cad6](https://github.com/BlenMiner/NowUI/commit/675cad6fdee1ed824ecb97f985824f139daad88d))
+
+# [1.9.0](https://github.com/BlenMiner/NowUI/compare/nowui-v1.8.5...nowui-v1.9.0) (2026-08-26)
+
+
+### Features
+
+* file dialog zoom level ([ca44d28](https://github.com/BlenMiner/NowUI/commit/ca44d280a3dbfbe5bec246872fd9b1f933c6492b))
+
+## [1.8.5](https://github.com/BlenMiner/NowUI/compare/nowui-v1.8.4...nowui-v1.8.5) (2026-08-23)
+
+
+### Bug Fixes
+
+* BREAKING CHANGE reworking how auto IDs work and other input related fixes ([4895db2](https://github.com/BlenMiner/NowUI/commit/4895db2963dde365038edd73605ebed4d25806df))
+
+## [1.8.4](https://github.com/BlenMiner/NowUI/compare/nowui-v1.8.3...nowui-v1.8.4) (2026-08-22)
+
+
+### Bug Fixes
+
+* wrong context-menu and input consumption ([01624a9](https://github.com/BlenMiner/NowUI/commit/01624a9d4829176ee06d862c7ac6a472cc97a6d8))
+
+## [1.8.3](https://github.com/BlenMiner/NowUI/compare/nowui-v1.8.2...nowui-v1.8.3) (2026-08-20)
+
+
+### Bug Fixes
+
+* out the box japanese support ([a066d24](https://github.com/BlenMiner/NowUI/commit/a066d24bb0e6b083540fd80fc90e0e78e9908804))
+
+## [1.8.2](https://github.com/BlenMiner/NowUI/compare/nowui-v1.8.1...nowui-v1.8.2) (2026-08-19)
+
+
+### Bug Fixes
+
+* add context to the preprocessor ([eea7cb6](https://github.com/BlenMiner/NowUI/commit/eea7cb6b99f43fbd1a7c3541bb04ed4620a81aae))
+
+## [1.8.1](https://github.com/BlenMiner/NowUI/compare/nowui-v1.8.0...nowui-v1.8.1) (2026-08-17)
+
+
+### Bug Fixes
+
+* richtext bugs ([31844d7](https://github.com/BlenMiner/NowUI/commit/31844d759906bf750450ec92b6f6a6ec834eb25a))
+
+# [1.8.0](https://github.com/BlenMiner/NowUI/compare/nowui-v1.7.1...nowui-v1.8.0) (2026-08-17)
+
+
+### Features
+
+* TextPreprocessor ([83ce8b6](https://github.com/BlenMiner/NowUI/commit/83ce8b636097304268115455148581e12cb55c45))
+
 ## [1.7.1](https://github.com/BlenMiner/NowUI/compare/nowui-v1.7.0...nowui-v1.7.1) (2026-08-14)
 
 

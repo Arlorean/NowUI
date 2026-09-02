@@ -21,6 +21,7 @@ Shader "NowUI/SDF Scene"
         _SdfInnerShadow ("Inner Shadow", Vector) = (0, 0, 0, 0)
         _SdfInnerShadowColor ("Inner Shadow Color", Color) = (0, 0, 0, 0)
         _SdfEmboss ("Emboss", Vector) = (0, 0, 1, 0)
+        _SdfEmbossDome ("Emboss Dome", Vector) = (0, 0.65, 0, 8)
         _SdfContour ("Contour", Vector) = (1, 0, 0, 0)
         _SdfContourColor ("Contour Color", Color) = (0, 0, 0, 0)
         _SdfContourMask ("Contour Mask", Vector) = (0, 0, 0, 0)
@@ -71,6 +72,7 @@ Shader "NowUI/SDF Scene"
             #pragma target 3.0
             #pragma vertex vert
             #pragma fragment frag
+            #pragma multi_compile_instancing
             #pragma multi_compile_local _ UNITY_UI_CLIP_RECT
             #pragma multi_compile_local _ UNITY_UI_ALPHACLIP
 

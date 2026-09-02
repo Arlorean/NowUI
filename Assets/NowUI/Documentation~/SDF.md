@@ -112,6 +112,14 @@ resolved advances still affect later glyph positions. `RotateNext` is consumed
 once for the complete call rather than once per glyph, and an active pushed
 rotation composes with it in the same way as for a primitive.
 
+SDF text follows the same shaped-first layout policy as `Now.Text`. With
+`Now.textShaping` enabled (the default), it uses the cached HarfBuzz glyph run,
+including kerning, ligatures, combining-mark offsets, and the default tab and
+line layout. If any segment cannot be shaped or baked, the complete call falls
+back to the family-aware codepoint path instead of mixing shaped and unshaped
+placement. Consequently, `MeasureText` can be used to center an SDF text run
+without its rendered spacing drifting from the measured width.
+
 `RotateNext` and pushed rotations cannot directly target `Graph` or `Morph`:
 an effective nonidentity rotation followed by either operand throws
 `InvalidOperationException`. To use rotated shapes or text in reusable graphs
@@ -164,6 +172,48 @@ using (Now.Transform(new Vector2(1.25f, 0.9f), new Vector2(24f, 12f)))
         .Draw();
 }
 ```
+
+For animation-grade text motion, keep the run in its own SDF scene. Use
+`RotateNext` for the run's local rotation, then scale that scene around a
+screen-space pivot with `Now.TransformAround`. The pivot stays stationary while
+uniform pulse and nonuniform squash/stretch animate:
+
+```csharp
+const string label = "Motion";
+const float fontSize = 64f;
+var textScene = new NowRect(40f, 30f, 320f, 150f);
+Vector2 textSize = font.MeasureText(label, fontSize, NowFontStyle.Bold);
+var textPosition = new Vector2(
+    textScene.width * 0.5f - textSize.x * 0.5f,
+    textScene.height * 0.5f - textSize.y * 0.5f);
+
+float phase = Time.time * 2f;
+float wave = Mathf.Sin(phase);
+float pulse = 1f + Mathf.Sin(phase * 0.5f) * 0.035f;
+Vector2 scale = new Vector2(1f + wave * 0.12f, 1f - wave * 0.1f) * pulse;
+float angle = Mathf.Sin(phase * 0.65f) * 7f;
+
+Vector2 pivot = textScene.center;
+
+using (Now.Mask(textScene))
+using (Now.TransformAround(scale, pivot))
+{
+    NowSdf.Scene(textScene, "animated-sdf-text")
+        .SetColor(Color.white)
+        .SetOutline(3f, Color.cyan)
+        .RotateNext(angle)
+        .Text(textPosition, label, font, fontSize, NowFontStyle.Bold)
+        .Draw();
+}
+```
+
+Use `Vector2.one * pulse` when only uniform scaling is wanted. The stable scene
+id and existing font tiers are reused; changing rotation or the outer transform
+does not rebake the glyphs. Isolating the text prevents the same scale from
+also squashing unrelated SDF shapes or effects in another scene. Outline, glow,
+and shadow distances stay in scene-local units, so they stretch with the text.
+Transform animation does not allocate another font tier; its main variable GPU
+cost is the transformed quad's on-screen pixel area.
 
 This transforms the submitted scene as a unit; it does not add a transform
 node to the SDF graph. Primitive rotation APIs cannot rotate a `Graph` or
@@ -249,6 +299,9 @@ batches may still reference them. Never generate a new id every frame. Release
 a departed dynamic item's explicit id under the same host/`IdScope`, after
 rebuilding or discarding retained batches that sample it. A retained host must
 still call `MarkDirty()` before changed mask code runs.
+Both `Scene(...)` and `Release(...)` accept `NowResolvedId` directly when a
+composite already owns the resolved scene path; never wrap it back into an
+authored integer. See [Identity](Identity.md).
 `Release(id)` and `Reset()` also invalidate existing builders for the released
 cache. Their `Measure()`, `Draw()`, and `BeginMask()` consumers throw
 `ObjectDisposedException`; obtain a fresh builder from `NowSdf.Scene(...)`.
@@ -298,6 +351,9 @@ NowSdf.Scene(new NowRect(20f, 20f, 220f, 170f))
 
 Available scene effects:
 
+- `SetTextDistanceMargin(margin)` reserves extra signed-distance reach around
+  font glyphs without drawing an effect. It is useful when text participates in
+  smooth unions, subtraction, morphing, or custom field shading.
 - `SetOutline(width, color, softness = 0)` draws an outer stroke.
 - `SetShadow(offset, softness, color, spread = 0)` draws a soft drop shadow.
 - `SetInnerShadow(offset, softness, color, spread = 0)` darkens inside edges.
@@ -310,6 +366,50 @@ Available scene effects:
   scene-local point, which works well for pointer-focused field inspection.
 - `SetWarp(amplitude, scale, speed = 0, seed = 0)` bends the distance domain
   before the scene is evaluated.
+
+Source-backed dynamic fonts automatically reserve enough signed-distance reach
+for the scene's finite outline, glow, shadow, inner-shadow, emboss, and bounded
+contour effects. Widths remain ordinary scene-local pixels; there is no font
+range or atlas-tier API to configure:
+
+```csharp
+NowSdf.Scene(rect)
+    .SetColor(Color.white)
+    .SetOutline(100f, Color.black)
+    .Text(new Vector2(120f, 110f), "NowUI", font, 80f, NowFontStyle.Bold)
+    .Draw();
+```
+
+The font maps that reach onto the same hidden, capped doubling tiers used by
+ordinary text outlines, and managed pages retain their packed 16-bit distance
+precision in the SDF shader. Effect setters may appear before or after `Text`,
+`Graph`, or `Morph`; the final scene budget is applied before drawing. Each
+scene prepares local copies of reusable text graphs, so drawing one graph with
+a large effect does not mutate that graph or make another scene use the wrong
+atlas. Hidden doubling tiers are cached and reused, avoiding one allocation per
+animated or Inspector-driven value. A repeating contour field (`bandCount: 0`)
+has no finite atlas-independent reach, so it uses the best tier selected by the
+other finite effects. The per-font generated-resource cap and lower-tier
+fallback described in [Text Styling](TextStyling.md) still apply. If capacity
+forces a lower glyph tier, built-in exterior text effects fade at that tier's
+safe field edge instead of revealing the rectangular glyph cell; analytic
+shapes keep the full authored scene effect.
+
+When no visible effect expresses the required field reach, reserve it directly
+in scene-local pixels:
+
+```csharp
+NowSdf.Scene(rect)
+    .SetTextDistanceMargin(32f)
+    .Text(new Vector2(96f, 90f), "Cutout", font, 72f)
+    .SmoothUnion(24f)
+    .Circle(new Vector2(210f, 92f), 54f)
+    .Draw();
+```
+
+The margin is only a minimum distance budget; it does not draw a stroke or
+expose atlas tiers. Like effect reach, it is evaluated only at `Measure`, layout
+reservation, `Draw`, or `BeginMask`, rather than at each setter call.
 
 Outlines, shadows, and glows can only render inside the scene quad and mask. If
 an effect should extend beyond a shape, give the scene rect enough empty space
@@ -347,6 +447,10 @@ supported way to retain that plumbing while changing the pixels is the
 versioned [`NowSdfShaderV2.cginc`](../Extensions/Sdf/NowSdfShaderV2.cginc)
 implementation. Start from a complete example below: its ShaderLab properties,
 render state, stencil block, pragmas, and include are part of the contract.
+The versioned V1 and V2 includes provide the XR single-pass-instanced vertex
+plumbing, but each ShaderLab wrapper must still declare
+`#pragma multi_compile_instancing` so Unity generates the instanced shader
+variant. Keep that pragma exactly as shown in the complete examples.
 
 The current material ABI is version 2. `NowSdf.MaterialAbiVersion` exposes the
 numeric version, and `NowSdf.MaterialAbiProperty` exposes the required shader
@@ -433,9 +537,18 @@ straight-alpha colors without changing that convention.
 
 ABI v2 also exposes
 `NowSdfEvaluateDistanceV2(sourceScenePosition)`. It applies the configured warp
-and evaluates the complete scene distance at another unwarped point, which is
-useful for a displaced shadow. It repeats the scene-distance work, so prefer
-the supplied `signedDistance` when one sample is sufficient.
+and evaluates the complete base/fill distance at another unwarped point. Native
+MTSDF glyphs use median RGB for this fill edge. Use
+`NowSdfEvaluateEffectDistanceV2(sourceScenePosition)` for a displaced outline,
+shadow, inner shadow, glow, or contour: it uses the glyph atlas's true-distance
+alpha outside the fill edge, while analytic shapes and packed SDF16 glyphs use
+the same scalar field as the base helper. ABI v1 provides the corresponding
+`NowSdfEvaluateDistanceV1` and `NowSdfEvaluateEffectDistanceV1` names.
+
+Each helper call repeats the complete scene-distance traversal, including its
+glyph samples. Prefer the supplied `signedDistance` when one base sample is
+sufficient, and only request the effect helper when the custom effect needs an
+additional or displaced true-distance evaluation.
 
 Three complete shaders demonstrate different tradeoffs:
 
@@ -445,8 +558,8 @@ Three complete shaders demonstrate different tradeoffs:
   arithmetic distance contours on both sides of the boundary without an extra
   scene evaluation.
 - [Paper Cutout](../Extensions/Sdf/Examples/NowSdfPaperCutout.shader) derives a
-  bevel normal and performs one extra displaced distance evaluation for its
-  shadow.
+  bevel normal and performs one extra displaced effect-distance evaluation for
+  its shadow.
 
 In a source checkout, the
 [repository gallery helper](https://github.com/BlenMiner/NowUI/blob/main/Assets/NowUI/Example/NowSdfShaderExamples.cs)
@@ -467,12 +580,12 @@ The local, git-ignored gallery image is written to
 
 The builder still submits one quad, but the callback runs for fragments across
 that quad, including its transparent padding. A larger scene rect, more custom
-texture samples, loops, and extra calls to `NowSdfEvaluateDistanceV2` therefore
-increase GPU work. Stock effects are evaluated before the callback; leave
-effects disabled when the custom shader replaces them. Different material
-templates also split draw batches. Reuse a small, stable material set and keep
-scene rects only as large as their shapes plus the padding needed by outside
-halos, contours, or shadows.
+texture samples, loops, and extra calls to `NowSdfEvaluateDistanceV2` or
+`NowSdfEvaluateEffectDistanceV2` therefore increase GPU work. Stock effects
+are evaluated before the callback; leave effects disabled when the custom
+shader replaces them. Different material templates also split draw batches.
+Reuse a small, stable material set and keep scene rects only as large as their
+shapes plus the padding needed by outside halos, contours, or shadows.
 
 The hook changes shading, not geometry. It cannot draw outside the scene quad
 or the builder's explicit mask. `_MainTex` is reserved for the scene's source

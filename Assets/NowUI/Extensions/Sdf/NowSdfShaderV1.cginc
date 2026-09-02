@@ -27,6 +27,7 @@ struct appdata
     float4 data7 : TEXCOORD7;
     float3 normal : NORMAL;
     float4 tangent : TANGENT;
+    UNITY_VERTEX_INPUT_INSTANCE_ID
 };
 
 struct v2f
@@ -37,6 +38,8 @@ struct v2f
     float4 rect : TEXCOORD1;
     float4 mask : TEXCOORD2;
     float4 tint : TEXCOORD3;
+    float4 sceneMapping : TEXCOORD4;
+    UNITY_VERTEX_OUTPUT_STEREO
 };
 
 sampler2D _MainTex;
@@ -44,6 +47,7 @@ float _NowCanvasLayout;
 float _SdfShapeCount;
 float _SdfLayerCount;
 float _SdfFeather;
+float _SdfTextEffectLimit;
 float4 _SdfOutline;
 float4 _SdfOutlineColor;
 float4 _SdfGlow;
@@ -134,7 +138,33 @@ float median(float r, float g, float b)
     return max(min(r, g), min(max(r, g), b));
 }
 
-float sdGlyph(float2 scenePos, float4 data1, float4 data2, float4 uvRect)
+float2 NowSdfGlyphSamplesV1(float4 sample, float encoding)
+{
+    // Managed dynamic pages keep a scalar SDF in two RGBA8 channels. The high
+    // byte is repeated in R/G/A so legacy consumers retain a useful 8-bit field;
+    // B carries the low byte for NowUI-aware shaders. Native MTSDF pages use
+    // median RGB at the fill edge and their true-distance alpha for exterior
+    // effects, where median RGB is not stable far from corners.
+    if (encoding > 0.5)
+    {
+        float packedSample = (sample.r * 256.0 + sample.b) / 257.0;
+        return float2(packedSample, packedSample);
+    }
+
+    return float2(median(sample.r, sample.g, sample.b), sample.a);
+}
+
+float NowSdfGlyphSampleV1(float4 sample, float encoding)
+{
+    return NowSdfGlyphSamplesV1(sample, encoding).x;
+}
+
+float NowSdfShapeCodeStepV1(float type, float4 data2)
+{
+    return type > 4.5 && type < 5.5 ? max(data2.z, 0.0) : 0.0;
+}
+
+float2 sdGlyphDistances(float2 scenePos, float4 data1, float4 data2, float4 uvRect)
 {
     float2 size = max(data1.zw, 0.0001);
     float2 halfSize = size * 0.5;
@@ -143,32 +173,60 @@ float sdGlyph(float2 scenePos, float4 data1, float4 data2, float4 uvRect)
     float boundsDist = sdBox(local, halfSize);
 
     if (glyphUv.x < 0.0 || glyphUv.y < 0.0 || glyphUv.x > 1.0 || glyphUv.y > 1.0)
-        return max(data2.x, 1.0) + max(boundsDist, 0.0);
+    {
+        // The encoded field spans +/- half of its full range. Continue from
+        // that saturated exterior value so ddx/ddy cannot turn the glyph-quad
+        // boundary into a false antialiased outline.
+        float outsideDistance = 0.5 * max(data2.x, 0.0001) + max(boundsDist, 0.0);
+        return float2(outsideDistance, outsideDistance);
+    }
 
     float2 atlasUv = uvRect.xy + float2(glyphUv.x, 1.0 - glyphUv.y) * uvRect.zw;
     float4 msd = tex2D(_MainTex, atlasUv);
-    return (0.5 - median(msd.r, msd.g, msd.b)) * max(data2.x, 0.0001);
+    return (0.5 - NowSdfGlyphSamplesV1(msd, data2.y)) * max(data2.x, 0.0001);
 }
 
-float shapeDistance(int index, float type, float4 data1, float4 data2, float2 scenePos)
+float sdGlyph(float2 scenePos, float4 data1, float4 data2, float4 uvRect)
 {
+    return sdGlyphDistances(scenePos, data1, data2, uvRect).x;
+}
+
+float2 shapeDistances(int index, float type, float4 data1, float4 data2, float2 scenePos)
+{
+    float distance;
+
     if (type < 0.5)
-        return length(scenePos - data1.xy) - data1.z;
+    {
+        distance = length(scenePos - data1.xy) - data1.z;
+        return float2(distance, distance);
+    }
 
     if (type < 1.5)
-        return sdBox(scenePos - data1.xy, max(data1.zw * 0.5, 0.0001));
+    {
+        distance = sdBox(scenePos - data1.xy, max(data1.zw * 0.5, 0.0001));
+        return float2(distance, distance);
+    }
 
     if (type < 2.5)
-        return sdRoundBox(scenePos - data1.xy, max(data1.zw * 0.5, 0.0001), data2);
+    {
+        distance = sdRoundBox(scenePos - data1.xy, max(data1.zw * 0.5, 0.0001), data2);
+        return float2(distance, distance);
+    }
 
     if (type < 3.5)
-        return sdEllipse(scenePos - data1.xy, max(data1.zw * 0.5, 0.0001));
+    {
+        distance = sdEllipse(scenePos - data1.xy, max(data1.zw * 0.5, 0.0001));
+        return float2(distance, distance);
+    }
 
     if (type < 4.5)
-        return sdCapsule(scenePos, data1.xy, data1.zw, data2.x);
+    {
+        distance = sdCapsule(scenePos, data1.xy, data1.zw, data2.x);
+        return float2(distance, distance);
+    }
 
     if (type < 5.5)
-        return sdGlyph(scenePos, data1, data2, _SdfUvs[index]);
+        return sdGlyphDistances(scenePos, data1, data2, _SdfUvs[index]);
 
     float2 radial = scenePos - data1.xy;
 
@@ -177,17 +235,30 @@ float shapeDistance(int index, float type, float4 data1, float4 data2, float2 sc
     if (dot(data2.zw, data2.zw) < 0.5)
     {
         if (type < 6.5)
-            return abs(length(radial) - data1.z) - data1.w;
+        {
+            distance = abs(length(radial) - data1.z) - data1.w;
+            return float2(distance, distance);
+        }
 
-        return length(radial) - data1.z;
+        distance = length(radial) - data1.z;
+        return float2(distance, distance);
     }
 
     float2 q = NowSdfRotateRadialV1(radial, data2.zw);
 
     if (type < 6.5)
-        return NowSdfArcDistanceV1(q, data2.xy, data1.z, data1.w);
+    {
+        distance = NowSdfArcDistanceV1(q, data2.xy, data1.z, data1.w);
+        return float2(distance, distance);
+    }
 
-    return NowSdfPieDistanceV1(q, data2.xy, data1.z);
+    distance = NowSdfPieDistanceV1(q, data2.xy, data1.z);
+    return float2(distance, distance);
+}
+
+float shapeDistance(int index, float type, float4 data1, float4 data2, float2 scenePos)
+{
+    return shapeDistances(index, type, data1, data2, scenePos).x;
 }
 
 float2 shapeUv(float type, float4 data1, float4 data2, float2 scenePos)
@@ -246,7 +317,15 @@ float4 shapeFill(int index, float type, float4 data1, float4 data2, float2 scene
     return tex2D(_MainTex, uv) * color;
 }
 
-void combine(inout float dist, inout float4 fill, float shapeDist, float4 nextFill, float operation, float smoothing)
+void combine(
+    inout float dist,
+    inout float4 fill,
+    inout float codeStep,
+    float shapeDist,
+    float4 nextFill,
+    float shapeCodeStep,
+    float operation,
+    float smoothing)
 {
     if (operation < 0.5)
     {
@@ -254,6 +333,11 @@ void combine(inout float dist, inout float4 fill, float shapeDist, float4 nextFi
         {
             dist = shapeDist;
             fill = nextFill;
+            codeStep = shapeCodeStep;
+        }
+        else if (shapeDist == dist)
+        {
+            codeStep = max(codeStep, shapeCodeStep);
         }
 
         return;
@@ -261,14 +345,29 @@ void combine(inout float dist, inout float4 fill, float shapeDist, float4 nextFi
 
     if (operation < 1.5)
     {
-        dist = max(dist, -shapeDist);
+        if (-shapeDist > dist)
+        {
+            dist = -shapeDist;
+            codeStep = shapeCodeStep;
+        }
+        else if (-shapeDist == dist)
+        {
+            codeStep = max(codeStep, shapeCodeStep);
+        }
         return;
     }
 
     if (operation < 2.5)
     {
         if (shapeDist > dist)
+        {
             fill = nextFill;
+            codeStep = shapeCodeStep;
+        }
+        else if (shapeDist == dist)
+        {
+            codeStep = max(codeStep, shapeCodeStep);
+        }
 
         dist = max(dist, shapeDist);
         return;
@@ -281,6 +380,7 @@ void combine(inout float dist, inout float4 fill, float shapeDist, float4 nextFi
         float h = saturate(0.5 + 0.5 * (shapeDist - dist) / smoothing);
         dist = lerp(shapeDist, dist, h) - smoothing * h * (1.0 - h);
         fill = lerp(nextFill, fill, h);
+        codeStep = lerp(shapeCodeStep, codeStep, h);
         return;
     }
 
@@ -288,6 +388,7 @@ void combine(inout float dist, inout float4 fill, float shapeDist, float4 nextFi
     {
         float h = saturate(0.5 - 0.5 * (shapeDist + dist) / smoothing);
         dist = lerp(dist, -shapeDist, h) + smoothing * h * (1.0 - h);
+        codeStep = lerp(codeStep, shapeCodeStep, h);
         return;
     }
 
@@ -295,26 +396,57 @@ void combine(inout float dist, inout float4 fill, float shapeDist, float4 nextFi
         float h = saturate(0.5 - 0.5 * (shapeDist - dist) / smoothing);
         dist = lerp(shapeDist, dist, h) + smoothing * h * (1.0 - h);
         fill = lerp(nextFill, fill, h);
+        codeStep = lerp(shapeCodeStep, codeStep, h);
     }
 }
 
-void combineDistance(inout float dist, float shapeDist, float operation, float smoothing)
+void combineDistance(
+    inout float dist,
+    inout float codeStep,
+    float shapeDist,
+    float shapeCodeStep,
+    float operation,
+    float smoothing)
 {
     if (operation < 0.5)
     {
-        dist = min(dist, shapeDist);
+        if (shapeDist < dist)
+        {
+            dist = shapeDist;
+            codeStep = shapeCodeStep;
+        }
+        else if (shapeDist == dist)
+        {
+            codeStep = max(codeStep, shapeCodeStep);
+        }
         return;
     }
 
     if (operation < 1.5)
     {
-        dist = max(dist, -shapeDist);
+        if (-shapeDist > dist)
+        {
+            dist = -shapeDist;
+            codeStep = shapeCodeStep;
+        }
+        else if (-shapeDist == dist)
+        {
+            codeStep = max(codeStep, shapeCodeStep);
+        }
         return;
     }
 
     if (operation < 2.5)
     {
-        dist = max(dist, shapeDist);
+        if (shapeDist > dist)
+        {
+            dist = shapeDist;
+            codeStep = shapeCodeStep;
+        }
+        else if (shapeDist == dist)
+        {
+            codeStep = max(codeStep, shapeCodeStep);
+        }
         return;
     }
 
@@ -324,6 +456,7 @@ void combineDistance(inout float dist, float shapeDist, float operation, float s
     {
         float h = saturate(0.5 + 0.5 * (shapeDist - dist) / smoothing);
         dist = lerp(shapeDist, dist, h) - smoothing * h * (1.0 - h);
+        codeStep = lerp(shapeCodeStep, codeStep, h);
         return;
     }
 
@@ -331,12 +464,14 @@ void combineDistance(inout float dist, float shapeDist, float operation, float s
     {
         float h = saturate(0.5 - 0.5 * (shapeDist + dist) / smoothing);
         dist = lerp(dist, -shapeDist, h) + smoothing * h * (1.0 - h);
+        codeStep = lerp(codeStep, shapeCodeStep, h);
         return;
     }
 
     {
         float h = saturate(0.5 - 0.5 * (shapeDist - dist) / smoothing);
         dist = lerp(shapeDist, dist, h) + smoothing * h * (1.0 - h);
+        codeStep = lerp(shapeCodeStep, codeStep, h);
     }
 }
 
@@ -349,13 +484,25 @@ void decodeGraphRange(float packedRange, out int start, out int count)
     count = min(max((int)(packed - startValue * 128.0 + 0.5), 0), total - start);
 }
 
-void evalGraph(float packedRange, float2 scenePos, float4 tint, out float dist, out float4 fill)
+void evalGraphFields(
+    float packedRange,
+    float2 scenePos,
+    float4 tint,
+    bool useDistinctEffectField,
+    out float dist,
+    out float effectDist,
+    out float4 fill,
+    out float codeStep,
+    out float effectCodeStep)
 {
     int start;
     int count;
     decodeGraphRange(packedRange, start, count);
     dist = 100000.0;
+    effectDist = 100000.0;
     fill = 0.0;
+    codeStep = 0.0;
+    effectCodeStep = 0.0;
 
     if (count <= 0)
         return;
@@ -364,8 +511,12 @@ void evalGraph(float packedRange, float2 scenePos, float4 tint, out float dist, 
     float4 data0 = _SdfData0[first];
     float4 data1 = _SdfData1[first];
     float4 data2 = _SdfData2[first];
-    dist = shapeDistance(first, data0.x, data1, data2, scenePos);
+    float2 firstDistances = shapeDistances(first, data0.x, data1, data2, scenePos);
+    dist = firstDistances.x;
+    effectDist = useDistinctEffectField ? firstDistances.y : firstDistances.x;
     fill = shapeFill(first, data0.x, data1, data2, scenePos, tint);
+    codeStep = NowSdfShapeCodeStepV1(data0.x, data2);
+    effectCodeStep = codeStep;
 
     for (int localIndex = 1; localIndex < NOW_SDF_MAX_SHAPES; ++localIndex)
     {
@@ -376,52 +527,187 @@ void evalGraph(float packedRange, float2 scenePos, float4 tint, out float dist, 
         data0 = _SdfData0[index];
         data1 = _SdfData1[index];
         data2 = _SdfData2[index];
-        float shapeDist = shapeDistance(index, data0.x, data1, data2, scenePos);
+        float2 shapeFieldDistances = shapeDistances(index, data0.x, data1, data2, scenePos);
         float4 nextFill = shapeFill(index, data0.x, data1, data2, scenePos, tint);
-        combine(dist, fill, shapeDist, nextFill, data0.y, data0.z);
+        float shapeCodeStep = NowSdfShapeCodeStepV1(data0.x, data2);
+        combine(
+            dist,
+            fill,
+            codeStep,
+            shapeFieldDistances.x,
+            nextFill,
+            shapeCodeStep,
+            data0.y,
+            data0.z);
+        UNITY_BRANCH
+        if (useDistinctEffectField)
+        {
+            combineDistance(
+                effectDist,
+                effectCodeStep,
+                shapeFieldDistances.y,
+                shapeCodeStep,
+                data0.y,
+                data0.z);
+        }
+    }
+
+    if (!useDistinctEffectField)
+    {
+        effectDist = dist;
+        effectCodeStep = codeStep;
     }
 }
 
-void evalLayer(int index, float2 scenePos, float4 tint, out float dist, out float4 fill)
+void evalGraph(
+    float packedRange,
+    float2 scenePos,
+    float4 tint,
+    out float dist,
+    out float4 fill,
+    out float codeStep)
 {
-    // Initialize at this boundary as well as inside evalGraph. Some cross
+    float effectDist;
+    float effectCodeStep;
+    evalGraphFields(
+        packedRange,
+        scenePos,
+        tint,
+        false,
+        dist,
+        effectDist,
+        fill,
+        codeStep,
+        effectCodeStep);
+}
+
+void evalLayerFields(
+    int index,
+    float2 scenePos,
+    float4 tint,
+    bool useDistinctEffectField,
+    out float dist,
+    out float effectDist,
+    out float4 fill,
+    out float codeStep,
+    out float effectCodeStep)
+{
+    // Initialize at this boundary as well as inside evalGraphFields. Some cross
     // compilers do not prove that out parameters are written through the
     // non-morph call before the early return.
     dist = 100000.0;
+    effectDist = 100000.0;
     fill = 0.0;
+    codeStep = 0.0;
+    effectCodeStep = 0.0;
     float4 layer0 = _SdfLayerData0[index];
     float4 layer1 = _SdfLayerData1[index];
 
     if (layer0.w < 0.5)
     {
-        evalGraph(layer1.z, scenePos, tint, dist, fill);
+        evalGraphFields(
+            layer1.z,
+            scenePos,
+            tint,
+            useDistinctEffectField,
+            dist,
+            effectDist,
+            fill,
+            codeStep,
+            effectCodeStep);
         return;
     }
 
     float aDist = 0;
     float bDist = 0;
+    float aEffectDist = 0;
+    float bEffectDist = 0;
     float4 aFill = 0;
     float4 bFill = 0;
-    evalGraph(layer1.z, scenePos, tint, aDist, aFill);
-    evalGraph(layer1.w, scenePos, tint, bDist, bFill);
+    float aCodeStep = 0;
+    float bCodeStep = 0;
+    float aEffectCodeStep = 0;
+    float bEffectCodeStep = 0;
+    evalGraphFields(
+        layer1.z,
+        scenePos,
+        tint,
+        useDistinctEffectField,
+        aDist,
+        aEffectDist,
+        aFill,
+        aCodeStep,
+        aEffectCodeStep);
+    evalGraphFields(
+        layer1.w,
+        scenePos,
+        tint,
+        useDistinctEffectField,
+        bDist,
+        bEffectDist,
+        bFill,
+        bCodeStep,
+        bEffectCodeStep);
     float t = saturate(layer1.y);
     dist = lerp(aDist, bDist, t);
     fill = lerp(aFill, bFill, t);
+    codeStep = lerp(aCodeStep, bCodeStep, t);
+    if (useDistinctEffectField)
+    {
+        effectDist = lerp(aEffectDist, bEffectDist, t);
+        effectCodeStep = lerp(aEffectCodeStep, bEffectCodeStep, t);
+    }
+    else
+    {
+        effectDist = dist;
+        effectCodeStep = codeStep;
+    }
 }
 
-void evalGraphDistance(float packedRange, float2 scenePos, out float dist)
+void evalLayer(
+    int index,
+    float2 scenePos,
+    float4 tint,
+    out float dist,
+    out float4 fill,
+    out float codeStep)
+{
+    float effectDist;
+    float effectCodeStep;
+    evalLayerFields(
+        index,
+        scenePos,
+        tint,
+        false,
+        dist,
+        effectDist,
+        fill,
+        codeStep,
+        effectCodeStep);
+}
+
+void evalGraphDistanceField(
+    float packedRange,
+    float2 scenePos,
+    float effectField,
+    out float dist,
+    out float codeStep)
 {
     int start;
     int count;
     decodeGraphRange(packedRange, start, count);
     dist = 100000.0;
+    codeStep = 0.0;
 
     if (count <= 0)
         return;
 
     int first = start;
     float4 data0 = _SdfData0[first];
-    dist = shapeDistance(first, data0.x, _SdfData1[first], _SdfData2[first], scenePos);
+    float4 firstData2 = _SdfData2[first];
+    float2 firstDistances = shapeDistances(first, data0.x, _SdfData1[first], firstData2, scenePos);
+    dist = lerp(firstDistances.x, firstDistances.y, effectField);
+    codeStep = NowSdfShapeCodeStepV1(data0.x, firstData2);
 
     for (int localIndex = 1; localIndex < NOW_SDF_MAX_SHAPES; ++localIndex)
     {
@@ -430,36 +716,88 @@ void evalGraphDistance(float packedRange, float2 scenePos, out float dist)
 
         int index = start + localIndex;
         data0 = _SdfData0[index];
-        float shapeDist = shapeDistance(index, data0.x, _SdfData1[index], _SdfData2[index], scenePos);
-        combineDistance(dist, shapeDist, data0.y, data0.z);
+        float4 data2 = _SdfData2[index];
+        float2 shapeFieldDistances = shapeDistances(index, data0.x, _SdfData1[index], data2, scenePos);
+        float shapeDist = lerp(shapeFieldDistances.x, shapeFieldDistances.y, effectField);
+        float shapeCodeStep = NowSdfShapeCodeStepV1(data0.x, data2);
+        combineDistance(dist, codeStep, shapeDist, shapeCodeStep, data0.y, data0.z);
     }
 }
 
-void evalLayerDistance(int index, float2 scenePos, out float dist)
+void evalGraphDistance(
+    float packedRange,
+    float2 scenePos,
+    out float dist,
+    out float codeStep)
+{
+    evalGraphDistanceField(packedRange, scenePos, 0.0, dist, codeStep);
+}
+
+void evalGraphEffectDistance(
+    float packedRange,
+    float2 scenePos,
+    out float dist,
+    out float codeStep)
+{
+    evalGraphDistanceField(packedRange, scenePos, 1.0, dist, codeStep);
+}
+
+void evalLayerDistanceField(
+    int index,
+    float2 scenePos,
+    float effectField,
+    out float dist,
+    out float codeStep)
 {
     dist = 100000.0;
+    codeStep = 0.0;
     float4 layer0 = _SdfLayerData0[index];
     float4 layer1 = _SdfLayerData1[index];
 
     if (layer0.w < 0.5)
     {
-        evalGraphDistance(layer1.z, scenePos, dist);
+        evalGraphDistanceField(layer1.z, scenePos, effectField, dist, codeStep);
         return;
     }
 
     float aDist = 100000.0;
     float bDist = 100000.0;
-    evalGraphDistance(layer1.z, scenePos, aDist);
-    evalGraphDistance(layer1.w, scenePos, bDist);
-    dist = lerp(aDist, bDist, saturate(layer1.y));
+    float aCodeStep = 0.0;
+    float bCodeStep = 0.0;
+    evalGraphDistanceField(layer1.z, scenePos, effectField, aDist, aCodeStep);
+    evalGraphDistanceField(layer1.w, scenePos, effectField, bDist, bCodeStep);
+    float t = saturate(layer1.y);
+    dist = lerp(aDist, bDist, t);
+    codeStep = lerp(aCodeStep, bCodeStep, t);
 }
 
-void evalScene(float2 scenePos, float4 tint, out float dist, out float4 fill)
+void evalLayerDistance(int index, float2 scenePos, out float dist, out float codeStep)
+{
+    evalLayerDistanceField(index, scenePos, 0.0, dist, codeStep);
+}
+
+void evalLayerEffectDistance(int index, float2 scenePos, out float dist, out float codeStep)
+{
+    evalLayerDistanceField(index, scenePos, 1.0, dist, codeStep);
+}
+
+void evalSceneFields(
+    float2 scenePos,
+    float4 tint,
+    bool useDistinctEffectField,
+    out float dist,
+    out float effectDist,
+    out float4 fill,
+    out float codeStep,
+    out float effectCodeStep)
 {
     int layerCount = min((int)_SdfLayerCount, NOW_SDF_MAX_LAYERS);
     bool found = false;
     dist = 100000.0;
+    effectDist = 100000.0;
     fill = 0.0;
+    codeStep = 0.0;
+    effectCodeStep = 0.0;
 
     for (int layer = 0; layer < NOW_SDF_MAX_LAYERS; ++layer)
     {
@@ -467,46 +805,136 @@ void evalScene(float2 scenePos, float4 tint, out float dist, out float4 fill)
             break;
 
         float layerDist;
+        float layerEffectDist;
         float4 layerFill;
-        evalLayer(layer, scenePos, tint, layerDist, layerFill);
+        float layerCodeStep;
+        float layerEffectCodeStep;
+        evalLayerFields(
+            layer,
+            scenePos,
+            tint,
+            useDistinctEffectField,
+            layerDist,
+            layerEffectDist,
+            layerFill,
+            layerCodeStep,
+            layerEffectCodeStep);
 
         if (!found)
         {
             dist = layerDist;
+            effectDist = layerEffectDist;
             fill = layerFill;
+            codeStep = layerCodeStep;
+            effectCodeStep = layerEffectCodeStep;
             found = true;
         }
         else
         {
-            combine(dist, fill, layerDist, layerFill, _SdfLayerData0[layer].y, _SdfLayerData0[layer].z);
+            combine(
+                dist,
+                fill,
+                codeStep,
+                layerDist,
+                layerFill,
+                layerCodeStep,
+                _SdfLayerData0[layer].y,
+                _SdfLayerData0[layer].z);
+            UNITY_BRANCH
+            if (useDistinctEffectField)
+            {
+                combineDistance(
+                    effectDist,
+                    effectCodeStep,
+                    layerEffectDist,
+                    layerEffectCodeStep,
+                    _SdfLayerData0[layer].y,
+                    _SdfLayerData0[layer].z);
+            }
+        }
+    }
+
+    if (!useDistinctEffectField)
+    {
+        effectDist = dist;
+        effectCodeStep = codeStep;
+    }
+}
+
+void evalScene(
+    float2 scenePos,
+    float4 tint,
+    out float dist,
+    out float4 fill,
+    out float codeStep)
+{
+    float effectDist;
+    float effectCodeStep;
+    evalSceneFields(
+        scenePos,
+        tint,
+        false,
+        dist,
+        effectDist,
+        fill,
+        codeStep,
+        effectCodeStep);
+}
+
+void evalSceneDistanceAndCodeStepField(
+    float2 scenePos,
+    float effectField,
+    out float dist,
+    out float codeStep)
+{
+    int layerCount = min((int)_SdfLayerCount, NOW_SDF_MAX_LAYERS);
+    bool found = false;
+    dist = 100000.0;
+    codeStep = 0.0;
+
+    for (int layer = 0; layer < NOW_SDF_MAX_LAYERS; ++layer)
+    {
+        if (layer >= layerCount)
+            break;
+
+        float layerDist;
+        float layerCodeStep;
+        evalLayerDistanceField(layer, scenePos, effectField, layerDist, layerCodeStep);
+
+        if (!found)
+        {
+            dist = layerDist;
+            codeStep = layerCodeStep;
+            found = true;
+        }
+        else
+        {
+            combineDistance(
+                dist,
+                codeStep,
+                layerDist,
+                layerCodeStep,
+                _SdfLayerData0[layer].y,
+                _SdfLayerData0[layer].z);
         }
     }
 }
 
+void evalSceneDistanceAndCodeStep(float2 scenePos, out float dist, out float codeStep)
+{
+    evalSceneDistanceAndCodeStepField(scenePos, 0.0, dist, codeStep);
+}
+
+void evalSceneEffectDistanceAndCodeStep(float2 scenePos, out float dist, out float codeStep)
+{
+    evalSceneDistanceAndCodeStepField(scenePos, 1.0, dist, codeStep);
+}
+
+// Keep the original helper signature available to custom material includes.
 void evalSceneDistance(float2 scenePos, out float dist)
 {
-    int layerCount = min((int)_SdfLayerCount, NOW_SDF_MAX_LAYERS);
-    bool found = false;
-    dist = 100000.0;
-
-    for (int layer = 0; layer < NOW_SDF_MAX_LAYERS; ++layer)
-    {
-        if (layer >= layerCount)
-            break;
-
-        float layerDist;
-        evalLayerDistance(layer, scenePos, layerDist);
-
-        if (!found)
-        {
-            dist = layerDist;
-            found = true;
-        }
-        else
-        {
-            combineDistance(dist, layerDist, _SdfLayerData0[layer].y, _SdfLayerData0[layer].z);
-        }
-    }
+    float codeStep;
+    evalSceneDistanceAndCodeStep(scenePos, dist, codeStep);
 }
 
 float hash21(float2 p)
@@ -541,6 +969,26 @@ float2 warpScenePos(float2 scenePos)
     return scenePos + n * _SdfWarp.x;
 }
 
+float exteriorEffectValidity(float distance, float codeStep, float edge)
+{
+    // Analytic distances have no finite glyph field. Glyph distances fade out
+    // before the uploaded SDF range can expose its rectangular fallback.
+    float isGlyphDistance = sign(max(codeStep, 0.0));
+    float glyphValidity = 1.0 - smoothstep(
+        max(_SdfTextEffectLimit, 0.0) - edge,
+        max(_SdfTextEffectLimit, 0.0) + edge,
+        distance);
+    return lerp(1.0, glyphValidity, isGlyphDistance);
+}
+
+float exclusiveEffectCoverage(float effectCoverage, float fillCoverage, float fillOpacity)
+{
+    // Source-over applies the remaining fill coverage again. Condition the
+    // exterior layer so its geometric ring survives authored fill opacity.
+    float remainingFill = max(1.0 - fillCoverage * saturate(fillOpacity), 0.0001);
+    return saturate((effectCoverage - fillCoverage) / remainingFill);
+}
+
 float4 alphaOver(float4 baseColor, float4 topColor)
 {
     float a = topColor.a + baseColor.a * (1.0 - topColor.a);
@@ -548,8 +996,8 @@ float4 alphaOver(float4 baseColor, float4 topColor)
     return float4(rgb, a);
 }
 
-// Supported ABI-v1 helpers for custom final-shading hooks. The position passed
-// to NowSdfEvaluateDistanceV1 is the unwarped, top-left/y-down scene position.
+// Supported ABI-v1 helpers for custom final-shading hooks. Positions passed to
+// the distance-evaluation helpers are unwarped, top-left/y-down scene positions.
 float4 NowSdfAlphaOverV1(float4 baseColor, float4 topColor)
 {
     return alphaOver(baseColor, topColor);
@@ -562,9 +1010,22 @@ float NowSdfEvaluateDistanceV1(float2 sourceScenePosition)
     return distance;
 }
 
+float NowSdfEvaluateEffectDistanceV1(float2 sourceScenePosition)
+{
+    float distance;
+    float codeStep;
+    evalSceneEffectDistanceAndCodeStep(
+        warpScenePos(sourceScenePosition),
+        distance,
+        codeStep);
+    return distance;
+}
+
 v2f vert(appdata v)
 {
     v2f o;
+    UNITY_SETUP_INSTANCE_ID(v);
+    UNITY_INITIALIZE_VERTEX_OUTPUT_STEREO(o);
     o.vertex = UnityObjectToClipPos(v.vertex);
 
     float isCanvas = step(0.5, _NowCanvasLayout);
@@ -574,6 +1035,9 @@ v2f vert(appdata v)
     // The canvas hands COLOR to the shader already in working space; TEXCOORD3 carries
     // the authored value untouched. UIRectangle and its UGUI twin split the same way.
     o.tint = lerp(NowUIColorToWorkingSpace(v.data3), v.canvasColor, isCanvas);
+    // Immediate meshes carry SDF scene mapping in UV5. Canvas meshes repack the
+    // same source data into UV3 because UGUI exposes fewer vertex channels.
+    o.sceneMapping = lerp(v.data5, v.data3, isCanvas);
 
     float2 pixelSize = o.vertex.w;
     pixelSize /= abs(mul((float2x2)UNITY_MATRIX_P, _ScreenParams.xy));
@@ -602,8 +1066,16 @@ float4 NOW_SDF_CUSTOM_FINAL_SHADE(
 
 fixed4 frag(v2f i) : SV_Target
 {
+    UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(i);
     float2 quadPos = i.rawUV * i.rect.zw;
-    float2 scenePosBase = float2(quadPos.x, i.rect.w - quadPos.y);
+    // Older/generated meshes may not carry the source mapping yet. Treat an
+    // empty payload as identity so custom shader includes remain compatible.
+    float hasSceneMapping = step(0.0001, abs(i.sceneMapping.x) + abs(i.sceneMapping.y));
+    float2 sceneSize = max(lerp(i.rect.zw, abs(i.sceneMapping.xy), hasSceneMapping), 0.0001);
+    float2 sceneDirection = lerp(float2(1.0, 1.0), i.sceneMapping.zw, hasSceneMapping);
+    float2 sourceUv = 0.5 + (i.rawUV - 0.5) * sceneDirection;
+    float2 sceneQuadPos = sourceUv * sceneSize;
+    float2 scenePosBase = float2(sceneQuadPos.x, sceneSize.y - sceneQuadPos.y);
     float2 scenePos = warpScenePos(scenePosBase);
     float2 meshPos = i.rect.xy + quadPos;
     float2 uiPosition = float2(meshPos.x, -meshPos.y);
@@ -611,26 +1083,69 @@ fixed4 frag(v2f i) : SV_Target
 
     NowUIClipLegacyRect(uiPosition, mask);
 
-    float dist = 100000.0;
-    float4 fill = 0.0;
-    evalScene(scenePos, i.tint, dist, fill);
+    // The CPU uploads 100000 for analytic-only scenes. This flag depends only
+    // on material uniforms, so every fragment in the draw takes the same path.
+    bool hasFiniteTextEffectLimit = _SdfTextEffectLimit < 100000.0;
+    bool hasStockDistanceEffect =
+        (_SdfOutlineColor.a > 0.0 && _SdfOutline.x > 0.0) ||
+        (_SdfGlowColor.a > 0.0 && _SdfGlow.x > 0.0) ||
+        _SdfShadowColor.a > 0.0 ||
+        _SdfInnerShadowColor.a > 0.0 ||
+        (_SdfContourColor.a > 0.0 && _SdfContour.x > 0.0 && _SdfContour.y > 0.0);
+    bool useDistinctEffectField = hasFiniteTextEffectLimit && hasStockDistanceEffect;
 
-    float pixelWidth = max(length(float2(ddx(dist), ddy(dist))), 0.0001);
+    float dist = 100000.0;
+    float effectDist = 100000.0;
+    float4 fill = 0.0;
+    float distanceCodeStep = 0.0;
+    float effectCodeStep = 0.0;
+    evalSceneFields(
+        scenePos,
+        i.tint,
+        useDistinctEffectField,
+        dist,
+        effectDist,
+        fill,
+        distanceCodeStep,
+        effectCodeStep);
+
+    float pixelWidth = max(
+        max(length(float2(ddx(dist), ddy(dist))), distanceCodeStep),
+        0.0001);
     float edge = pixelWidth * max(0.5 + _SdfFeather * 0.5, 0.5);
-    float effectDist = dist;
     float effectPixelWidth = pixelWidth;
     float effectEdge = edge;
+    UNITY_BRANCH
+    if (useDistinctEffectField)
+    {
+        effectPixelWidth = max(
+            max(length(float2(ddx(effectDist), ddy(effectDist))), effectCodeStep),
+            0.0001);
+        effectEdge = effectPixelWidth * max(0.5 + _SdfFeather * 0.5, 0.5);
+    }
     float coverage = smoothstep(edge, -edge, dist);
+    float exteriorValidity = 1.0;
+    UNITY_BRANCH
+    if (useDistinctEffectField)
+        exteriorValidity = exteriorEffectValidity(effectDist, effectCodeStep, effectEdge);
     float4 col = 0.0;
 
     if (_SdfShadowColor.a > 0.0)
     {
         float shadowDist;
-        evalSceneDistance(warpScenePos(scenePosBase - _SdfShadow.xy), shadowDist);
-        float shadowPixelWidth = max(length(float2(ddx(shadowDist), ddy(shadowDist))), 0.0001);
+        float shadowCodeStep;
+        evalSceneEffectDistanceAndCodeStep(
+            warpScenePos(scenePosBase - _SdfShadow.xy),
+            shadowDist,
+            shadowCodeStep);
+        float shadowPixelWidth = max(
+            max(length(float2(ddx(shadowDist), ddy(shadowDist))), shadowCodeStep),
+            0.0001);
         float shadowEdge = shadowPixelWidth * max(0.5 + _SdfFeather * 0.5, 0.5);
         float shadowEffectDist = shadowDist - _SdfShadow.w;
-        float shadowAlpha = smoothstep(max(_SdfShadow.z, shadowPixelWidth) + shadowEdge, -shadowEdge, shadowEffectDist) * (1.0 - coverage);
+        float shadowCoverage = smoothstep(max(_SdfShadow.z, shadowPixelWidth) + shadowEdge, -shadowEdge, shadowEffectDist);
+        float shadowAlpha = exclusiveEffectCoverage(shadowCoverage, coverage, fill.a);
+        shadowAlpha *= exteriorEffectValidity(shadowDist, shadowCodeStep, shadowEdge);
         float4 shadowColor = effectColor(_SdfShadowColor, i.tint);
         shadowColor.a *= shadowAlpha;
         col = alphaOver(col, shadowColor);
@@ -639,7 +1154,8 @@ fixed4 frag(v2f i) : SV_Target
     if (_SdfGlowColor.a > 0.0 && _SdfGlow.x > 0.0)
     {
         float glowT = saturate(1.0 - max(effectDist, 0.0) / max(_SdfGlow.x, 0.0001));
-        float glowAlpha = pow(glowT, max(_SdfGlow.y, 0.0001)) * (1.0 - coverage);
+        float glowCoverage = pow(glowT, max(_SdfGlow.y, 0.0001));
+        float glowAlpha = exclusiveEffectCoverage(glowCoverage, coverage, fill.a) * exteriorValidity;
         float4 glowColor = effectColor(_SdfGlowColor, i.tint);
         glowColor.a *= glowAlpha;
         col = alphaOver(col, glowColor);
@@ -647,7 +1163,8 @@ fixed4 frag(v2f i) : SV_Target
 
     if (_SdfOutlineColor.a > 0.0 && _SdfOutline.x > 0.0)
     {
-        float outlineAlpha = smoothstep(_SdfOutline.x + _SdfOutline.y + effectEdge, _SdfOutline.x - effectEdge, effectDist) * (1.0 - coverage);
+        float outlineCoverage = smoothstep(_SdfOutline.x + _SdfOutline.y + effectEdge, _SdfOutline.x - effectEdge, effectDist);
+        float outlineAlpha = exclusiveEffectCoverage(outlineCoverage, coverage, fill.a) * exteriorValidity;
         float4 outlineColor = effectColor(_SdfOutlineColor, i.tint);
         outlineColor.a *= outlineAlpha;
         col = alphaOver(col, outlineColor);
@@ -660,7 +1177,7 @@ fixed4 frag(v2f i) : SV_Target
         float2 grad = float2(ddx(dist), ddy(dist));
         float2 normal2 = normalize(grad + 0.0001);
         float2 light = normalize(_SdfEmboss.xy + 0.0001);
-        float band = 1.0 - smoothstep(0.0, max(_SdfEmboss.z, effectPixelWidth), abs(effectDist));
+        float band = 1.0 - smoothstep(0.0, max(_SdfEmboss.z, pixelWidth), abs(dist));
         float shade = dot(normal2, light) * _SdfEmboss.w * band;
         fillColor.rgb = saturate(fillColor.rgb + shade);
     }
@@ -671,8 +1188,14 @@ fixed4 frag(v2f i) : SV_Target
     if (_SdfInnerShadowColor.a > 0.0)
     {
         float innerDist;
-        evalSceneDistance(warpScenePos(scenePosBase - _SdfInnerShadow.xy), innerDist);
-        float innerPixelWidth = max(length(float2(ddx(innerDist), ddy(innerDist))), 0.0001);
+        float innerCodeStep;
+        evalSceneEffectDistanceAndCodeStep(
+            warpScenePos(scenePosBase - _SdfInnerShadow.xy),
+            innerDist,
+            innerCodeStep);
+        float innerPixelWidth = max(
+            max(length(float2(ddx(innerDist), ddy(innerDist))), innerCodeStep),
+            0.0001);
         float innerEdge = innerPixelWidth * max(0.5 + _SdfFeather * 0.5, 0.5);
         float innerEffectDist = innerDist + _SdfInnerShadow.w;
         float innerShape = smoothstep(max(_SdfInnerShadow.z, innerPixelWidth) + innerEdge, -innerEdge, innerEffectDist);
@@ -700,6 +1223,7 @@ fixed4 frag(v2f i) : SV_Target
             float maskSoftness = max(_SdfContourMask.w, edge);
             contourAlpha *= smoothstep(_SdfContourMask.z + maskSoftness, _SdfContourMask.z - edge, maskDist);
         }
+        contourAlpha *= exteriorValidity;
         float4 contourColor = effectColor(_SdfContourColor, i.tint);
         contourColor.a *= contourAlpha;
         col = alphaOver(col, contourColor);
@@ -713,11 +1237,11 @@ fixed4 frag(v2f i) : SV_Target
         i.rawUV,
         scenePos,
         scenePosBase,
-        i.rect.zw,
+        sceneSize,
         dist,
         coverage,
-        effectPixelWidth,
-        effectEdge);
+        pixelWidth,
+        edge);
     #endif
 
     #ifdef UNITY_UI_CLIP_RECT

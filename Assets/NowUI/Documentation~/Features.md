@@ -66,20 +66,66 @@ the default, and the same API can target right click, middle click, and common
 mouse navigation buttons.
 
 ```csharp
-var context = NowInput.Interact(panelRect, NowPointerButton.Secondary);
+var menuId = NowControls.GetControlId("selection-context-menu");
+var actionRect = new NowRect(184, 20, 36, 44);
+bool actionInvoked = Now.Button(actionRect, "...").Draw();
+var contextRegion = NowInteractionRegion.From(panelRect).Exclude(actionRect);
+var trigger = NowContextAction.Resolve(
+    in contextRegion, actionInvoked, actionRect);
 
-if (context.clicked)
-    OpenContextMenu();
+NowContextMenu.Open(menuId, trigger);
+
+if (NowContextMenu.Begin(menuId))
+{
+    if (NowContextMenu.Item("Copy", id: "copy"))
+        Copy();
+
+    NowContextMenu.End();
+}
 ```
 
+`NowContextAction.Resolve` preserves whether the request came from a secondary
+pointer click or an explicit action control. Pointer requests anchor at the
+pointer; action requests anchor beside the supplied action rectangle. Its
+composite-region overload prevents the panel action from reacting through the
+action button. Give every interactive item and submenu an explicit `NowId` so
+deferred click delivery and open submenu paths survive label changes and
+sibling insertion or reordering. Positional menu-entry overloads and raw
+integer menu identities are source-blocked with compiler errors.
+
+Handled pointer presses are claimed per provider, input pass, and button. A
+successful interaction or `ConsumePointerPress(button)` prevents controls
+declared later in that pass from seeing the same press without hiding other
+buttons or another provider's input. Opening a context menu from a secondary
+trigger claims only the secondary press. Claims establish same-pass ownership;
+they do not replace `NowInteractionRegion` exclusions for composite hit areas
+or parent-first declaration.
+
+A context menu belongs to the host/overlay owner and provider that opened it.
+Retained hosts can remain idle without closing it. On that owner's next
+successful declaration pass, omitting `Begin(menuId)` closes the menu; failed
+passes keep the last completed menu and blocking footprint. Click results are
+offered only on the same owner's next pass and expire if their stable item ID
+is not declared.
+
 Call-site identity is enough for one-off controls and fixed draw-order loops.
-Explicit ids use `NowId`, which accepts strings or non-zero integers. Prefer
-integer ids when you already have stable data ids and the items can appear,
-disappear, or reorder. Both are local to the active host/id scope; use
-`NowId.Resolved(value)` only for a value already returned by a host resolver or
-composed from a resolved parent. `NowInput.current.navigation` carries keyboard/gamepad
-navigation as a `Vector2`, while `submit*` and `cancel*` fields track action
-buttons.
+Explicit IDs use `NowId`, which accepts non-empty strings or any integer,
+including zero. Use the original stable model key when items can appear,
+disappear, or reorder; do not hash strings into integer IDs. Both forms are
+local to the active host/id scope; use
+`NowResolvedId` for a runtime identity returned by `NowControls.GetControlId`
+and derive custom child paths with `resolvedId.Child(...)`.
+`NowControls.SiteId(...)` returns an opaque `NowCallSiteId` fallback for a
+custom builder; it is not an authored `NowId` or resolved control ID.
+`NowInput.current.navigation` carries keyboard/gamepad navigation as a
+`Vector2`, while `submit*` and `cancel*` fields track action buttons.
+
+Deferred overlays capture the input provider, snapshot/pass, surface mapping,
+host, and identity scope in which they are queued and restore that context
+while their callback runs. For non-capturing callbacks, the `int state` in
+`Defer(rect, state, callback)`, `DeferScreen`, or `DeferPassive` is anonymous
+callback payload only. A named overlay passes its resolved source separately:
+`Defer(rect, sourceId, state, callback)`.
 
 The built-in render paths set up input where they already own a surface.
 `com.unity.inputsystem` is optional: NowUI detects it whether it is a direct or
@@ -362,7 +408,7 @@ using (NowEffects.Modifier(NowDeformers.Wave(Time.time, 6f, 48f))
 Now.Text(new Vector4(24, 24, 360, 60), font)
     .SetFontSize(42)
     .SetColor(Color.white)
-    .SetOutline(1)
+    .SetOutlinePixels(1)
     .SetOutlineColor(Color.black)
     .Draw("Score: 1200");
 ```
@@ -400,9 +446,9 @@ Now.Text(new NowRect(24, 92, 360, 60), font)
 
 The text builder owns no hidden clock: pass elapsed seconds through `SetTime`
 to play, pause, restart, or test an animation deterministically. See
-[Text Gradients And Animation](TextStyling.md) for radial and conic fills,
-Unity ramps, typewriter/fade/scale/wave presets, retained-host rebuilding, and
-warmup guidance.
+[Text Gradients And Animation](TextStyling.md) for the Inspector-driven adaptive
+outline demo, radial and conic fills, Unity ramps, typewriter/fade/scale/wave
+presets, retained-host rebuilding, and warmup guidance.
 
 ## UGUI Rendering
 
@@ -620,6 +666,11 @@ Now.Text(new Vector4(20, 20, 320, 48), runtimeFont)
 Glyphs are compiled into dynamic atlas pages the first time text asks for them,
 including emoji and other non-ASCII codepoints.
 
+Solid text colors tint ordinary SDF glyphs. RGBA/color-font glyphs such as
+emoji keep their authored RGB by default and use the text color's alpha for
+fades. Apply a text gradient when the authored color glyph should be
+deliberately recolored.
+
 The generated `NowFont` stores the source font bytes directly and does not keep
 a reference to the original `.ttf` asset or create a baked atlas texture subasset.
 
@@ -628,10 +679,11 @@ plus a Burst-compiled SDF rasterizer — measured faster than the native
 plugin); the native `nowui-msdf` plugin handles what the managed parser
 declines: CFF-flavored OpenType and color emoji fonts.
 `NowFontCompiler.forceNativeCompiler` and `forceManagedCompiler` pin a
-backend for profiling. Managed output is a single-channel SDF, which renders
-through the same shader and materials (the shader's `median(r, g, b)`
-resolves it unchanged) at the cost of slightly rounded corners at extreme
-magnification.
+backend for profiling. Managed pages store their scalar SDF in two RGBA8 bytes,
+retaining 16-bit distance precision while keeping the high byte replicated in
+RGB for legacy-material compatibility. Bundled text and SDF-scene shaders
+decode both bytes; native CFF and color-font output continues through its
+ordinary MTSDF/RGBA path.
 
 Text is shaped through HarfBuzz when the native plugin is present
 (`Now.textShaping`, on by default): ligatures, kerning, and complex-script

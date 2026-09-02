@@ -1,13 +1,16 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Reflection;
 using System.Text;
 using NowUI.Docking;
 using NowUI.Markdown;
 using NowUI.NodeGraph;
 using NowUI.Sdf;
 using UnityEditor;
+using UnityEditorInternal;
 using UnityEngine;
 #if NOWUI_UGUI
 using UnityEngine.UI;
@@ -21,10 +24,15 @@ namespace NowUI.Editor
         public int width;
         public int height;
         public bool includeInGoldens;
+        public bool includeInPerf = true;
         public bool darkTheme;
+        public string themePath;
+        public bool suppressBadge;
+        public Action<string> prepare;
         public Func<INowInputProvider> createInputProvider;
         public Func<NowHarnessScenario, string, NowHarnessCapture> capture;
         public int warmupFrames;
+        public Action afterWarmup;
         public Action<NowRect> draw;
     }
 
@@ -48,6 +56,13 @@ namespace NowUI.Editor
         /// </summary>
         public static int renderScale = 1;
 
+        /// <summary>
+        /// Stamps a small "Rendered with NowUI" chip on captures. Only the
+        /// visual (README) runner enables this; goldens and perf never brand so
+        /// baselines and timings stay comparable.
+        /// </summary>
+        public static bool brandCaptures;
+
         const string MarkdownSample =
             "# Harness markdown\n\n" +
             "NowUI renders **layout**, `inline code`, lists, links, and code fences through the same immediate-mode frame.\n\n" +
@@ -58,6 +73,19 @@ namespace NowUI.Editor
 
         static readonly string[] QualityOptions = { "Low", "Medium", "High", "Ultra" };
         static readonly string[] HierarchyObjects = { "Camera", "Directional Light", "Player", "Environment" };
+        static readonly NowRectangleStyle[] ThemeRectangleStyles =
+            (NowRectangleStyle[])Enum.GetValues(typeof(NowRectangleStyle));
+        static readonly NowTextStyle[] ThemeTextStyles =
+            (NowTextStyle[])Enum.GetValues(typeof(NowTextStyle));
+        static readonly NowColorToken[] ThemeColorTokens =
+            (NowColorToken[])Enum.GetValues(typeof(NowColorToken));
+
+        static readonly MethodInfo RepaintImmediatelyMethod = typeof(EditorWindow).GetMethod(
+            "RepaintImmediately",
+            BindingFlags.Instance | BindingFlags.NonPublic);
+
+        const string ThemesFolder = "Assets/NowUI/Assets/Themes";
+        const string ThemeReviewPrefix = "theme-review-";
 
         static readonly IdleInputProvider Input = new IdleInputProvider();
 
@@ -69,6 +97,10 @@ namespace NowUI.Editor
         static Material _sdfAuroraMaterial;
         static Material _sdfTopographicMaterial;
         static Material _sdfPaperCutoutMaterial;
+        static string _filePickerFixtureDirectory;
+        static string _filePickerPreviewPath;
+        static string _filePickerSavePath;
+        static Texture2D _filePickerPreviewTexture;
 
         sealed class IdleInputProvider : INowInputProvider
         {
@@ -172,6 +204,79 @@ namespace NowUI.Editor
             }
         }
 
+        sealed class ClickThenIdleInputProvider : INowInputProvider
+        {
+            readonly Vector2 _clickPointer;
+            readonly Vector2 _restingPointer;
+            readonly Vector2 _scrollDelta;
+            readonly Vector2? _followupClickPointer;
+            int _frame;
+
+            public ClickThenIdleInputProvider(Vector2 pointer)
+                : this(pointer, pointer, Vector2.zero, null)
+            {
+            }
+
+            public ClickThenIdleInputProvider(
+                Vector2 clickPointer,
+                Vector2 restingPointer,
+                Vector2 scrollDelta)
+                : this(clickPointer, restingPointer, scrollDelta, null)
+            {
+            }
+
+            public ClickThenIdleInputProvider(
+                Vector2 clickPointer,
+                Vector2 restingPointer,
+                Vector2 scrollDelta,
+                Vector2? followupClickPointer)
+            {
+                _clickPointer = clickPointer;
+                _restingPointer = restingPointer;
+                _scrollDelta = scrollDelta;
+                _followupClickPointer = followupClickPointer;
+            }
+
+            public bool TryGetSnapshot(NowInputSurface surface, out NowInputSnapshot snapshot)
+            {
+                bool pressed = _frame == 0 || (_followupClickPointer.HasValue && _frame == 3);
+                bool released = _frame == 1 || (_followupClickPointer.HasValue && _frame == 4);
+                bool scrolling = _frame == 2 && _scrollDelta != Vector2.zero;
+                Vector2 pointer = _followupClickPointer.HasValue && _frame >= 3
+                    ? _followupClickPointer.Value
+                    : scrolling ? _restingPointer : _clickPointer;
+                Vector2 previous = _frame == 2
+                    ? _clickPointer
+                    : _frame == 3 && _scrollDelta != Vector2.zero
+                        ? _restingPointer
+                        : pointer;
+                NowPointerButtons down = pressed ? NowPointerButtons.Primary : NowPointerButtons.None;
+                NowPointerButtons pressedButtons = pressed ? NowPointerButtons.Primary : NowPointerButtons.None;
+                NowPointerButtons releasedButtons = released ? NowPointerButtons.Primary : NowPointerButtons.None;
+
+                ++_frame;
+                snapshot = new NowInputSnapshot(
+                    true,
+                    pointer,
+                    previous,
+                    pointer - previous,
+                    down,
+                    pressedButtons,
+                    releasedButtons,
+                    scrolling ? _scrollDelta : Vector2.zero,
+                    Vector2.zero,
+                    false,
+                    false,
+                    false,
+                    false,
+                    false,
+                    false,
+                    _frame,
+                    _frame * 0.05f);
+                return true;
+            }
+        }
+
         sealed class FixedWorldInputProvider : INowInputProvider
         {
             public NowWorldInputProvider inner;
@@ -222,14 +327,15 @@ namespace NowUI.Editor
             }
         }
 
-        public static IReadOnlyList<NowHarnessScenario> All()
+        public static IReadOnlyList<NowHarnessScenario> All(bool includeThemeReviews = true)
         {
             EnsureSharedState();
 
-            return new[]
+            var scenarios = new List<NowHarnessScenario>
             {
                 new NowHarnessScenario { name = "controls", width = 960, height = 540, includeInGoldens = true, draw = DrawControls },
                 new NowHarnessScenario { name = "controls-dark", width = 960, height = 540, includeInGoldens = true, darkTheme = true, draw = DrawControlsDark },
+                new NowHarnessScenario { name = "editorgui-unity-editor-dark", width = 1100, height = 660, includeInGoldens = false, includeInPerf = false, suppressBadge = true, capture = CaptureEditorGUIUnityEditorDark },
                 new NowHarnessScenario { name = "elevation", width = 840, height = 420, includeInGoldens = true, draw = DrawElevation },
                 new NowHarnessScenario { name = "context-menu", width = 640, height = 420, includeInGoldens = true, draw = DrawContextMenu },
                 new NowHarnessScenario { name = "context-submenus", width = 720, height = 420, includeInGoldens = true, createInputProvider = () => new StaticPointerInputProvider(new Vector2(80f, 136f)), draw = DrawContextSubmenus },
@@ -242,8 +348,8 @@ namespace NowUI.Editor
                 new NowHarnessScenario { name = "shader-variants", width = 840, height = 420, includeInGoldens = true, draw = DrawShaderVariants },
 #if NOWUI_UGUI
                 new NowHarnessScenario { name = "quick-start-overlay", width = 500, height = 400, includeInGoldens = true, draw = DrawQuickStartOverlay, capture = CaptureQuickStartOverlay },
-                new NowHarnessScenario { name = "quick-start-score", width = 300, height = 120, includeInGoldens = false, darkTheme = true, draw = DrawQuickStartScore, capture = CaptureQuickStartScore },
-                new NowHarnessScenario { name = "quick-start-settings", width = 360, height = 190, includeInGoldens = false, darkTheme = true, draw = DrawQuickStartSettings, capture = CaptureQuickStartSettings },
+                new NowHarnessScenario { name = "quick-start-score", width = 300, height = 120, includeInGoldens = false, darkTheme = true, suppressBadge = true, draw = DrawQuickStartScore, capture = CaptureQuickStartScore },
+                new NowHarnessScenario { name = "quick-start-settings", width = 360, height = 190, includeInGoldens = false, darkTheme = true, suppressBadge = true, draw = DrawQuickStartSettings, capture = CaptureQuickStartSettings },
 #endif
                 new NowHarnessScenario { name = "sdf-mask-glow-clip", width = 640, height = 640, includeInGoldens = true, warmupFrames = 2, draw = DrawSdfMaskGlowClip },
                 new NowHarnessScenario { name = "sdf-mask-gallery", width = 960, height = 520, includeInGoldens = true, warmupFrames = 2, draw = DrawSdfMaskGallery },
@@ -251,24 +357,135 @@ namespace NowUI.Editor
                 new NowHarnessScenario { name = "sdf-radial-primitives", width = 840, height = 360, includeInGoldens = true, warmupFrames = 2, draw = DrawSdfRadialPrimitives },
                 new NowHarnessScenario { name = "sdf-custom-shaders", width = 960, height = 430, includeInGoldens = false, warmupFrames = 2, draw = DrawSdfCustomShaders },
                 new NowHarnessScenario { name = "lottie", width = 512, height = 512, includeInGoldens = true, draw = DrawLottie },
+                new NowHarnessScenario { name = "logo", width = 960, height = 240, includeInGoldens = false, warmupFrames = 2, draw = DrawLogo },
                 new NowHarnessScenario { name = "model-preview-effects", width = 720, height = 420, includeInGoldens = false, warmupFrames = 2, capture = CaptureModelPreviewEffects },
+                new NowHarnessScenario { name = "file-picker-open-image-preview", width = 1024, height = 640, includeInGoldens = false, warmupFrames = 4, prepare = PrepareFilePickerFixture, createInputProvider = () => new ClickThenIdleInputProvider(new Vector2(208f, 33f)), afterWarmup = InjectFilePickerPreviewFixture, draw = DrawFilePickerOpenImagePreview },
+                new NowHarnessScenario { name = "file-picker-unity-editor-dark-open", width = 1024, height = 640, includeInGoldens = false, includeInPerf = false, warmupFrames = 4, suppressBadge = true, themePath = "Assets/NowUI/Assets/Themes/UnityEditorDark.asset", prepare = PrepareFilePickerFixture, createInputProvider = () => new ClickThenIdleInputProvider(new Vector2(208f, 33f)), afterWarmup = InjectFilePickerPreviewFixture, draw = DrawFilePickerUnityEditorDarkOpen },
+                new NowHarnessScenario { name = "file-picker-save-no-preview", width = 1024, height = 640, includeInGoldens = false, warmupFrames = 2, prepare = PrepareFilePickerFixture, createInputProvider = () => new ClickThenIdleInputProvider(new Vector2(208f, 33f)), draw = DrawFilePickerSaveNoPreview },
+                new NowHarnessScenario { name = "file-picker-directory-places", width = 1024, height = 640, includeInGoldens = false, warmupFrames = 3, prepare = PrepareFilePickerFixture, createInputProvider = () => new ClickThenIdleInputProvider(new Vector2(208f, 33f), new Vector2(160f, 260f), new Vector2(0f, 100f)), draw = DrawFilePickerDirectoryPlaces },
+                new NowHarnessScenario { name = "file-picker-place-navigation", width = 1024, height = 640, includeInGoldens = false, warmupFrames = 5, prepare = PrepareFilePickerFixture, createInputProvider = () => new ClickThenIdleInputProvider(new Vector2(208f, 33f), new Vector2(160f, 260f), new Vector2(0f, 100f), new Vector2(160f, 262f)), draw = DrawFilePickerPlaceNavigation },
 #if NOWUI_UGUI
+                new NowHarnessScenario { name = "docs-unity-editor-dark", width = 1100, height = 660, includeInGoldens = false, includeInPerf = false, warmupFrames = 2, suppressBadge = true, capture = CaptureDocsUnityEditorDark },
+                new NowHarnessScenario { name = "docs-unity-editor-dark-markdown", width = 1100, height = 660, includeInGoldens = false, includeInPerf = false, warmupFrames = 2, suppressBadge = true, capture = CaptureDocsUnityEditorDark },
+                new NowHarnessScenario { name = "docs-unity-editor-dark-controls", width = 1100, height = 660, includeInGoldens = false, includeInPerf = false, warmupFrames = 2, suppressBadge = true, capture = CaptureDocsUnityEditorDark },
+                new NowHarnessScenario { name = "docs-unity-editor-dark-controls-gallery", width = 1100, height = 660, includeInGoldens = false, includeInPerf = false, warmupFrames = 2, suppressBadge = true, capture = CaptureDocsUnityEditorDark },
+                new NowHarnessScenario { name = "docs-unity-editor-dark-text-styling", width = 1100, height = 660, includeInGoldens = false, includeInPerf = false, warmupFrames = 2, suppressBadge = true, capture = CaptureDocsUnityEditorDark },
+                new NowHarnessScenario { name = "docs-unity-editor-dark-rich-text", width = 1100, height = 660, includeInGoldens = false, includeInPerf = false, warmupFrames = 2, suppressBadge = true, capture = CaptureDocsUnityEditorDark },
+                new NowHarnessScenario { name = "docs-unity-editor-dark-code-editor", width = 1100, height = 660, includeInGoldens = false, includeInPerf = false, warmupFrames = 2, suppressBadge = true, capture = CaptureDocsUnityEditorDark },
+                new NowHarnessScenario { name = "docs-unity-editor-dark-file-picker", width = 1100, height = 660, includeInGoldens = false, includeInPerf = false, warmupFrames = 2, suppressBadge = true, capture = CaptureDocsUnityEditorDark },
                 new NowHarnessScenario { name = "docs-model-preview-demo", width = 1280, height = 720, includeInGoldens = false, warmupFrames = 3, capture = CaptureDocsModelPreviewDemo },
-                new NowHarnessScenario { name = "landing-page-now", width = 1280, height = 720, includeInGoldens = true, warmupFrames = 2, capture = CaptureLandingPageNow },
-                new NowHarnessScenario { name = "landing-page-now-layout", width = 1280, height = 720, includeInGoldens = true, warmupFrames = 2, capture = CaptureLandingPageNowLayout },
-                new NowHarnessScenario { name = "landing-page-now-compact", width = 360, height = 640, includeInGoldens = true, warmupFrames = 2, capture = CaptureLandingPageNow },
-                new NowHarnessScenario { name = "landing-page-now-layout-compact", width = 360, height = 640, includeInGoldens = true, warmupFrames = 2, capture = CaptureLandingPageNowLayout },
+                new NowHarnessScenario { name = "landing-page-now", width = 1280, height = 720, includeInGoldens = true, warmupFrames = 2, suppressBadge = true, capture = CaptureLandingPageNow },
+                new NowHarnessScenario { name = "landing-page-now-layout", width = 1280, height = 720, includeInGoldens = true, warmupFrames = 2, suppressBadge = true, capture = CaptureLandingPageNowLayout },
+                new NowHarnessScenario { name = "landing-page-now-compact", width = 360, height = 640, includeInGoldens = true, warmupFrames = 2, suppressBadge = true, capture = CaptureLandingPageNow },
+                new NowHarnessScenario { name = "landing-page-now-layout-compact", width = 360, height = 640, includeInGoldens = true, warmupFrames = 2, suppressBadge = true, capture = CaptureLandingPageNowLayout },
 #endif
                 new NowHarnessScenario { name = "markdown-code", width = 960, height = 540, includeInGoldens = false, draw = DrawMarkdown },
                 new NowHarnessScenario { name = "docking", width = 960, height = 540, includeInGoldens = false, darkTheme = true, draw = DrawDocking },
                 new NowHarnessScenario { name = "node-graph", width = 960, height = 540, includeInGoldens = false, darkTheme = true, draw = DrawNodeGraph }
             };
+
+            if (includeThemeReviews)
+                scenarios.AddRange(ThemeReviewScenarios());
+
+            return scenarios;
+        }
+
+        internal static IReadOnlyList<NowHarnessScenario> ThemeReviewScenarios()
+        {
+            ValidateThemeReviewLayout();
+
+            string[] guids = AssetDatabase.FindAssets("t:NowThemeAsset", new[] { ThemesFolder });
+            var paths = new List<string>(guids.Length);
+
+            for (int i = 0; i < guids.Length; ++i)
+            {
+                string path = AssetDatabase.GUIDToAssetPath(guids[i]);
+                if (!string.IsNullOrEmpty(path))
+                    paths.Add(path.Replace('\\', '/'));
+            }
+
+            paths.Sort(StringComparer.Ordinal);
+
+            var scenarios = new List<NowHarnessScenario>(paths.Count);
+            var names = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+            for (int i = 0; i < paths.Count; ++i)
+            {
+                string path = paths[i];
+                var theme = AssetDatabase.LoadAssetAtPath<NowThemeAsset>(path);
+                if (theme == null)
+                    throw new InvalidOperationException($"Theme review discovery could not load '{path}' as a NowThemeAsset.");
+
+                string name = ThemeReviewPrefix + ToKebabCase(Path.GetFileNameWithoutExtension(path));
+                if (names.TryGetValue(name, out string previousPath))
+                {
+                    throw new InvalidOperationException(
+                        $"Duplicate theme review scenario name '{name}' for '{previousPath}' and '{path}'.");
+                }
+
+                names.Add(name, path);
+
+                scenarios.Add(new NowHarnessScenario
+                {
+                    name = name,
+                    width = 1280,
+                    height = 960,
+                    includeInGoldens = false,
+                    includeInPerf = false,
+                    themePath = path,
+                    suppressBadge = true,
+                    warmupFrames = 1,
+                    draw = DrawThemeReview
+                });
+            }
+
+            if (scenarios.Count == 0)
+                throw new InvalidOperationException($"No NowThemeAsset instances were found under '{ThemesFolder}'.");
+
+            return scenarios;
+        }
+
+        static void ValidateThemeReviewLayout()
+        {
+            if (ThemeRectangleStyles.Length > 8 || ThemeTextStyles.Length > 10 || ThemeColorTokens.Length > 27)
+            {
+                throw new InvalidOperationException(
+                    "The theme review sheet layout must be expanded for newly added theme enums " +
+                    $"(rectangles={ThemeRectangleStyles.Length}/8, text={ThemeTextStyles.Length}/10, colors={ThemeColorTokens.Length}/27).");
+            }
+        }
+
+        static string ToKebabCase(string value)
+        {
+            var builder = new StringBuilder(value != null ? value.Length + 8 : 0);
+            bool separatorPending = false;
+
+            for (int i = 0; i < (value?.Length ?? 0); ++i)
+            {
+                char current = value[i];
+                if (!char.IsLetterOrDigit(current))
+                {
+                    separatorPending = builder.Length > 0;
+                    continue;
+                }
+
+                bool uppercaseBoundary = char.IsUpper(current) && builder.Length > 0 &&
+                    i > 0 && char.IsLetterOrDigit(value[i - 1]) && !char.IsUpper(value[i - 1]);
+                if ((separatorPending || uppercaseBoundary) && builder[builder.Length - 1] != '-')
+                    builder.Append('-');
+
+                builder.Append(char.ToLowerInvariant(current));
+                separatorPending = false;
+            }
+
+            return builder.ToString().Trim('-');
         }
 
         public static NowHarnessCapture Capture(NowHarnessScenario scenario, string outputPath)
         {
             Directory.CreateDirectory(Path.GetDirectoryName(outputPath));
             ResetFrameState();
+            scenario.prepare?.Invoke(outputPath);
 
             if (scenario.capture != null)
                 return scenario.capture(scenario, outputPath);
@@ -294,6 +511,8 @@ namespace NowUI.Editor
 
                 for (int i = 0; i < warmupFrames; ++i)
                     renderer.Warmup(surface, inputProvider, () => DrawScenarioFrame(scenario));
+
+                scenario.afterWarmup?.Invoke();
 
                 using (NowInput.Begin(inputProvider, surface))
                 using (renderer.Begin(new Vector2(scenario.width, scenario.height)))
@@ -321,6 +540,100 @@ namespace NowUI.Editor
                 Now.SetUIScale(1f);
                 target.Release();
                 UnityEngine.Object.DestroyImmediate(target);
+            }
+        }
+
+        static NowHarnessCapture CaptureEditorGUIUnityEditorDark(
+            NowHarnessScenario scenario,
+            string outputPath)
+        {
+            var stopwatch = Stopwatch.StartNew();
+            NowEditorThemeComparisonWindow window = null;
+            RenderTexture target = null;
+            RenderTexture previousActive = RenderTexture.active;
+
+            try
+            {
+                NowEditorGUI.DisposeAll();
+
+                NowThemeAsset theme = AssetDatabase.LoadAssetAtPath<NowThemeAsset>(
+                    NowEditorThemeComparisonWindow.DefaultThemePath);
+                if (theme == null)
+                {
+                    throw new InvalidOperationException(
+                        $"Editor comparison theme is missing at '{NowEditorThemeComparisonWindow.DefaultThemePath}'.");
+                }
+
+                if (RepaintImmediatelyMethod == null)
+                {
+                    throw new MissingMethodException(
+                        typeof(EditorWindow).FullName,
+                        "RepaintImmediately");
+                }
+
+                window = ScriptableObject.CreateInstance<NowEditorThemeComparisonWindow>();
+                window.titleContent = new GUIContent("Editor Theme Comparison");
+                window.ConfigureForCapture(theme);
+                window.minSize = window.maxSize = new Vector2(scenario.width, scenario.height);
+                window.position = new Rect(64f, 64f, scenario.width, scenario.height);
+                window.ShowUtility();
+                window.position = new Rect(64f, 64f, scenario.width, scenario.height);
+                window.Focus();
+
+                if (!window.hasFocus)
+                    throw new InvalidOperationException("The editor comparison capture window did not receive focus.");
+
+                // First pass warms the IMGUI-hosted NowUI texture/font state;
+                // the second pass is the stable backing image that we capture.
+                RepaintImmediatelyMethod.Invoke(window, null);
+                RepaintImmediatelyMethod.Invoke(window, null);
+
+                float pixelsPerPoint = Mathf.Max(1f, EditorGUIUtility.pixelsPerPoint);
+                int width = Mathf.CeilToInt(window.position.width * pixelsPerPoint);
+                int height = Mathf.CeilToInt(window.position.height * pixelsPerPoint);
+                target = new RenderTexture(width, height, 0, RenderTextureFormat.ARGB32)
+                {
+                    name = "NowUI EditorGUI comparison capture",
+                    antiAliasing = 1,
+                    hideFlags = HideFlags.HideAndDontSave
+                };
+                target.Create();
+
+                if (!InternalEditorUtility.CaptureEditorWindow(window, target))
+                    throw new InvalidOperationException("Unity failed to capture the focused editor comparison window.");
+
+                WritePng(target, outputPath);
+                stopwatch.Stop();
+
+                return new NowHarnessCapture
+                {
+                    name = scenario.name,
+                    width = width,
+                    height = height,
+                    path = outputPath,
+                    batchCount = 0,
+                    vertexCount = 0,
+                    elapsedMilliseconds = stopwatch.ElapsedMilliseconds
+                };
+            }
+            finally
+            {
+                if (target != null)
+                {
+                    RenderTexture.active = previousActive;
+                    target.Release();
+                    UnityEngine.Object.DestroyImmediate(target);
+                }
+
+                if (window != null)
+                {
+                    if (window)
+                        window.Close();
+                    if (window)
+                        UnityEngine.Object.DestroyImmediate(window);
+                }
+
+                NowEditorGUI.DisposeAll();
             }
         }
 
@@ -470,26 +783,110 @@ namespace NowUI.Editor
         }
 
 #if NOWUI_UGUI
+        static NowHarnessCapture CaptureDocsUnityEditorDark(
+            NowHarnessScenario scenario,
+            string outputPath)
+        {
+            const string ThemePath = "Assets/NowUI/Assets/Themes/UnityEditorDark.asset";
+            var theme = AssetDatabase.LoadAssetAtPath<NowThemeAsset>(ThemePath);
+            var font = Resources.Load<NowFontAsset>("NowUI/NotoSans");
+
+            if (theme == null)
+                throw new InvalidOperationException($"The docs harness theme is missing at '{ThemePath}'.");
+            if (font == null)
+                throw new InvalidOperationException("The docs harness could not load the bundled NowUI/NotoSans font.");
+
+            string pageTitle;
+
+            switch (scenario.name)
+            {
+                case "docs-unity-editor-dark-markdown":
+                    pageTitle = "Markdown";
+                    break;
+                case "docs-unity-editor-dark-controls":
+                    pageTitle = "Controls";
+                    break;
+                case "docs-unity-editor-dark-controls-gallery":
+                    pageTitle = "Controls gallery";
+                    break;
+                case "docs-unity-editor-dark-text-styling":
+                    pageTitle = "Text styling demo";
+                    break;
+                case "docs-unity-editor-dark-rich-text":
+                    pageTitle = "Rich text demo";
+                    break;
+                case "docs-unity-editor-dark-code-editor":
+                    pageTitle = "Editor demo";
+                    break;
+                case "docs-unity-editor-dark-file-picker":
+                    pageTitle = "File picker demo";
+                    break;
+                default:
+                    pageTitle = "Overview";
+                    break;
+            }
+
+            return CaptureDocsExample(
+                scenario,
+                outputPath,
+                graphic =>
+                {
+                    if (scenario.name == "docs-unity-editor-dark-text-styling")
+                        graphic.ConfigureTextStylingDemoHarness(theme, font);
+                    else
+                        graphic.ConfigurePageHarness(theme, font, pageTitle);
+                });
+        }
+
         // Captures the actual in-app docs page, including its first deferred
         // model render and the retained texture-effect copy.
         static NowHarnessCapture CaptureDocsModelPreviewDemo(
             NowHarnessScenario scenario,
             string outputPath)
         {
+            const string ThemePath = "Assets/NowUI/Assets/Themes/DefaultDark.asset";
+            var theme = AssetDatabase.LoadAssetAtPath<NowThemeAsset>(ThemePath);
+            var font = Resources.Load<NowFontAsset>("NowUI/NotoSans");
+
+            if (theme == null)
+                throw new InvalidOperationException($"The docs model-preview harness theme is missing at '{ThemePath}'.");
+            if (font == null)
+                throw new InvalidOperationException("The docs model-preview harness could not load the bundled NowUI/NotoSans font.");
+
+            return CaptureDocsExample(
+                scenario,
+                outputPath,
+                graphic => graphic.ConfigureModelPreviewsDemoHarness(theme, font),
+                graphic =>
+                {
+                    if (!graphic.RenderModelPreviewsDemoNowForHarness())
+                    {
+                        throw new InvalidOperationException(
+                            "The docs model-preview target was not prepared by its first UI rebuild.");
+                    }
+                });
+        }
+
+        static NowHarnessCapture CaptureDocsExample(
+            NowHarnessScenario scenario,
+            string outputPath,
+            Action<NowDocsExample> configure,
+            Action<NowDocsExample> afterFirstRebuild = null)
+        {
             var stopwatch = Stopwatch.StartNew();
             int scale = Mathf.Max(1, renderScale);
             var target = new RenderTexture(scenario.width * scale, scenario.height * scale, 24, RenderTextureFormat.ARGB32)
             {
-                name = "NowUI Docs Model Preview Target",
+                name = $"NowUI Docs Harness Target ({scenario.name})",
                 antiAliasing = 8,
                 hideFlags = HideFlags.HideAndDontSave
             };
-            var cameraObject = new GameObject("NowUI Docs Model Preview Camera")
+            var cameraObject = new GameObject($"NowUI Docs Harness Camera ({scenario.name})")
             {
                 hideFlags = HideFlags.HideAndDontSave
             };
             var canvasObject = new GameObject(
-                "NowUI Docs Model Preview Canvas",
+                $"NowUI Docs Harness Canvas ({scenario.name})",
                 typeof(RectTransform),
                 typeof(Canvas),
                 typeof(CanvasScaler))
@@ -524,7 +921,7 @@ namespace NowUI.Editor
                 scaler.scaleFactor = scale;
 
                 var panelObject = new GameObject(
-                    "NowUI Docs Model Preview Host",
+                    $"NowUI Docs Harness Host ({scenario.name})",
                     typeof(RectTransform),
                     typeof(CanvasRenderer))
                 {
@@ -540,9 +937,9 @@ namespace NowUI.Editor
 
                 var graphic = panelObject.AddComponent<NowDocsExample>();
                 graphic.raycastTarget = false;
-                graphic.ConfigureModelPreviewsDemoHarness(
-                    AssetDatabase.LoadAssetAtPath<NowThemeAsset>("Assets/NowUI/Assets/Themes/DefaultDark.asset"),
-                    Resources.Load<NowFontAsset>("NowUI/NotoSans"));
+                configure(graphic);
+                graphic.PinHarnessScrollTop();
+                AddCanvasBrandBadge(scenario, canvasObject);
 
                 int warmupFrames = Mathf.Max(2, scenario.warmupFrames);
 
@@ -551,11 +948,8 @@ namespace NowUI.Editor
                     graphic.SetVerticesDirty();
                     Canvas.ForceUpdateCanvases();
 
-                    if (i == 0 && !graphic.RenderModelPreviewsDemoNowForHarness())
-                    {
-                        throw new InvalidOperationException(
-                            "The docs model-preview target was not prepared by its first UI rebuild.");
-                    }
+                    if (i == 0)
+                        afterFirstRebuild?.Invoke(graphic);
                 }
 
                 graphic.SetVerticesDirty();
@@ -633,6 +1027,9 @@ namespace NowUI.Editor
                 "Captured, then deformed",
                 orange,
                 textureEffect: true);
+
+            if (brandCaptures && !scenario.suppressBadge)
+                DrawBrandBadge(rect);
 
             void DrawModelPreviewCard(
                 NowRect cardRect,
@@ -793,6 +1190,9 @@ namespace NowUI.Editor
                 }
 
                 graphic.raycastTarget = false;
+
+                if (draw == null)
+                    AddCanvasBrandBadge(scenario, canvasObject);
 
                 int warmupFrames = Mathf.Max(1, scenario.warmupFrames);
                 for (int i = 0; i < warmupFrames; ++i)
@@ -1101,25 +1501,754 @@ namespace NowUI.Editor
         static void DrawScenarioFrame(NowHarnessScenario scenario)
         {
             Now.defaultFont = Resources.Load<NowFontAsset>("NowUI/NotoSans");
-            string themePath = scenario.darkTheme
-                ? "Assets/NowUI/Assets/Themes/DefaultDark.asset"
-                : "Assets/NowUI/Assets/Themes/Default.asset";
+            bool hasExplicitTheme = !string.IsNullOrWhiteSpace(scenario.themePath);
+            string themePath = hasExplicitTheme
+                ? scenario.themePath
+                : scenario.darkTheme
+                    ? "Assets/NowUI/Assets/Themes/DefaultDark.asset"
+                    : "Assets/NowUI/Assets/Themes/Default.asset";
             var theme = AssetDatabase.LoadAssetAtPath<NowThemeAsset>(themePath);
+            var frame = new NowRect(0, 0, scenario.width, scenario.height);
+
+            if (hasExplicitTheme && theme == null)
+                throw new InvalidOperationException($"Theme review scenario '{scenario.name}' could not load '{themePath}'.");
 
             if (theme != null)
             {
                 using (NowControls.Theme(theme))
-                    scenario.draw(new NowRect(0, 0, scenario.width, scenario.height));
+                    scenario.draw(frame);
             }
             else
             {
-                scenario.draw(new NowRect(0, 0, scenario.width, scenario.height));
+                scenario.draw(frame);
             }
+
+            if (brandCaptures && !scenario.suppressBadge)
+                DrawBrandBadge(frame);
+        }
+
+#if NOWUI_UGUI
+        /// <summary>Overlays the brand chip on component-hosted canvas captures.</summary>
+        static void AddCanvasBrandBadge(NowHarnessScenario scenario, GameObject canvasObject)
+        {
+            if (!brandCaptures || scenario.suppressBadge)
+                return;
+
+            var badgeObject = new GameObject(
+                "NowUI Harness Badge",
+                typeof(RectTransform),
+                typeof(CanvasRenderer))
+            {
+                hideFlags = HideFlags.HideAndDontSave
+            };
+            badgeObject.transform.SetParent(canvasObject.transform, false);
+
+            var badgeRect = badgeObject.GetComponent<RectTransform>();
+            badgeRect.anchorMin = Vector2.zero;
+            badgeRect.anchorMax = Vector2.one;
+            badgeRect.offsetMin = Vector2.zero;
+            badgeRect.offsetMax = Vector2.zero;
+
+            var badge = badgeObject.AddComponent<NowGraphic>();
+            badge.raycastTarget = false;
+            badge.rebuildNowUI += (_, hostRect) => DrawBrandBadge(hostRect);
+        }
+#endif
+
+        /// <summary>A small self-referential watermark: the chip is itself NowUI draws.</summary>
+        static void DrawBrandBadge(NowRect rect)
+        {
+            var chip = new NowRect(rect.xMax - 168f, rect.yMax - 34f, 156f, 22f);
+            Now.Rectangle(chip)
+                .SetColor(new Color(0.02f, 0.03f, 0.06f, 0.66f))
+                .SetRadius(11f)
+                .SetOutline(1f, new Color(1f, 1f, 1f, 0.14f))
+                .Draw();
+
+            float cy = chip.y + chip.height * 0.5f;
+            float gx = chip.x + 10f;
+            Span<Vector2> pulse = stackalloc Vector2[]
+            {
+                new Vector2(gx, cy),
+                new Vector2(gx + 5f, cy),
+                new Vector2(gx + 8f, cy - 4f),
+                new Vector2(gx + 12f, cy + 4f),
+                new Vector2(gx + 15f, cy),
+                new Vector2(gx + 20f, cy)
+            };
+
+            for (int i = 0; i < pulse.Length - 1; ++i)
+            {
+                Now.Line(pulse[i], pulse[i + 1])
+                    .SetWidth(1.6f)
+                    .SetColor(new Color(0.55f, 0.60f, 0.95f, 1f))
+                    .Draw();
+            }
+
+            Now.Text(new NowRect(chip.x + 34f, chip.y + 4f, chip.width - 38f, 15f))
+                .SetFontSize(11f)
+                .SetColor(new Color(1f, 1f, 1f, 0.78f))
+                .Draw("Rendered with NowUI");
+        }
+
+        static void PrepareFilePickerFixture(string outputPath)
+        {
+            _ = outputPath;
+
+            if (string.IsNullOrEmpty(_filePickerFixtureDirectory))
+            {
+                _filePickerFixtureDirectory = Path.Combine(
+                    ProjectPath(),
+                    "Library",
+                    "NowUIHarness",
+                    "FilePickerVisualV1");
+                _filePickerPreviewPath = Path.Combine(_filePickerFixtureDirectory, "aurora-preview.png");
+                _filePickerSavePath = Path.Combine(_filePickerFixtureDirectory, "layout.nowui");
+            }
+
+            Directory.CreateDirectory(_filePickerFixtureDirectory);
+            Directory.CreateDirectory(Path.Combine(_filePickerFixtureDirectory, "Concepts"));
+            Directory.CreateDirectory(Path.Combine(_filePickerFixtureDirectory, "Exports"));
+
+            if (!File.Exists(_filePickerSavePath))
+                File.WriteAllText(_filePickerSavePath, "{ \"name\": \"NowUI visual fixture\" }\n", new UTF8Encoding(false));
+
+            string notesPath = Path.Combine(_filePickerFixtureDirectory, "readme.txt");
+            if (!File.Exists(notesPath))
+                File.WriteAllText(notesPath, "Deterministic NowUI file-picker fixture.\n", new UTF8Encoding(false));
+
+            if (!File.Exists(_filePickerPreviewPath))
+                WriteFilePickerPreviewFixture(_filePickerPreviewPath);
+
+            if (_filePickerPreviewTexture == null)
+            {
+                var texture = new Texture2D(2, 2, TextureFormat.RGBA32, false)
+                {
+                    name = "NowUI File Picker Loaded Fixture",
+                    hideFlags = HideFlags.HideAndDontSave
+                };
+
+                if (!texture.LoadImage(File.ReadAllBytes(_filePickerPreviewPath), markNonReadable: true))
+                {
+                    UnityEngine.Object.DestroyImmediate(texture);
+                    throw new InvalidOperationException("Could not decode the file-picker preview fixture.");
+                }
+
+                _filePickerPreviewTexture = texture;
+            }
+        }
+
+        static void WriteFilePickerPreviewFixture(string path)
+        {
+            const int width = 320;
+            const int height = 180;
+            var texture = new Texture2D(width, height, TextureFormat.RGBA32, false)
+            {
+                name = "NowUI File Picker Fixture",
+                hideFlags = HideFlags.HideAndDontSave
+            };
+
+            try
+            {
+                var pixels = new Color32[width * height];
+
+                for (int y = 0; y < height; ++y)
+                {
+                    for (int x = 0; x < width; ++x)
+                    {
+                        byte red = (byte)(24 + x * 152 / (width - 1));
+                        byte green = (byte)(38 + y * 128 / (height - 1));
+                        byte blue = (byte)(112 + (width - 1 - x) * 92 / (width - 1));
+                        bool ribbon = Mathf.Abs(y - (height - 1 - x * height / width)) < 12;
+
+                        if (ribbon)
+                        {
+                            red = 244;
+                            green = 190;
+                            blue = 92;
+                        }
+
+                        pixels[y * width + x] = new Color32(red, green, blue, 255);
+                    }
+                }
+
+                texture.SetPixels32(pixels);
+                texture.Apply(updateMipmaps: false, makeNoLongerReadable: false);
+                File.WriteAllBytes(path, texture.EncodeToPNG());
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(texture);
+            }
+        }
+
+        static void InjectFilePickerPreviewFixture()
+        {
+            // ExecuteMethod captures do not advance the Editor player loop while warming up.
+            // Inject the already-decoded deterministic fixture after the picker has requested it.
+            const BindingFlags StaticPrivate = BindingFlags.Static | BindingFlags.NonPublic;
+            const BindingFlags InstancePublic = BindingFlags.Instance | BindingFlags.Public;
+            FieldInfo popupStatesField = typeof(NowFilePicker).GetField("_popupStates", StaticPrivate);
+            var popupStates = popupStatesField?.GetValue(null) as IDictionary;
+
+            if (popupStates == null)
+                throw new InvalidOperationException("File-picker popup state was not available to the visual harness.");
+
+            foreach (object popupState in popupStates.Values)
+            {
+                Type popupStateType = popupState.GetType();
+                var thumbnails = popupStateType.GetField("thumbnails", InstancePublic)?.GetValue(popupState) as IDictionary;
+
+                if (thumbnails == null)
+                    continue;
+
+                foreach (object thumbnail in thumbnails.Values)
+                {
+                    Type thumbnailType = thumbnail.GetType();
+                    string path = thumbnailType.GetField("path", InstancePublic)?.GetValue(thumbnail) as string;
+
+                    if (!string.Equals(path, _filePickerPreviewPath, StringComparison.Ordinal))
+                        continue;
+
+                    var requestField = thumbnailType.GetField("request", InstancePublic);
+                    var request = requestField?.GetValue(thumbnail) as UnityEngine.Networking.UnityWebRequest;
+                    request?.Abort();
+                    request?.Dispose();
+                    requestField?.SetValue(thumbnail, null);
+                    thumbnailType.GetField("operation", InstancePublic)?.SetValue(thumbnail, null);
+                    thumbnailType.GetField("texture", InstancePublic)?.SetValue(thumbnail, _filePickerPreviewTexture);
+
+                    FieldInfo thumbnailStateField = thumbnailType.GetField("state", InstancePublic);
+                    thumbnailStateField?.SetValue(
+                        thumbnail,
+                        Enum.Parse(thumbnailStateField.FieldType, "Loaded"));
+                    popupStateType.GetField("activeThumbnailRequests", InstancePublic)?.SetValue(popupState, 0);
+                    return;
+                }
+            }
+
+            throw new InvalidOperationException("The selected preview fixture was not requested during harness warmup.");
+        }
+
+        static void DrawFilePickerOpenImagePreview(NowRect rect)
+        {
+            DrawFilePickerOpenImage(rect, "Open Image — Preview Enabled");
+        }
+
+        static void DrawFilePickerUnityEditorDarkOpen(NowRect rect)
+        {
+            DrawFilePickerOpenImage(rect, "Open Image");
+        }
+
+        static void DrawFilePickerOpenImage(NowRect rect, string title)
+        {
+            DrawSurface(rect);
+
+            string path = _filePickerPreviewPath ?? string.Empty;
+            Now.OpenFileField(
+                    new NowRect(28f, 18f, 360f, 30f),
+                    "harness-file-picker-open-image")
+                .SetTitle(title)
+                .SetStartDirectory(_filePickerFixtureDirectory)
+                .SetInitialView(NowFilePickerView.Details)
+                .SetFilters(
+                    new NowFileFilter("Images", "png", "jpg", "jpeg"),
+                    new NowFileFilter("Text", "txt"))
+                .SetPopupSize(920f, 560f)
+                .Draw(ref path);
+        }
+
+        static void DrawFilePickerSaveNoPreview(NowRect rect)
+        {
+            DrawSurface(rect);
+
+            string path = _filePickerSavePath ?? string.Empty;
+            Now.SaveFileField(
+                    new NowRect(28f, 18f, 360f, 30f),
+                    "harness-file-picker-save")
+                .SetTitle("Save Layout — Preview Suppressed")
+                .SetStartDirectory(_filePickerFixtureDirectory)
+                .SetInitialView(NowFilePickerView.Details)
+                .SetFilters(
+                    new NowFileFilter("NowUI layouts", "nowui"),
+                    new NowFileFilter("Text", "txt"))
+                .SetPopupSize(920f, 560f)
+                .Draw(ref path);
+        }
+
+        static void DrawFilePickerDirectoryPlaces(NowRect rect)
+        {
+            DrawFilePickerDirectory(rect, "Select Folder — Places and Folders", "harness-file-picker-directory");
+        }
+
+        static void DrawFilePickerPlaceNavigation(NowRect rect)
+        {
+            DrawFilePickerDirectory(rect, "Select Folder — Place Stays Visible", "harness-file-picker-place-navigation");
+        }
+
+        static void DrawFilePickerDirectory(NowRect rect, string title, string id)
+        {
+            DrawSurface(rect);
+
+            string path = _filePickerFixtureDirectory ?? string.Empty;
+            Now.DirectoryField(
+                    new NowRect(28f, 18f, 360f, 30f),
+                    id)
+                .SetTitle(title)
+                .SetStartDirectory(_filePickerFixtureDirectory)
+                .SetInitialView(NowFilePickerView.Details)
+                .SetPopupSize(920f, 560f)
+                .Draw(ref path);
         }
 
         static void DrawControlsDark(NowRect rect)
         {
             DrawControls(rect);
+        }
+
+        static void DrawThemeReview(NowRect rect)
+        {
+            DrawSurface(rect);
+
+            var theme = NowTheme.themeAsset;
+            string rendererName = theme.controlRenderer.GetType().Name;
+            string mode = theme.isDark ? "Dark" : "Light";
+            HeaderBlock(
+                rect,
+                $"{theme.name} Theme",
+                $"{mode} • {rendererName} • all palette roles, presets, and representative controls.");
+
+            DrawThemeSectionTitle(28f, 116f, "Rectangle presets", "Every built-in button style through this theme's control renderer.");
+            DrawThemeRectangleStyles();
+
+            DrawThemeSectionTitle(28f, 216f, "Palette roles", "Authored display/sRGB values; labels use an independent contrast color.");
+            DrawThemePalette(theme);
+
+            DrawThemeSectionTitle(28f, 464f, "Text presets", "The complete themed type scale over the theme surface.");
+            DrawThemeTextStyles(theme);
+
+            DrawThemeSectionTitle(28f, 648f, "Controls and popup states", "Deterministic idle, hover, pressed, selected, field, and popup states.");
+            DrawThemeControls(theme);
+        }
+
+        static void DrawThemeRectangleStyles()
+        {
+            const float left = 28f;
+            const float top = 158f;
+            const float gap = 10f;
+            const float width = 144.25f;
+            const float height = 44f;
+
+            for (int i = 0; i < ThemeRectangleStyles.Length; ++i)
+            {
+                float x = left + i * (width + gap);
+                Now.Button(new NowRect(x, top, width, height), ThemeRectangleStyles[i].ToString())
+                    .SetId(new NowId(100 + i))
+                    .SetStyle(ThemeRectangleStyles[i])
+                    .Draw();
+            }
+        }
+
+        static void DrawThemePalette(NowThemeAsset theme)
+        {
+            const float left = 28f;
+            const float top = 258f;
+            const float gapX = 8f;
+            const float gapY = 8f;
+            const float width = 128.88f;
+            const float height = 58f;
+            const int columns = 9;
+
+            for (int i = 0; i < ThemeColorTokens.Length; ++i)
+            {
+                int column = i % columns;
+                int row = i / columns;
+                var swatch = new NowRect(
+                    left + column * (width + gapX),
+                    top + row * (height + gapY),
+                    width,
+                    height);
+                Color color = theme.GetColor(ThemeColorTokens[i], Color.magenta);
+
+                Now.Rectangle(swatch)
+                    .SetColor(color)
+                    .SetRadius(6f)
+                    .SetOutline(1f)
+                    .SetOutlineColor(new Color(0f, 0f, 0f, 0.16f))
+                    .Draw();
+                Now.Text(swatch.Inset(7f, 7f, 7f, 7f))
+                    .SetFontSize(10f)
+                    .SetBold()
+                    .SetColor(ReadableSwatchText(color))
+                    .Draw($"{ThemeColorTokens[i]}\n#{ColorUtility.ToHtmlStringRGBA(color)}");
+            }
+        }
+
+        static void DrawThemeTextStyles(NowThemeAsset theme)
+        {
+            var panel = new NowRect(28f, 500f, 1224f, 136f);
+            DrawThemePanelBackground(theme, panel);
+
+            const int columns = 5;
+            float cellWidth = (panel.width - 28f) / columns;
+            float cellHeight = (panel.height - 16f) / 2f;
+
+            for (int i = 0; i < ThemeTextStyles.Length; ++i)
+            {
+                int column = i % columns;
+                int row = i / columns;
+                var cell = new NowRect(
+                    panel.x + 14f + column * cellWidth,
+                    panel.y + 8f + row * cellHeight,
+                    cellWidth - 10f,
+                    cellHeight - 4f);
+
+                Now.Text(new NowRect(cell.x, cell.y, cell.width, 14f))
+                    .SetFontSize(10f)
+                    .SetBold()
+                    .SetColor(theme.GetColor(NowColorToken.TextMuted, Color.gray))
+                    .Draw(ThemeTextStyles[i].ToString());
+                var sampleRect = new NowRect(cell.x, cell.y + 17f, cell.width, cell.height - 17f);
+                if (ThemeTextStyles[i] == NowTextStyle.Button)
+                {
+                    var buttonSample = new NowRect(sampleRect.x, sampleRect.y, 126f, 40f);
+                    theme.Rectangle(buttonSample, NowRectangleStyle.Accent).SetRadius(8f).Draw();
+                    theme.Text(buttonSample.Inset(10f, 6f, 10f, 6f), ThemeTextStyles[i]).Draw("Aa 123");
+                }
+                else
+                {
+                    theme.Text(sampleRect, ThemeTextStyles[i]).Draw("Aa 123");
+                }
+            }
+        }
+
+        static void DrawThemeControls(NowThemeAsset theme)
+        {
+            var togglesPanel = new NowRect(28f, 688f, 270f, 244f);
+            var statesPanel = new NowRect(310f, 688f, 314f, 244f);
+            var fieldsPanel = new NowRect(636f, 688f, 288f, 244f);
+            var popupPanel = new NowRect(936f, 688f, 316f, 244f);
+            DrawThemePanelBackground(theme, togglesPanel);
+            DrawThemePanelBackground(theme, statesPanel);
+            DrawThemePanelBackground(theme, fieldsPanel);
+            DrawThemePanelBackground(theme, popupPanel);
+
+            DrawThemePanelLabel(theme, togglesPanel, "Core controls");
+            DrawThemePanelLabel(theme, statesPanel, "Shared state roles");
+            DrawThemePanelLabel(theme, fieldsPanel, "Fields and activity");
+            DrawThemePanelLabel(theme, popupPanel, "Popup renderer");
+
+            bool checkedValue = true;
+            bool uncheckedValue = false;
+            float sliderValue = 0.68f;
+            string textValue = "NowUI";
+            int dropdownValue = 2;
+
+            Now.Checkbox(new NowRect(44f, 730f, 112f, 30f), "Checked")
+                .SetId(new NowId(200))
+                .Draw(ref checkedValue);
+            Now.Checkbox(new NowRect(164f, 730f, 118f, 30f), "Unchecked")
+                .SetId(new NowId(201))
+                .Draw(ref uncheckedValue);
+            Now.Radio(new NowRect(44f, 768f, 112f, 30f), "Selected", true)
+                .SetId(new NowId(202))
+                .Draw();
+            Now.Radio(new NowRect(164f, 768f, 118f, 30f), "Unselected", false)
+                .SetId(new NowId(203))
+                .Draw();
+            DrawThemeSwitchSample(theme, new NowRect(44f, 806f, 112f, 32f), "Off", false, hovered: true, held: false);
+            DrawThemeSwitchSample(theme, new NowRect(164f, 806f, 118f, 32f), "On", true, hovered: true, held: true);
+            Now.Badge(new NowRect(44f, 852f, 72f, 28f), "Accent")
+                .SetStyle(NowRectangleStyle.Accent)
+                .Draw();
+            Now.Badge(new NowRect(126f, 852f, 88f, 28f), "Danger")
+                .SetStyle(NowRectangleStyle.Danger)
+                .Draw();
+
+            DrawThemeSharedStates(theme, statesPanel);
+
+            Now.TextField(new NowRect(652f, 730f, 256f, 44f), "theme-review-text")
+                .SetPlaceholder("Name")
+                .Draw(ref textValue);
+            Now.Dropdown(new NowRect(652f, 786f, 256f, 40f), "theme-review-dropdown", QualityOptions)
+                .Draw(ref dropdownValue);
+            Now.Slider(new NowRect(652f, 846f, 164f, 32f), 0f, 1f)
+                .SetId(new NowId(205))
+                .Draw(ref sliderValue);
+            Now.ProgressBar(new NowRect(828f, 857f, 80f, 10f), sliderValue).Draw();
+
+            var popup = new NowRect(952f, 728f, 284f, 188f);
+            theme.controlRenderer.DrawPopupBackground(theme, popup, menu: false);
+            float itemHeight = 42f;
+            theme.controlRenderer.DrawPopupItem(new NowPopupItemRenderContext(
+                theme,
+                new NowRect(popup.x + 8f, popup.y + 9f, popup.width - 16f, itemHeight),
+                "Normal option",
+                selected: false,
+                interaction: default));
+            theme.controlRenderer.DrawPopupItem(new NowPopupItemRenderContext(
+                theme,
+                new NowRect(popup.x + 8f, popup.y + 9f + itemHeight, popup.width - 16f, itemHeight),
+                "Hovered option",
+                selected: false,
+                interaction: ThemeReviewInteraction(popup, held: false)));
+            theme.controlRenderer.DrawPopupItem(new NowPopupItemRenderContext(
+                theme,
+                new NowRect(popup.x + 8f, popup.y + 9f + itemHeight * 2f, popup.width - 16f, itemHeight),
+                "Selected option",
+                selected: true,
+                interaction: default));
+            theme.controlRenderer.DrawPopupItem(new NowPopupItemRenderContext(
+                theme,
+                new NowRect(popup.x + 8f, popup.y + 9f + itemHeight * 3f, popup.width - 16f, itemHeight),
+                "Open commands",
+                "Shortcut  Ctrl+K",
+                selected: false,
+                interaction: default));
+        }
+
+        static void DrawThemePanelBackground(NowThemeAsset theme, NowRect panel)
+        {
+            // Material filled cards use a tonal container rather than adding an
+            // outline to every surface. Muted is NowUI's closest container role.
+            NowRectangleStyle style = theme.controlRenderer is NowMaterialControlRenderer
+                ? NowRectangleStyle.Muted
+                : NowRectangleStyle.Surface;
+            theme.Rectangle(panel, style).SetRadius(10f).Draw();
+        }
+
+        static void DrawThemeSwitchSample(
+            NowThemeAsset theme,
+            NowRect rect,
+            string label,
+            bool value,
+            bool hovered,
+            bool held)
+        {
+            var renderer = theme.controlRenderer;
+            var interaction = hovered ? ThemeReviewInteraction(rect, held) : default;
+            var glyphRect = renderer.SwitchGlyphRect(theme, rect);
+            renderer.DrawSwitch(new NowSwitchRenderContext(
+                theme,
+                rect,
+                glyphRect,
+                value,
+                value ? 1f : 0f,
+                interaction,
+                focused: false,
+                hoverT: hovered ? 1f : 0f));
+            NowControls.DrawLeftLabel(theme, renderer.SwitchContentRect(theme, rect), label, NowTextStyle.Body);
+        }
+
+        static void DrawThemeSharedStates(NowThemeAsset theme, NowRect panel)
+        {
+            var renderer = theme.controlRenderer;
+            const float labelWidth = 44f;
+            float labelX = panel.x + 16f;
+            float sampleX = labelX + labelWidth;
+            float sampleWidth = panel.xMax - 16f - sampleX;
+
+            float y = panel.y + 42f;
+            DrawThemeStateLabel(theme, new NowRect(labelX, y, labelWidth, 30f), "Chip");
+            const float chipGap = 4f;
+            float chipWidth = (sampleWidth - chipGap * 2f) / 3f;
+            for (int i = 0; i < 3; ++i)
+            {
+                var chip = new NowRect(sampleX + i * (chipWidth + chipGap), y, chipWidth, 30f);
+                bool hovered = i == 1;
+                bool selected = i == 2;
+                renderer.DrawChip(new NowChipRenderContext(
+                    theme,
+                    chip,
+                    i == 0 ? "Idle" : hovered ? "Hover" : "Selected",
+                    selected,
+                    removable: false,
+                    removeRect: default,
+                    removeHovered: false,
+                    textStyle: NowTextStyle.Label,
+                    interaction: hovered ? ThemeReviewInteraction(chip, held: false) : default,
+                    focused: false,
+                    hoverT: hovered ? 1f : 0f));
+            }
+
+            y += 38f;
+            DrawThemeStateLabel(theme, new NowRect(labelX, y, labelWidth, 32f), "Tab");
+            renderer.DrawTabBarBackground(theme, new NowRect(sampleX, y, sampleWidth, 32f));
+            float tabWidth = (sampleWidth - chipGap * 2f) / 3f;
+            for (int i = 0; i < 3; ++i)
+            {
+                var tab = new NowRect(sampleX + i * (tabWidth + chipGap), y, tabWidth, 32f);
+                bool pressed = i == 1;
+                bool selected = i == 2;
+                renderer.DrawTab(new NowTabRenderContext(
+                    theme,
+                    tab,
+                    i == 0 ? "Hover" : pressed ? "Pressed" : "Selected",
+                    selected,
+                    selected ? 1f : 0f,
+                    selected ? default : ThemeReviewInteraction(tab, pressed),
+                    focused: false,
+                    hoverT: selected ? 0f : 1f));
+            }
+
+            y += 40f;
+            DrawThemeStateLabel(theme, new NowRect(labelX, y, labelWidth, 30f), "Tree");
+            float treeWidth = (sampleWidth - 6f) * 0.5f;
+            for (int i = 0; i < 2; ++i)
+            {
+                var row = new NowRect(sampleX + i * (treeWidth + 6f), y, treeWidth, 30f);
+                var disclosure = new NowRect(row.x + 4f, row.y + 5f, 18f, 20f);
+                bool selected = i == 1;
+                renderer.DrawTreeRow(new NowTreeRowRenderContext(
+                    theme,
+                    row,
+                    selected ? "Selected" : "Hover",
+                    depth: 0,
+                    hasChildren: true,
+                    expanded: selected,
+                    selected: selected,
+                    disclosureRect: disclosure,
+                    interaction: selected ? default : ThemeReviewInteraction(row, held: false),
+                    focused: false,
+                    hoverT: selected ? 0f : 1f));
+            }
+
+            y += 38f;
+            DrawThemeStateLabel(theme, new NowRect(labelX, y, labelWidth, 32f), "Spin");
+            var spinner = new NowRect(sampleX, y, 78f, 32f);
+            theme.Rectangle(spinner, NowRectangleStyle.Surface)
+                .SetRadius(4f)
+                .SetOutline(1f)
+                .SetOutlineColor(theme.GetColor(NowColorToken.Border))
+                .Draw();
+            Now.Text(spinner.Inset(8f, 6f, 28f, 4f))
+                .SetStyle(theme, NowTextStyle.Label)
+                .Draw("12");
+            var up = new NowRect(spinner.xMax - 24f, spinner.y, 24f, 16f);
+            var down = new NowRect(spinner.xMax - 24f, spinner.y + 16f, 24f, 16f);
+            renderer.DrawSpinnerButtons(new NowSpinnerRenderContext(
+                theme,
+                spinner,
+                up,
+                down,
+                upHovered: true,
+                upHeld: false,
+                downHovered: true,
+                downHeld: true,
+                focused: false));
+
+            DrawThemeStateLabel(theme, new NowRect(sampleX + 86f, y, 34f, 32f), "Day");
+            float dayX = sampleX + 120f;
+            const float dayGap = 2f;
+            float dayWidth = (sampleWidth - 120f - dayGap * 3f) / 4f;
+            for (int i = 0; i < 4; ++i)
+            {
+                var day = new NowRect(dayX + i * (dayWidth + dayGap), y, dayWidth, 32f);
+                bool selected = i >= 2;
+                bool pressed = i == 1 || i == 3;
+                var interaction = i == 2 ? default : ThemeReviewInteraction(day, pressed);
+                renderer.DrawCalendarDay(new NowCalendarDayRenderContext(
+                    theme,
+                    day,
+                    i == 0 ? "H" : i == 1 ? "P" : i == 2 ? "S" : "SP",
+                    inMonth: true,
+                    isToday: false,
+                    selected: selected,
+                    disabled: false,
+                    interaction: interaction,
+                    focused: false,
+                    hoverT: i == 2 ? 0f : 1f));
+            }
+        }
+
+        static void DrawThemeStateLabel(NowThemeAsset theme, NowRect rect, string label)
+        {
+            Now.Text(rect)
+                .SetFontSize(9f)
+                .SetBold()
+                .SetColor(theme.GetColor(NowColorToken.TextMuted, Color.gray))
+                .Draw(label);
+        }
+
+        static NowInteraction ThemeReviewInteraction(NowRect rect, bool held)
+        {
+            return new NowInteraction(
+                id: default,
+                rect: rect,
+                button: NowPointerButton.Primary,
+                hasPointer: true,
+                pointerPosition: rect.center,
+                pointerDelta: default,
+                dragDelta: default,
+                hovered: true,
+                pressed: false,
+                held: held,
+                released: false,
+                clicked: false,
+                active: held,
+                dragging: false,
+                dragStarted: false,
+                dragEnded: false,
+                cancelled: false,
+                dragCancelled: false);
+        }
+
+        static void DrawThemeSectionTitle(float x, float y, string title, string subtitle)
+        {
+            var theme = NowTheme.themeAsset;
+            Now.Text(new NowRect(x, y, 240f, 24f))
+                .SetFontSize(15f)
+                .SetBold()
+                .SetColor(theme.GetColor(NowColorToken.Text, Color.white))
+                .Draw(title);
+            Now.Text(new NowRect(x + 250f, y + 1f, 950f, 22f))
+                .SetFontSize(12f)
+                .SetColor(theme.GetColor(NowColorToken.TextMuted, Color.gray))
+                .Draw(subtitle);
+        }
+
+        static void DrawThemePanelLabel(NowThemeAsset theme, NowRect panel, string label)
+        {
+            Now.Text(new NowRect(panel.x + 18f, panel.y + 14f, panel.width - 36f, 22f))
+                .SetFontSize(12f)
+                .SetBold()
+                .SetColor(theme.GetColor(NowColorToken.TextMuted, Color.gray))
+                .Draw(label);
+        }
+
+        static Color ReadableSwatchText(Color background)
+        {
+            Color page = NowTheme.themeAsset.GetColor(NowColorToken.Background, Color.white);
+            Color composited = new Color(
+                background.r * background.a + page.r * (1f - background.a),
+                background.g * background.a + page.g * (1f - background.a),
+                background.b * background.a + page.b * (1f - background.a),
+                1f);
+            var dark = new Color(0.04f, 0.04f, 0.04f, 1f);
+            return ThemeReviewContrast(composited, dark) >= ThemeReviewContrast(composited, Color.white)
+                ? dark
+                : Color.white;
+        }
+
+        static float ThemeReviewContrast(Color a, Color b)
+        {
+            float lighter = Mathf.Max(ThemeReviewLuminance(a), ThemeReviewLuminance(b));
+            float darker = Mathf.Min(ThemeReviewLuminance(a), ThemeReviewLuminance(b));
+            return (lighter + 0.05f) / (darker + 0.05f);
+        }
+
+        static float ThemeReviewLuminance(Color color)
+        {
+            return ThemeReviewLinear(color.r) * 0.2126f +
+                ThemeReviewLinear(color.g) * 0.7152f +
+                ThemeReviewLinear(color.b) * 0.0722f;
+        }
+
+        static float ThemeReviewLinear(float value)
+        {
+            return value <= 0.04045f
+                ? value / 12.92f
+                : Mathf.Pow((value + 0.055f) / 1.055f, 2.4f);
         }
 
         static void DrawElevation(NowRect rect)
@@ -1157,7 +2286,7 @@ namespace NowUI.Editor
             DrawSurface(rect);
             HeaderBlock(rect, "Context Menu", "Clamped tall menu, scrolled, with edge scroll strips.");
 
-            int menuId = NowInput.GetId("harness-context-menu");
+            NowResolvedId menuId = NowControls.GetControlId("harness-context-menu");
 
             if (!NowContextMenu.isOpen)
                 NowContextMenu.Open(menuId, new Vector2(64f, 48f));
@@ -1168,7 +2297,7 @@ namespace NowUI.Editor
                 NowContextMenu.Separator();
 
                 for (int i = 0; i < 40; ++i)
-                    NowContextMenu.Item($"Overflow Option {i + 1}");
+                    NowContextMenu.Item($"Overflow Option {i + 1}", id: i + 1);
 
                 NowContextMenu.End();
                 NowControlState.Get<float>(menuId, "ctx-scroll") = 180f;
@@ -1180,7 +2309,7 @@ namespace NowUI.Editor
             DrawSurface(rect);
             HeaderBlock(rect, "Context Submenus", "Sibling submenu hover state with the active child drawn beside the root.");
 
-            int menuId = NowInput.GetId("harness-context-submenus");
+            NowResolvedId menuId = NowControls.GetControlId("harness-context-submenus");
             var anchor = new Vector2(64f, 118f);
 
             if (!NowContextMenu.isOpen)
@@ -1188,28 +2317,28 @@ namespace NowUI.Editor
 
             if (NowContextMenu.Begin(menuId))
             {
-                if (NowContextMenu.BeginSubmenu("Arrange"))
+                if (NowContextMenu.BeginSubmenu("Arrange", id: "arrange"))
                 {
-                    NowContextMenu.Item("Bring Forward");
-                    NowContextMenu.Item("Send Backward");
+                    NowContextMenu.Item("Bring Forward", id: "bring-forward");
+                    NowContextMenu.Item("Send Backward", id: "send-backward");
                     NowContextMenu.Separator();
-                    NowContextMenu.Item("Align Left");
-                    NowContextMenu.Item("Align Center");
+                    NowContextMenu.Item("Align Left", id: "align-left");
+                    NowContextMenu.Item("Align Center", id: "align-center");
                     NowContextMenu.EndSubmenu();
                 }
 
-                if (NowContextMenu.BeginSubmenu("Export"))
+                if (NowContextMenu.BeginSubmenu("Export", id: "export"))
                 {
-                    NowContextMenu.Item("PNG");
-                    NowContextMenu.Item("SVG");
-                    NowContextMenu.Item("Copy JSON");
+                    NowContextMenu.Item("PNG", id: "png");
+                    NowContextMenu.Item("SVG", id: "svg");
+                    NowContextMenu.Item("Copy JSON", id: "copy-json");
                     NowContextMenu.EndSubmenu();
                 }
 
                 NowContextMenu.Separator();
-                NowContextMenu.Item("Duplicate");
-                NowContextMenu.Item("Rename");
-                NowContextMenu.Item("Delete", enabled: false);
+                NowContextMenu.Item("Duplicate", id: "duplicate");
+                NowContextMenu.Item("Rename", id: "rename");
+                NowContextMenu.Item("Delete", id: "delete", enabled: false);
                 NowContextMenu.End();
             }
         }
@@ -1219,7 +2348,7 @@ namespace NowUI.Editor
             DrawSurface(rect);
             HeaderBlock(rect, "Edge Submenu", "Right-edge submenu clamping in a constrained surface.");
 
-            int menuId = NowInput.GetId("harness-context-edge-submenu");
+            NowResolvedId menuId = NowControls.GetControlId("harness-context-edge-submenu");
             var anchor = new Vector2(320f, 116f);
 
             if (!NowContextMenu.isOpen)
@@ -1227,21 +2356,21 @@ namespace NowUI.Editor
 
             if (NowContextMenu.Begin(menuId))
             {
-                if (NowContextMenu.BeginSubmenu("More Actions"))
+                if (NowContextMenu.BeginSubmenu("More Actions", id: "more-actions"))
                 {
-                    NowContextMenu.Item("Open Details");
-                    NowContextMenu.Item("Pin");
-                    NowContextMenu.Item("Duplicate");
+                    NowContextMenu.Item("Open Details", id: "open-details");
+                    NowContextMenu.Item("Pin", id: "pin");
+                    NowContextMenu.Item("Duplicate", id: "duplicate");
                     NowContextMenu.Separator();
-                    NowContextMenu.Item("Move Up");
-                    NowContextMenu.Item("Move Down");
-                    NowContextMenu.Item("Archive");
+                    NowContextMenu.Item("Move Up", id: "move-up");
+                    NowContextMenu.Item("Move Down", id: "move-down");
+                    NowContextMenu.Item("Archive", id: "archive");
                     NowContextMenu.EndSubmenu();
                 }
 
-                NowContextMenu.Item("Edit");
-                NowContextMenu.Item("Copy");
-                NowContextMenu.Item("Delete", enabled: false);
+                NowContextMenu.Item("Edit", id: "edit");
+                NowContextMenu.Item("Copy", id: "copy");
+                NowContextMenu.Item("Delete", id: "delete", enabled: false);
                 NowContextMenu.End();
             }
         }
@@ -1251,7 +2380,7 @@ namespace NowUI.Editor
             DrawSurface(rect);
             HeaderBlock(rect, "Ping Pong Submenus", "Submenus flip left, then back right, when space runs out.");
 
-            int menuId = NowInput.GetId("harness-context-ping-pong-submenus");
+            NowResolvedId menuId = NowControls.GetControlId("harness-context-ping-pong-submenus");
             var anchor = new Vector2(250f, 116f);
 
             if (!NowContextMenu.isOpen)
@@ -1259,25 +2388,25 @@ namespace NowUI.Editor
 
             if (NowContextMenu.Begin(menuId))
             {
-                if (NowContextMenu.BeginSubmenu("Level 1"))
+                if (NowContextMenu.BeginSubmenu("Level 1", id: "level-1"))
                 {
-                    NowContextMenu.Item("Level 1 Action");
+                    NowContextMenu.Item("Level 1 Action", id: "level-1-action");
 
-                    if (NowContextMenu.BeginSubmenu("Level 2"))
+                    if (NowContextMenu.BeginSubmenu("Level 2", id: "level-2"))
                     {
-                        NowContextMenu.Item("Deep Action");
-                        NowContextMenu.Item("Deep Settings");
+                        NowContextMenu.Item("Deep Action", id: "deep-action");
+                        NowContextMenu.Item("Deep Settings", id: "deep-settings");
                         NowContextMenu.EndSubmenu();
                     }
 
                     NowContextMenu.Separator();
-                    NowContextMenu.Item("Inspect Chain");
+                    NowContextMenu.Item("Inspect Chain", id: "inspect-chain");
                     NowContextMenu.EndSubmenu();
                 }
 
-                NowContextMenu.Item("Root Action");
-                NowContextMenu.Item("Rename Chain");
-                NowContextMenu.Item("Delete Chain", enabled: false);
+                NowContextMenu.Item("Root Action", id: "root-action");
+                NowContextMenu.Item("Rename Chain", id: "rename-chain");
+                NowContextMenu.Item("Delete Chain", id: "delete-chain", enabled: false);
                 NowContextMenu.End();
             }
         }
@@ -1287,7 +2416,7 @@ namespace NowUI.Editor
             DrawSurface(rect);
             HeaderBlock(rect, "World Ping Pong Submenus", "World-space camera fitting flips left, then back right.");
 
-            int menuId = NowInput.GetId("harness-world-context-ping-pong-submenus");
+            NowResolvedId menuId = NowControls.GetControlId("harness-world-context-ping-pong-submenus");
             var anchor = new Vector2(250f, 116f);
 
             if (!NowContextMenu.isOpen)
@@ -1295,25 +2424,25 @@ namespace NowUI.Editor
 
             if (NowContextMenu.Begin(menuId))
             {
-                if (NowContextMenu.BeginSubmenu("Level 1"))
+                if (NowContextMenu.BeginSubmenu("Level 1", id: "level-1"))
                 {
-                    NowContextMenu.Item("Level 1 Action");
+                    NowContextMenu.Item("Level 1 Action", id: "level-1-action");
 
-                    if (NowContextMenu.BeginSubmenu("Level 2"))
+                    if (NowContextMenu.BeginSubmenu("Level 2", id: "level-2"))
                     {
-                        NowContextMenu.Item("Deep Action");
-                        NowContextMenu.Item("Deep Settings");
+                        NowContextMenu.Item("Deep Action", id: "deep-action");
+                        NowContextMenu.Item("Deep Settings", id: "deep-settings");
                         NowContextMenu.EndSubmenu();
                     }
 
                     NowContextMenu.Separator();
-                    NowContextMenu.Item("Inspect Chain");
+                    NowContextMenu.Item("Inspect Chain", id: "inspect-chain");
                     NowContextMenu.EndSubmenu();
                 }
 
-                NowContextMenu.Item("Root Action");
-                NowContextMenu.Item("Rename Chain");
-                NowContextMenu.Item("Delete Chain", enabled: false);
+                NowContextMenu.Item("Root Action", id: "root-action");
+                NowContextMenu.Item("Rename Chain", id: "rename-chain");
+                NowContextMenu.Item("Delete Chain", id: "delete-chain", enabled: false);
                 NowContextMenu.End();
             }
         }
@@ -2297,6 +3426,67 @@ namespace NowUI.Editor
                 .Draw();
         }
 
+        /// <summary>
+        /// The README banner: NowUI's logo drawn by NowUI — SDF glow, gradient
+        /// tile, line-and-circle pulse mark, and MSDF wordmark.
+        /// </summary>
+        static void DrawLogo(NowRect rect)
+        {
+            var background = new Color(0.018f, 0.026f, 0.050f, 1f);
+            var grid = new Color(0.30f, 0.58f, 0.82f, 0.05f);
+            var indigo = new Color(0.369f, 0.416f, 0.824f, 1f);
+            var violet = new Color(0.545f, 0.361f, 0.965f, 1f);
+            var muted = new Color(0.65f, 0.76f, 0.89f, 1f);
+
+            Now.Rectangle(rect).SetColor(background).Draw();
+
+            for (float x = rect.x + 24f; x < rect.xMax; x += 48f)
+                Now.Rectangle(new NowRect(x, rect.y, 1f, rect.height)).SetColor(grid).Draw();
+
+            var tile = new NowRect(rect.width * 0.5f - 188f, rect.height * 0.5f - 60f, 120f, 120f);
+            var halo = new NowRect(tile.x - 70f, tile.y - 70f, tile.width + 140f, tile.height + 140f);
+
+            Now.Gradient(
+                    halo,
+                    new Color(indigo.r, indigo.g, indigo.b, 0.34f),
+                    new Color(indigo.r, indigo.g, indigo.b, 0f))
+                .SetRadial(halo.center, halo.width * 0.5f)
+                .Draw();
+
+            Now.Gradient(tile, indigo, violet).SetLinear(135f).SetRadius(30f).Draw();
+            Now.Rectangle(tile)
+                .SetColor(Color.clear)
+                .SetRadius(30f)
+                .SetOutline(1.5f, new Color(1f, 1f, 1f, 0.28f))
+                .Draw();
+
+            Span<Vector2> pulse = stackalloc Vector2[]
+            {
+                new Vector2(tile.x + 22f, tile.center.y),
+                new Vector2(tile.x + 44f, tile.center.y),
+                new Vector2(tile.x + 56f, tile.center.y - 24f),
+                new Vector2(tile.x + 72f, tile.center.y + 26f),
+                new Vector2(tile.x + 84f, tile.center.y),
+                new Vector2(tile.x + 98f, tile.center.y)
+            };
+
+            for (int i = 0; i < pulse.Length - 1; ++i)
+                Now.Line(pulse[i], pulse[i + 1]).SetWidth(7f).SetColor(Color.white).Draw();
+
+            for (int i = 0; i < pulse.Length; ++i)
+                Now.Circle(pulse[i], 3.5f).SetColor(Color.white).Draw();
+
+            Now.Text(new NowRect(tile.xMax + 36f, rect.height * 0.5f - 46f, 340f, 78f))
+                .SetFontSize(64f)
+                .SetBold()
+                .SetColor(Color.white)
+                .Draw("NowUI");
+            Now.Text(new NowRect(tile.xMax + 39f, rect.height * 0.5f + 28f, 380f, 26f))
+                .SetFontSize(16f)
+                .SetColor(muted)
+                .Draw("Immediate-mode UI for Unity");
+        }
+
         static void DrawShowcaseBackdrop(NowRect rect, string title, string subtitle)
         {
             var background = new Color(0.018f, 0.026f, 0.050f, 1f);
@@ -2470,6 +3660,7 @@ namespace NowUI.Editor
         static void ResetFrameState()
         {
             NowSdf.Reset();
+            NowTheme.Reset();
             NowInput.Reset();
             NowFocus.Reset();
             NowControlState.Reset();

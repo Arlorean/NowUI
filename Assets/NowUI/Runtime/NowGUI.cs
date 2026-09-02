@@ -532,7 +532,11 @@ namespace NowUI
         {
             drawScope.Dispose();
             entry.renderer.Render(target, true, clearColor);
-            GUI.DrawTexture(rect, target, ScaleMode.StretchToFill, true);
+            // An opaque surface has already composited coverage into its clear
+            // color. Alpha-blending that finished surface through IMGUI a
+            // second time attenuates glyph and vector AA edge pixels.
+            bool alphaBlend = clearColor.a < 1f;
+            GUI.DrawTexture(rect, target, ScaleMode.StretchToFill, alphaBlend);
             CleanupUnusedEntriesForActiveContext(entry.inputProvider.hostContext);
         }
 
@@ -547,9 +551,9 @@ namespace NowUI
         {
             public readonly NowRenderer renderer = new NowRenderer();
 
-            public readonly int scopeId = NowControls.AllocateHostScopeId();
+            public readonly NowResolvedId scopeId;
 
-            public readonly int focusHostId = NowControls.AllocateHostScopeId();
+            public readonly NowResolvedId focusHostId;
 
             public readonly NowIMGUIInputProvider inputProvider;
 
@@ -564,6 +568,8 @@ namespace NowUI
                 object hostContext,
                 CacheContextActivity contextActivity)
             {
+                scopeId = NowControls.AllocateOwnerScope();
+                focusHostId = scopeId.InDomain(NowIdDomain.FocusHost);
                 inputProvider = new NowIMGUIInputProvider(controlId, hostContext);
                 this.contextActivity = contextActivity;
             }

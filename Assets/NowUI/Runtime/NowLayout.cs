@@ -333,9 +333,9 @@ namespace NowUI
         /// <summary>The reserved rect — stretch width, last frame's height.</summary>
         public readonly NowRect rect;
 
-        readonly int _slot;
+        readonly NowResolvedId _slot;
 
-        internal NowContentRect(NowRect rect, int slot)
+        internal NowContentRect(NowRect rect, NowResolvedId slot)
         {
             this.rect = rect;
             _slot = slot;
@@ -462,138 +462,161 @@ namespace NowUI
 
         public float height => rect.height;
 
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
         public NowLabel SetText(string value)
         {
             _value = value;
             return this;
         }
 
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
         public NowLabel SetFont(NowFontAsset font)
         {
             _style = _style.SetFont(font);
             return this;
         }
 
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
         public NowLabel SetFontSize(float fontSize)
         {
             _style = _style.SetFontSize(fontSize);
             return this;
         }
 
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
         public NowLabel SetFontStyle(NowFontStyle fontStyle)
         {
             _style = _style.SetFontStyle(fontStyle);
             return this;
         }
 
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
         public NowLabel SetBold(bool value = true)
         {
             _style = _style.SetBold(value);
             return this;
         }
 
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
         public NowLabel SetItalic(bool value = true)
         {
             _style = _style.SetItalic(value);
             return this;
         }
 
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
         public NowLabel SetColor(Color color)
         {
             _style = _style.SetColor(color);
             return this;
         }
 
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
         public NowLabel SetColor(Vector4 color)
         {
             _style = _style.SetColor(color);
             return this;
         }
 
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
         public NowLabel SetGradient(Color from, Color to)
         {
             _style = _style.SetGradient(from, to);
             return this;
         }
 
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
         public NowLabel SetGradient(Vector4 from, Vector4 to)
         {
             _style = _style.SetGradient(from, to);
             return this;
         }
 
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
         public NowLabel SetGradient(UnityEngine.Gradient gradient, int revision = 0)
         {
             _style = _style.SetGradient(gradient, revision);
             return this;
         }
 
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
         public NowLabel SetGradientRamp(UnityEngine.Gradient gradient, int revision = 0)
         {
             _style = _style.SetGradientRamp(gradient, revision);
             return this;
         }
 
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
         public NowLabel SetGradientLinear(NowGradientDirection direction = NowGradientDirection.ToBottom)
         {
             _style = _style.SetGradientLinear(direction);
             return this;
         }
 
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
         public NowLabel SetGradientLinear(float angleDegrees)
         {
             _style = _style.SetGradientLinear(angleDegrees);
             return this;
         }
 
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
         public NowLabel SetGradientLinear(Vector2 direction)
         {
             _style = _style.SetGradientLinear(direction);
             return this;
         }
 
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
         public NowLabel SetGradientRadial(NowGradientShape shape = NowGradientShape.Ellipse)
         {
             _style = _style.SetGradientRadial(shape);
             return this;
         }
 
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
         public NowLabel SetGradientRadial(Vector2 center, Vector2 radius)
         {
             _style = _style.SetGradientRadial(center, radius);
             return this;
         }
 
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
         public NowLabel SetGradientRadial(Vector2 center, float radius)
         {
             _style = _style.SetGradientRadial(center, radius);
             return this;
         }
 
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
         public NowLabel SetGradientConic()
         {
             _style = _style.SetGradientConic();
             return this;
         }
 
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
         public NowLabel SetGradientConic(Vector2 center, float startAngle = 0f)
         {
             _style = _style.SetGradientConic(center, startAngle);
             return this;
         }
 
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
         public NowLabel SetGradientSpread(NowGradientSpread spread)
         {
             _style = _style.SetGradientSpread(spread);
             return this;
         }
 
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
         public NowLabel SetGradientRepetitions(float repetitions)
         {
             _style = _style.SetGradientRepetitions(repetitions);
             return this;
         }
 
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
         public NowLabel SetGradientBounds(NowRect bounds)
         {
             _style = _style.SetGradientBounds(bounds);
@@ -606,18 +629,21 @@ namespace NowUI
             return this;
         }
 
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
         public NowLabel SetAnimation(NowTextAnimation animation)
         {
             _style = _style.SetAnimation(animation);
             return this;
         }
 
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
         public NowLabel SetTime(float seconds)
         {
             _style = _style.SetTime(seconds);
             return this;
         }
 
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
         public NowLabel SetNormalizedTime(float progress)
         {
             _style = _style.SetNormalizedTime(progress);
@@ -634,12 +660,22 @@ namespace NowUI
         /// Outline thickness relative to the font size (em units): 0.05 ≈ a
         /// 5%-of-em stroke at any size. Negative values inset the outline.
         /// </summary>
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
         public NowLabel SetOutline(float outline)
         {
             _style = _style.SetOutline(outline);
             return this;
         }
 
+        /// <summary>Sets the outline in local UI pixels using the current font size.</summary>
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+        public NowLabel SetOutlinePixels(float pixels)
+        {
+            _style = _style.SetOutlinePixels(pixels);
+            return this;
+        }
+
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
         public NowLabel SetOutlineColor(Vector4 color)
         {
             _style = _style.SetOutlineColor(color);
@@ -647,66 +683,77 @@ namespace NowUI
         }
 
         /// <summary>Replaces all layout options at once.</summary>
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
         public NowLabel SetOptions(NowLayoutOptions options)
         {
             _options = options;
             return this;
         }
 
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
         public NowLabel SetWidth(float width)
         {
             _options = _options.SetWidth(width);
             return this;
         }
 
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
         public NowLabel SetHeight(float height)
         {
             _options = _options.SetHeight(height);
             return this;
         }
 
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
         public NowLabel SetLayoutSize(float width, float height)
         {
             _options = _options.SetSize(width, height);
             return this;
         }
 
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
         public NowLabel SetMinWidth(float minWidth)
         {
             _options = _options.SetMinWidth(minWidth);
             return this;
         }
 
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
         public NowLabel SetMaxWidth(float maxWidth)
         {
             _options = _options.SetMaxWidth(maxWidth);
             return this;
         }
 
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
         public NowLabel SetMinHeight(float minHeight)
         {
             _options = _options.SetMinHeight(minHeight);
             return this;
         }
 
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
         public NowLabel SetMaxHeight(float maxHeight)
         {
             _options = _options.SetMaxHeight(maxHeight);
             return this;
         }
 
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
         public NowLabel SetStretchWidth(float weight = 1f)
         {
             _options = _options.SetStretchWidth(weight);
             return this;
         }
 
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
         public NowLabel SetStretchHeight(float weight = 1f)
         {
             _options = _options.SetStretchHeight(weight);
             return this;
         }
 
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
         public NowLabel SetAlign(NowLayoutAlign align)
         {
             _options = _options.SetAlign(align);
@@ -1023,7 +1070,7 @@ namespace NowUI
 
         struct Group
         {
-            public int id;
+            public NowResolvedId id;
 
             public bool horizontal;
 
@@ -1133,13 +1180,15 @@ namespace NowUI
 
         static Group[] _groups = new Group[16];
 
-        static Dictionary<int, int>[] _groupSiteOccurrences = new Dictionary<int, int>[16];
+        static Dictionary<NowResolvedId, int>[] _groupSiteOccurrences =
+            new Dictionary<NowResolvedId, int>[16];
 
         static int _depth;
 
-        static readonly Dictionary<int, CachedGroup> _cache = new Dictionary<int, CachedGroup>(64);
+        static readonly Dictionary<NowResolvedId, CachedGroup> _cache =
+            new Dictionary<NowResolvedId, CachedGroup>(64);
 
-        static readonly List<int> _removeIds = new List<int>(8);
+        static readonly List<NowResolvedId> _removeIds = new List<NowResolvedId>(8);
 
         static int _frame = int.MinValue;
 
@@ -1227,7 +1276,7 @@ namespace NowUI
             [CallerFilePath] string file = "",
             [CallerLineNumber] int line = 0)
         {
-            return BeginContainerArea(false, rect, default, GroupOptions(spacing, padding, alignItems, 0f, 0f, false, false), NowControls.SiteId(file, line));
+            return BeginContainerArea(false, rect, (NowId)default, GroupOptions(spacing, padding, alignItems, 0f, 0f, false, false), NowControls.SiteToken(file, line));
         }
 
         public static NowLayoutScope Area(
@@ -1238,7 +1287,7 @@ namespace NowUI
             [CallerFilePath] string file = "",
             [CallerLineNumber] int line = 0)
         {
-            return BeginContainerArea(false, rect, default, GroupOptions(spacing, padding, alignItems, 0f, 0f, false, false), NowControls.SiteId(file, line));
+            return BeginContainerArea(false, rect, (NowId)default, GroupOptions(spacing, padding, alignItems, 0f, 0f, false, false), NowControls.SiteToken(file, line));
         }
 
         public static NowLayoutScope Area(
@@ -1247,7 +1296,7 @@ namespace NowUI
             [CallerFilePath] string file = "",
             [CallerLineNumber] int line = 0)
         {
-            return BeginContainerArea(false, rect, default, options, NowControls.SiteId(file, line));
+            return BeginContainerArea(false, rect, (NowId)default, options, NowControls.SiteToken(file, line));
         }
 
         public static NowLayoutScope Area(
@@ -1259,7 +1308,7 @@ namespace NowUI
             [CallerFilePath] string file = "",
             [CallerLineNumber] int line = 0)
         {
-            return BeginContainerArea(false, rect, id, GroupOptions(spacing, padding, alignItems, 0f, 0f, false, false), NowControls.SiteId(file, line));
+            return BeginContainerArea(false, rect, id, GroupOptions(spacing, padding, alignItems, 0f, 0f, false, false), NowControls.SiteToken(file, line));
         }
 
         public static NowLayoutScope Area(
@@ -1271,7 +1320,7 @@ namespace NowUI
             [CallerFilePath] string file = "",
             [CallerLineNumber] int line = 0)
         {
-            return BeginContainerArea(false, rect, id, GroupOptions(spacing, padding, alignItems, 0f, 0f, false, false), NowControls.SiteId(file, line));
+            return BeginContainerArea(false, rect, id, GroupOptions(spacing, padding, alignItems, 0f, 0f, false, false), NowControls.SiteToken(file, line));
         }
 
         public static NowLayoutScope Area(
@@ -1281,13 +1330,54 @@ namespace NowUI
             [CallerFilePath] string file = "",
             [CallerLineNumber] int line = 0)
         {
-            return BeginContainerArea(false, rect, id, options, NowControls.SiteId(file, line));
+            return BeginContainerArea(false, rect, id, options, NowControls.SiteToken(file, line));
+        }
+
+        /// <summary>Opens an area using an identity that was already fully resolved.</summary>
+        public static NowLayoutScope Area(
+            NowResolvedId id,
+            NowRect rect,
+            float spacing = 0f,
+            float padding = 0f,
+            NowLayoutAlign alignItems = NowLayoutAlign.Start)
+        {
+            return BeginContainerArea(
+                false,
+                rect,
+                id,
+                GroupOptions(spacing, padding, alignItems, 0f, 0f, false, false),
+                0);
+        }
+
+        /// <summary>Opens an area using an identity that was already fully resolved.</summary>
+        public static NowLayoutScope Area(
+            NowResolvedId id,
+            NowRect rect,
+            Vector4 padding,
+            float spacing = 0f,
+            NowLayoutAlign alignItems = NowLayoutAlign.Start)
+        {
+            return BeginContainerArea(
+                false,
+                rect,
+                id,
+                GroupOptions(spacing, padding, alignItems, 0f, 0f, false, false),
+                0);
+        }
+
+        /// <summary>Opens an area using an identity that was already fully resolved.</summary>
+        public static NowLayoutScope Area(
+            NowResolvedId id,
+            NowRect rect,
+            in NowLayoutOptions options)
+        {
+            return BeginContainerArea(false, rect, id, options, 0);
         }
 
         /// <summary>
         /// Area keyed by an ordinary integer identity local to the active retained
         /// host and <see cref="NowControls.IdScope(int)"/>. Wrap an already-composed
-        /// key in <see cref="NowId.Resolved(int)"/> instead.
+        /// key through the <see cref="NowResolvedId"/> overload instead.
         /// </summary>
         public static NowLayoutScope Area(
             int id,
@@ -1302,7 +1392,7 @@ namespace NowUI
         /// <summary>
         /// Area keyed by an ordinary integer identity local to the active retained
         /// host and <see cref="NowControls.IdScope(int)"/>. Wrap an already-composed
-        /// key in <see cref="NowId.Resolved(int)"/> instead.
+        /// key through the <see cref="NowResolvedId"/> overload instead.
         /// </summary>
         public static NowLayoutScope Area(
             int id,
@@ -1317,27 +1407,33 @@ namespace NowUI
         /// <summary>
         /// Area keyed by an ordinary integer identity local to the active retained
         /// host and <see cref="NowControls.IdScope(int)"/>. Wrap an already-composed
-        /// key in <see cref="NowId.Resolved(int)"/> instead.
+        /// key through the <see cref="NowResolvedId"/> overload instead.
         /// </summary>
         public static NowLayoutScope Area(int id, NowRect rect, in NowLayoutOptions options)
         {
             return Area((NowId)id, rect, options);
         }
 
-        internal static NowLayoutScope BeginArea(int id, NowRect rect, in NowLayoutOptions options, bool horizontal)
+        internal static NowLayoutScope BeginArea(
+            NowResolvedId id,
+            NowRect rect,
+            in NowLayoutOptions options,
+            bool horizontal)
         {
+            if (!id.hasValue)
+                throw new ArgumentException("A resolved layout area id is required.", nameof(id));
+
             ValidateRootAreaOptions(options);
             OnFrameBoundary();
 
-            int areaId = id;
             _areaCounter++;
 
-            bool hasCache = _cache.TryGetValue(areaId, out var cached) &&
+            bool hasCache = _cache.TryGetValue(id, out var cached) &&
                 cached.horizontal == horizontal;
 
             int token = Push(new Group
             {
-                id = areaId,
+                id = id,
                 horizontal = horizontal,
                 isArea = true,
                 rect = rect,
@@ -1465,7 +1561,7 @@ namespace NowUI
             if (ui == null)
                 throw new ArgumentNullException(nameof(ui));
 
-            int site = NowControls.SiteId(file, line);
+            int site = NowControls.SiteToken(file, line);
 
             if (_measurePass || _measureCycleDepth > 0)
             {
@@ -1585,7 +1681,7 @@ namespace NowUI
             if (ui == null)
                 throw new ArgumentNullException(nameof(ui));
 
-            int site = NowControls.SiteId(file, line);
+            int site = NowControls.SiteToken(file, line);
 
             if (_measurePass || _measureCycleDepth > 0)
             {
@@ -1749,7 +1845,7 @@ namespace NowUI
             [CallerFilePath] string file = "",
             [CallerLineNumber] int line = 0)
         {
-            return BeginGroup(true, default, GroupOptions(spacing, padding, alignItems, width, height, stretchWidth, stretchHeight), NowControls.SiteId(file, line));
+            return BeginGroup(true, (NowId)default, GroupOptions(spacing, padding, alignItems, width, height, stretchWidth, stretchHeight), NowControls.SiteToken(file, line));
         }
 
         public static NowLayoutScope HorizontalScope(
@@ -1763,7 +1859,7 @@ namespace NowUI
             [CallerFilePath] string file = "",
             [CallerLineNumber] int line = 0)
         {
-            return BeginGroup(true, default, GroupOptions(spacing, padding, alignItems, width, height, stretchWidth, stretchHeight), NowControls.SiteId(file, line));
+            return BeginGroup(true, (NowId)default, GroupOptions(spacing, padding, alignItems, width, height, stretchWidth, stretchHeight), NowControls.SiteToken(file, line));
         }
 
         public static NowLayoutScope HorizontalScope(
@@ -1771,7 +1867,7 @@ namespace NowUI
             [CallerFilePath] string file = "",
             [CallerLineNumber] int line = 0)
         {
-            return BeginGroup(true, default, options, NowControls.SiteId(file, line));
+            return BeginGroup(true, (NowId)default, options, NowControls.SiteToken(file, line));
         }
 
         public static NowLayoutScope HorizontalScope(
@@ -1786,7 +1882,7 @@ namespace NowUI
             [CallerFilePath] string file = "",
             [CallerLineNumber] int line = 0)
         {
-            return BeginGroup(true, id, GroupOptions(spacing, padding, alignItems, width, height, stretchWidth, stretchHeight), NowControls.SiteId(file, line));
+            return BeginGroup(true, id, GroupOptions(spacing, padding, alignItems, width, height, stretchWidth, stretchHeight), NowControls.SiteToken(file, line));
         }
 
         public static NowLayoutScope HorizontalScope(
@@ -1801,7 +1897,7 @@ namespace NowUI
             [CallerFilePath] string file = "",
             [CallerLineNumber] int line = 0)
         {
-            return BeginGroup(true, id, GroupOptions(spacing, padding, alignItems, width, height, stretchWidth, stretchHeight), NowControls.SiteId(file, line));
+            return BeginGroup(true, id, GroupOptions(spacing, padding, alignItems, width, height, stretchWidth, stretchHeight), NowControls.SiteToken(file, line));
         }
 
         public static NowLayoutScope HorizontalScope(
@@ -1810,7 +1906,7 @@ namespace NowUI
             [CallerFilePath] string file = "",
             [CallerLineNumber] int line = 0)
         {
-            return BeginGroup(true, id, options, NowControls.SiteId(file, line));
+            return BeginGroup(true, id, options, NowControls.SiteToken(file, line));
         }
 
         static NowLayoutOptions GroupOptions(
@@ -1878,7 +1974,7 @@ namespace NowUI
             [CallerFilePath] string file = "",
             [CallerLineNumber] int line = 0)
         {
-            return BeginGroup(false, default, GroupOptions(spacing, padding, alignItems, width, height, stretchWidth, stretchHeight), NowControls.SiteId(file, line));
+            return BeginGroup(false, (NowId)default, GroupOptions(spacing, padding, alignItems, width, height, stretchWidth, stretchHeight), NowControls.SiteToken(file, line));
         }
 
         public static NowLayoutScope VerticalScope(
@@ -1892,7 +1988,7 @@ namespace NowUI
             [CallerFilePath] string file = "",
             [CallerLineNumber] int line = 0)
         {
-            return BeginGroup(false, default, GroupOptions(spacing, padding, alignItems, width, height, stretchWidth, stretchHeight), NowControls.SiteId(file, line));
+            return BeginGroup(false, (NowId)default, GroupOptions(spacing, padding, alignItems, width, height, stretchWidth, stretchHeight), NowControls.SiteToken(file, line));
         }
 
         public static NowLayoutScope VerticalScope(
@@ -1900,7 +1996,7 @@ namespace NowUI
             [CallerFilePath] string file = "",
             [CallerLineNumber] int line = 0)
         {
-            return BeginGroup(false, default, options, NowControls.SiteId(file, line));
+            return BeginGroup(false, (NowId)default, options, NowControls.SiteToken(file, line));
         }
 
         public static NowLayoutScope VerticalScope(
@@ -1915,7 +2011,7 @@ namespace NowUI
             [CallerFilePath] string file = "",
             [CallerLineNumber] int line = 0)
         {
-            return BeginGroup(false, id, GroupOptions(spacing, padding, alignItems, width, height, stretchWidth, stretchHeight), NowControls.SiteId(file, line));
+            return BeginGroup(false, id, GroupOptions(spacing, padding, alignItems, width, height, stretchWidth, stretchHeight), NowControls.SiteToken(file, line));
         }
 
         public static NowLayoutScope VerticalScope(
@@ -1930,7 +2026,7 @@ namespace NowUI
             [CallerFilePath] string file = "",
             [CallerLineNumber] int line = 0)
         {
-            return BeginGroup(false, id, GroupOptions(spacing, padding, alignItems, width, height, stretchWidth, stretchHeight), NowControls.SiteId(file, line));
+            return BeginGroup(false, id, GroupOptions(spacing, padding, alignItems, width, height, stretchWidth, stretchHeight), NowControls.SiteToken(file, line));
         }
 
         public static NowLayoutScope VerticalScope(
@@ -1939,7 +2035,7 @@ namespace NowUI
             [CallerFilePath] string file = "",
             [CallerLineNumber] int line = 0)
         {
-            return BeginGroup(false, id, options, NowControls.SiteId(file, line));
+            return BeginGroup(false, id, options, NowControls.SiteToken(file, line));
         }
 
         internal static void EndVertical()
@@ -2312,7 +2408,7 @@ namespace NowUI
         {
             style = style
                 .SetPosition(rect)
-                .SetMask(LabelMask(style, value, rect));
+                .SetAutomaticMask(LabelMask(style, value, rect));
 
             if (style.font != null && !string.IsNullOrEmpty(value))
                 style.Draw(value);
@@ -2362,13 +2458,45 @@ namespace NowUI
             in NowLayoutOptions options,
             int site)
         {
+            return BeginGroup(horizontal, new NowControlIdentity(id), options, site);
+        }
+
+        internal static NowLayoutScope BeginGroup(
+            bool horizontal,
+            NowResolvedId id,
+            in NowLayoutOptions options,
+            int site)
+        {
+            return BeginGroup(horizontal, new NowControlIdentity(id), options, site);
+        }
+
+        internal static NowLayoutScope BeginGroup(
+            bool horizontal,
+            NowControlIdentity identity,
+            in NowLayoutOptions options,
+            int site)
+        {
             ref var parent = ref RequireGroup("Nested layout containers require a root. Begin with NowLayout.Column(rect), Vertical(rect), Row(rect), or Horizontal(rect), or open the lower-level NowLayout.Area(rect).");
 
-            int groupId = id.hasValue
-                ? HashCombine(parent.id, id.ResolveStableId(1))
-                : HashCombine(
-                    parent.id,
-                    site != 0 ? ResolveGroupSiteOccurrence(_depth - 1, site) : parent.childIndex);
+            NowResolvedId groupId;
+
+            if (identity.isResolved)
+            {
+                groupId = identity.resolved;
+            }
+            else if (identity.authored.hasValue)
+            {
+                groupId = parent.id.Derive(NowIdDomain.Layout, identity.authored);
+            }
+            else if (site != 0)
+            {
+                groupId = ResolveGroupSiteOccurrence(_depth - 1, parent.id, site);
+            }
+            else
+            {
+                groupId = NowIdHash.DeriveOccurrence(parent.id, parent.childIndex + 1);
+            }
+
             parent.childIndex++;
 
             Vector2 autoSize = default;
@@ -2516,7 +2644,9 @@ namespace NowUI
             [System.Runtime.CompilerServices.CallerFilePath] string file = "",
             [System.Runtime.CompilerServices.CallerLineNumber] int line = 0)
         {
-            int slot = NowControls.GetControlId(NowControls.SiteId(file, line));
+            NowResolvedId slot = NowControls.ResolveCallSite(
+                NowControls.SiteToken(file, line),
+                NowIdDomain.Layout);
             float lastHeight = NowControlState.Get<float>(slot);
 
             if (!options.Has(NowLayoutOptions.Field.Width) && !options.Has(NowLayoutOptions.Field.StretchWidth))
@@ -2537,7 +2667,11 @@ namespace NowUI
         public static bool TryGetCachedAreaContentSize(string id, out Vector2 size)
         {
             if (id != null)
-                return TryGetCachedAreaContentSizeResolved(NowControls.GetControlId(id), out size);
+            {
+                return TryGetCachedAreaContentSizeResolved(
+                    NowControls.ResolveScopedId(NowIdDomain.Layout, new NowId(id)),
+                    out size);
+            }
 
             size = default;
             return false;
@@ -2550,7 +2684,11 @@ namespace NowUI
         public static bool TryGetCachedAreaContentSize(NowId id, out Vector2 size)
         {
             if (id.hasValue)
-                return TryGetCachedAreaContentSizeResolved(id.ResolveStableId(1), out size);
+            {
+                return TryGetCachedAreaContentSizeResolved(
+                    NowControls.ResolveScopedId(NowIdDomain.Layout, id),
+                    out size);
+            }
 
             size = default;
             return false;
@@ -2559,14 +2697,24 @@ namespace NowUI
         /// <summary>
         /// Last measured content size of an explicit-id root area. The integer
         /// is local to the active retained host and id scope; wrap an
-        /// already-composed key in <see cref="NowId.Resolved(int)"/>.
+        /// already-composed key through the <see cref="NowResolvedId"/> overload.
         /// </summary>
         public static bool TryGetCachedAreaContentSize(int id, out Vector2 size)
         {
             return TryGetCachedAreaContentSize((NowId)id, out size);
         }
 
-        static bool TryGetCachedAreaContentSizeResolved(int id, out Vector2 size)
+        /// <summary>Last measured content size for an already-resolved area id.</summary>
+        public static bool TryGetCachedAreaContentSize(NowResolvedId id, out Vector2 size)
+        {
+            if (id.hasValue)
+                return TryGetCachedAreaContentSizeResolved(id, out size);
+
+            size = default;
+            return false;
+        }
+
+        static bool TryGetCachedAreaContentSizeResolved(NowResolvedId id, out Vector2 size)
         {
             if (_cache.TryGetValue(id, out var cached))
             {
@@ -2821,8 +2969,7 @@ namespace NowUI
                     mask = mask.Union(new NowRect(rect.x + bounds.x, rect.y + bounds.y, bounds.z, bounds.w));
             }
 
-            float motionOutset = style.animation.isAnimated ? style.animation.boundedOutset : 0f;
-            return mask.Outset(4f + motionOutset);
+            return mask;
         }
 
         static float FlexShare(ref Group group, float weight, float min, float max)
@@ -3030,24 +3177,32 @@ namespace NowUI
             return _layoutScopes.Enter();
         }
 
-        static int ResolveGroupSiteOccurrence(int parentDepth, int site)
+        static NowResolvedId ResolveGroupSiteOccurrence(
+            int parentDepth,
+            NowResolvedId parentId,
+            int site)
         {
             var occurrences = _groupSiteOccurrences[parentDepth];
 
             if (occurrences == null)
             {
-                occurrences = new Dictionary<int, int>(4);
+                occurrences = new Dictionary<NowResolvedId, int>(4);
                 _groupSiteOccurrences[parentDepth] = occurrences;
             }
 
-            if (!occurrences.TryGetValue(site, out int occurrence))
+            NowResolvedId baseId = NowControls.ResolveCallSiteStable(
+                parentId,
+                site,
+                NowIdDomain.Layout);
+
+            if (!occurrences.TryGetValue(baseId, out int occurrence))
             {
-                occurrences.Add(site, 1);
-                return site;
+                occurrences.Add(baseId, 1);
+                return baseId;
             }
 
-            occurrences[site] = occurrence + 1;
-            return HashCombine(site, occurrence);
+            occurrences[baseId] = occurrence + 1;
+            return NowIdHash.DeriveOccurrence(baseId, occurrence);
         }
 
         internal static void EndScope(NowLayoutScope.Kind kind, int token)
@@ -3109,13 +3264,6 @@ namespace NowUI
                 _cache.Remove(_removeIds[i]);
         }
 
-        static int HashCombine(int a, int b)
-        {
-            unchecked
-            {
-                return (a * 397) ^ b;
-            }
-        }
     }
 
     /// <summary>

@@ -9,7 +9,11 @@ namespace NowUI.CodeEditor
     {
         public bool changed;
 
-        /// <summary>True when the language's validator reported no diagnostics.</summary>
+        /// <summary>
+        /// True when the language's validator reported no error diagnostics.
+        /// Warnings and infos leave it true — they advise, they do not block
+        /// a "save only when valid" gate.
+        /// </summary>
         public bool isValid;
 
         public int diagnosticCount;
@@ -55,6 +59,11 @@ namespace NowUI.CodeEditor
 
         const int MaxVisibleCompletions = 8;
 
+        const int MaxVisibleCodeActions = 8;
+
+        /// <summary>Namespace for language-supplied menu rows so an action id can never collide with an editor row.</summary>
+        const string CodeActionIdPrefix = "code-action:";
+
         const float CompletionPadding = 4f;
 
         const int DefaultCacheCapacity = 128;
@@ -62,8 +71,8 @@ namespace NowUI.CodeEditor
         /// <summary>Payload of the last no-selection line copy/cut, so paste can re-insert it as a whole line.</summary>
         static string s_lineClipboard;
 
-        NowId _id;
-        readonly int _site;
+        NowControlIdentity _id;
+        readonly NowCallSiteId _site;
         NowCodeLanguage _language;
         readonly NowRect _rect;
         readonly bool _hasRect;
@@ -75,7 +84,7 @@ namespace NowUI.CodeEditor
         bool _hideStatusBar;
         NowFontAsset _font;
 
-        internal NowCodeEditor(NowCodeLanguage language, NowId id, int site)
+        internal NowCodeEditor(NowCodeLanguage language, NowId id, NowCallSiteId site)
         {
             _language = language;
             _id = id;
@@ -91,7 +100,7 @@ namespace NowUI.CodeEditor
             _font = null;
         }
 
-        internal NowCodeEditor(NowRect rect, NowCodeLanguage language, NowId id, int site) : this(language, id, site)
+        internal NowCodeEditor(NowRect rect, NowCodeLanguage language, NowId id, NowCallSiteId site) : this(language, id, site)
         {
             _rect = rect;
             _hasRect = true;
@@ -112,6 +121,8 @@ namespace NowUI.CodeEditor
 
         public NowCodeEditor SetId(NowId id) { _id = id; return this; }
 
+        public NowCodeEditor SetId(NowResolvedId id) { _id = id; return this; }
+
         public NowCodeEditor SetNavigation(NowFocusNavigation navigation) { _navigation = navigation; return this; }
 
         sealed class EditorCache
@@ -126,6 +137,8 @@ namespace NowUI.CodeEditor
             public readonly List<int> lineTokenStarts = new List<int>(64);
             public readonly List<int> lineTokenCounts = new List<int>(64);
             public readonly List<NowCodeDiagnostic> diagnostics = new List<NowCodeDiagnostic>(4);
+            /// <summary>Index of the diagnostic the status bar shows and jumps to — the worst one; -1 when the list is empty.</summary>
+            public int statusDiagnostic = -1;
             public float contentWidth;
             public NowFontAsset measureFont;
             public float measureFontSize;
@@ -136,6 +149,8 @@ namespace NowUI.CodeEditor
             public int positionLine = -1;
             public int positionColumn = -1;
             public string tooltipMessage;
+            /// <summary>Severity of the diagnostic the tooltip shows, or -1 for symbol quick-info.</summary>
+            public int tooltipSeverity = -1;
             public NowRect tooltipRect;
             public int tooltipAnchorStart = -1;
             public int tooltipAnchorLength;
@@ -163,27 +178,40 @@ namespace NowUI.CodeEditor
             public int completionWindow;
             public NowRect completionPopupRect;
             public float completionRowHeight;
+            /// <summary>The language's quick actions, rebuilt only when the menu or the Alt+Enter popup opens.</summary>
+            public readonly List<NowCodeAction> actions = new List<NowCodeAction>(8);
+            /// <summary>Namespaced menu-row ids, built with the actions so declaring the menu allocates nothing.</summary>
+            public readonly List<string> actionMenuIds = new List<string>(8);
+            /// <summary>The text the action spans index into; any other instance retires them.</summary>
+            public string actionText;
+            public int actionCaret;
+            public bool quickActionsOpen;
+            public int quickActionSelected;
+            public int quickActionWindow;
+            public NowRect quickActionPopupRect;
+            public float quickActionRowHeight;
             public string occurrenceWord;
             public string occurrenceText;
             public int occurrenceStart = -1;
             public int occurrenceLength;
             /// <summary>String-seeded sub-control ids hashed once at cache creation instead of every frame.</summary>
-            public int idEditor;
-            public int idSelectionGesture;
-            public int idVScroll;
-            public int idHScroll;
-            public int idContextMenu;
-            public int idContextPress;
-            public int idEnter;
-            public int idTab;
-            public int idBackspace;
-            public int idBackspaceEdit;
-            public int idDelete;
-            public int idLeft;
-            public int idRight;
-            public int idUp;
-            public int idDown;
-            public int idRenameField;
+            public NowResolvedId idEditor;
+            public NowResolvedId idSelectionGesture;
+            public NowResolvedId idVScroll;
+            public NowResolvedId idHScroll;
+            public NowResolvedId idContextMenu;
+            public NowResolvedId idContextPress;
+            public NowResolvedId idEnter;
+            public NowResolvedId idTab;
+            public NowResolvedId idBackspace;
+            public NowResolvedId idBackspaceEdit;
+            public NowResolvedId idDelete;
+            public NowResolvedId idLeft;
+            public NowResolvedId idRight;
+            public NowResolvedId idUp;
+            public NowResolvedId idDown;
+            public NowResolvedId idRenameField;
+            public int callbackState;
             public long lastUse;
         }
 
@@ -197,18 +225,31 @@ namespace NowUI.CodeEditor
             public byte hadFocus;
         }
 
-        static readonly Dictionary<int, EditorCache> _caches = new Dictionary<int, EditorCache>(8);
+        static readonly Dictionary<NowResolvedId, EditorCache> _caches =
+            new Dictionary<NowResolvedId, EditorCache>(8);
+
+        static readonly Dictionary<int, EditorCache> _callbackCaches =
+            new Dictionary<int, EditorCache>(8);
 
         static int s_cacheCapacity = DefaultCacheCapacity;
 
         static long s_cacheUse;
+
+        static int s_nextCallbackState;
 
         /// <summary>Method-group conversions cached once: C# 9 allocates a fresh delegate per conversion in per-frame overlay submissions.</summary>
         static readonly NowOverlay.DrawCallback s_drawDiagnosticTooltipOverlay = DrawDiagnosticTooltipOverlay;
 
         static readonly NowOverlay.DrawCallback s_drawCompletionOverlay = DrawCompletionOverlay;
 
+        static readonly NowOverlay.DrawCallback s_drawQuickActionOverlay = DrawQuickActionOverlay;
+
         static readonly List<NowCodeToken> _tokenScratch = new List<NowCodeToken>(32);
+
+        /// <summary>Edit indices of the action being applied, ordered by descending start.</summary>
+        static readonly List<int> _codeEditOrderScratch = new List<int>(4);
+
+        static readonly HashSet<string> _codeActionIdScratch = new HashSet<string>(StringComparer.Ordinal);
 
         static readonly List<string> _numberStrings = new List<string>(128);
 
@@ -255,14 +296,30 @@ namespace NowUI.CodeEditor
             if (!id.hasValue)
                 throw new ArgumentException("A cache can only be released by an explicit editor id.", nameof(id));
 
-            return _caches.Remove(id.ResolveStableId(1));
+            return ReleaseCache(NowControls.GetControlId(id));
+        }
+
+        /// <summary>Releases a cache using the resolved identity captured while drawing its host.</summary>
+        public static bool ReleaseCache(NowResolvedId id)
+        {
+            if (!id.hasValue)
+                throw new ArgumentException("A resolved editor id is required.", nameof(id));
+
+            if (!_caches.TryGetValue(id, out var cache))
+                return false;
+
+            _caches.Remove(id);
+            _callbackCaches.Remove(cache.callbackState);
+            return true;
         }
 
         /// <summary>Clears all retained editor caches, including undo history and line tables.</summary>
         public static void ResetCaches()
         {
             _caches.Clear();
+            _callbackCaches.Clear();
             s_cacheUse = 0;
+            s_nextCallbackState = 0;
         }
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
@@ -273,7 +330,8 @@ namespace NowUI.CodeEditor
         }
 
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
-        static readonly HashSet<int> s_warnedNullLanguageSites = new HashSet<int>();
+        static readonly HashSet<NowCallSiteId> s_warnedNullLanguageSites =
+            new HashSet<NowCallSiteId>();
 #endif
 
         /// <summary>
@@ -281,7 +339,7 @@ namespace NowUI.CodeEditor
         /// builds; the editor falls back to <see cref="NowPlainLanguage"/> instead
         /// of silently drawing nothing.
         /// </summary>
-        static void WarnNullLanguage(int site)
+        static void WarnNullLanguage(NowCallSiteId site)
         {
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
             if (s_warnedNullLanguageSites.Add(site))
@@ -302,7 +360,7 @@ namespace NowUI.CodeEditor
             }
 
             var theme = NowTheme.themeAsset;
-            int id = NowControls.GetControlId(_id, _site);
+            NowResolvedId id = _id.Resolve(_site);
 
             var textStyle = theme.Text(default, NowTextStyle.Body).SetFontSize(_fontSize);
 
@@ -334,6 +392,9 @@ namespace NowUI.CodeEditor
 
             if (cache.renameActive && !ReferenceEquals(cache.renameText, text))
                 cache.renameActive = false;
+
+            if (cache.quickActionsOpen && !QuickActionsOpen(cache, text, state.caret))
+                CloseQuickActions(cache);
 
             // Async validators report pending work; keep repainting so their
             // results land without waiting for the next interaction.
@@ -450,10 +511,24 @@ namespace NowUI.CodeEditor
                     AcceptCompletion(cache, ref text, ref state);
                 }
             }
+            else if (interaction.pressed && QuickActionsOpen(cache, text, state.caret) &&
+                cache.quickActionPopupRect.Contains(interaction.pointerPosition))
+            {
+                int row = cache.quickActionWindow + (int)((interaction.pointerPosition.y -
+                    cache.quickActionPopupRect.y - CompletionPadding) / Mathf.Max(cache.quickActionRowHeight, 1f));
+
+                if (row >= 0 && row < cache.actions.Count)
+                {
+                    revealCaret = true;
+                    cache.undo.Push(text, in state, typing: false);
+                    ApplyCodeAction(cache, ref text, ref state, row);
+                }
+            }
             else if (interaction.pressed)
             {
                 revealCaret = true;
                 CloseCompletions(cache);
+                CloseQuickActions(cache);
                 NowTextEdit.BeginSelectionGesture(ref gesture, NowTextSelectionGranularity.Character, in state);
 
                 bool onStatusBar = statusHeight > 0f && interaction.pointerPosition.y >= rect.yMax - statusHeight - 1f;
@@ -461,9 +536,12 @@ namespace NowUI.CodeEditor
 
                 if (onStatusBar)
                 {
-                    if (cache.diagnostics.Count > 0)
+                    // The status bar shows the worst diagnostic, so clicking
+                    // it jumps to that one — not whichever the validator
+                    // happened to report first.
+                    if (cache.statusDiagnostic >= 0 && cache.statusDiagnostic < cache.diagnostics.Count)
                     {
-                        state.caret = Mathf.Clamp(cache.diagnostics[0].start, 0, text.Length);
+                        state.caret = Mathf.Clamp(cache.diagnostics[cache.statusDiagnostic].start, 0, text.Length);
                         state.anchor = state.caret;
                         NowTextEdit.BeginSelectionGesture(ref gesture, NowTextSelectionGranularity.Character, in state);
                     }
@@ -530,6 +608,7 @@ namespace NowUI.CodeEditor
                 else if (!string.IsNullOrEmpty(frame.characters))
                 {
                     revealCaret = true;
+                    CloseQuickActions(cache);
                     cache.undo.Push(text, in state, typing: true);
 
                     for (int i = 0; i < frame.characters.Length; ++i)
@@ -568,6 +647,8 @@ namespace NowUI.CodeEditor
                     {
                         if (cache.goToLineActive)
                             cache.goToLineActive = false;
+                        else if (QuickActionsOpen(cache, text, state.caret))
+                            CloseQuickActions(cache);
                         else if (CompletionsOpen(cache))
                             CloseCompletions(cache);
                         else
@@ -687,6 +768,23 @@ namespace NowUI.CodeEditor
                                 state.anchor = state.caret;
                             }
                         }
+                        else if (QuickActionsOpen(cache, text, state.caret))
+                        {
+                            // Enter applies the highlighted action as one undo
+                            // step. Checked before the chord that opens the
+                            // popup so Alt may stay held while accepting —
+                            // reopening here would silently discard the
+                            // selection the author just arrowed to.
+                            cache.undo.Push(text, in state, typing: false);
+                            ApplyCodeAction(cache, ref text, ref state, cache.quickActionSelected);
+                        }
+                        else if (frame.option && !frame.lineModifier)
+                        {
+                            // Alt+Enter: the language's quick actions at the
+                            // caret, mirroring Alt+Up's modifier gate. Nothing
+                            // opens when the language offers none.
+                            OpenQuickActions(cache, _language, text, state.caret);
+                        }
                         else if (CompletionsOpen(cache))
                         {
                             cache.undo.Push(text, in state, typing: false);
@@ -694,6 +792,8 @@ namespace NowUI.CodeEditor
                         }
                         else
                         {
+                            // Every branch above needs an open popup or the
+                            // Alt chord, so a plain Enter still breaks the line.
                             cache.undo.Push(text, in state, typing: true);
                             InsertNewlineWithIndent(ref text, ref state, _language);
                         }
@@ -794,6 +894,11 @@ namespace NowUI.CodeEditor
                             cache.completionSelected = Mathf.Max(cache.completionSelected - 1, 0);
                             NowControlState.RequestRepaint();
                         }
+                        else if (QuickActionsOpen(cache, text, state.caret))
+                        {
+                            cache.quickActionSelected = Mathf.Max(cache.quickActionSelected - 1, 0);
+                            NowControlState.RequestRepaint();
+                        }
                         else if (frame.option && !frame.lineModifier)
                         {
                             // Alt+Up: move the selected lines up one line.
@@ -822,6 +927,11 @@ namespace NowUI.CodeEditor
                         if (CompletionsOpen(cache))
                         {
                             cache.completionSelected = Mathf.Min(cache.completionSelected + 1, cache.completionVisible.Count - 1);
+                            NowControlState.RequestRepaint();
+                        }
+                        else if (QuickActionsOpen(cache, text, state.caret))
+                        {
+                            cache.quickActionSelected = Mathf.Min(cache.quickActionSelected + 1, cache.actions.Count - 1);
                             NowControlState.RequestRepaint();
                         }
                         else if (frame.option && !frame.lineModifier)
@@ -888,13 +998,14 @@ namespace NowUI.CodeEditor
 
             // Right-click: the standard editing context menu. Opening notes the
             // focus hand-off so the caret survives the menu's focus layer.
-            int contextMenuId = cache.idContextMenu;
+            NowResolvedId contextMenuId = cache.idContextMenu;
             var secondary = NowInput.Interact(cache.idContextPress, rect, NowPointerButton.Secondary);
 
             if (secondary.clicked)
             {
                 NowFocus.Focus(id);
                 CloseCompletions(cache);
+                CloseQuickActions(cache);
                 CloseTooltip(cache);
                 cache.suppressCaretJump = true;
 
@@ -912,6 +1023,9 @@ namespace NowUI.CodeEditor
                     }
                 }
 
+                // Ask the language once, here: the rows the menu declares —
+                // and the spans they carry — stay fixed for as long as it is up.
+                RefreshCodeActions(cache, _language, text, state.caret);
                 NowContextMenu.Open(contextMenuId, secondary.pointerPosition);
             }
 
@@ -919,7 +1033,7 @@ namespace NowUI.CodeEditor
             {
                 cache.suppressCaretJump = true;
 
-                if (NowContextMenu.Item("Cut", Chord("X")))
+                if (NowContextMenu.Item("Cut", id: "cut", shortcut: Chord("X")))
                 {
                     cache.undo.Push(text, in state, typing: false);
 
@@ -935,7 +1049,7 @@ namespace NowUI.CodeEditor
                     }
                 }
 
-                if (NowContextMenu.Item("Copy", Chord("C")))
+                if (NowContextMenu.Item("Copy", id: "copy", shortcut: Chord("C")))
                 {
                     if (state.hasSelection)
                     {
@@ -949,29 +1063,53 @@ namespace NowUI.CodeEditor
                     }
                 }
 
-                if (NowContextMenu.Item("Paste", Chord("V")))
+                if (NowContextMenu.Item("Paste", id: "paste", shortcut: Chord("V")))
                     PasteFromClipboard(cache, ref text, ref state);
 
                 NowContextMenu.Separator();
 
-                if (NowContextMenu.Item("Duplicate Line", Chord("D")))
+                if (NowContextMenu.Item("Duplicate Line", id: "duplicate-line", shortcut: Chord("D")))
                 {
                     cache.undo.Push(text, in state, typing: false);
                     DuplicateLines(ref text, ref state);
                 }
 
-                if (NowContextMenu.Item("Toggle Comment", Chord("/"), !string.IsNullOrEmpty(_language.lineCommentPrefix)))
+                if (NowContextMenu.Item(
+                    "Toggle Comment",
+                    id: "toggle-comment",
+                    enabled: !string.IsNullOrEmpty(_language.lineCommentPrefix),
+                    shortcut: Chord("/")))
                 {
                     cache.undo.Push(text, in state, typing: false);
                     ToggleLineComment(ref text, ref state, _language);
                 }
 
-                if (NowContextMenu.Item("Rename Symbol", "F2"))
+                if (NowContextMenu.Item("Rename Symbol", id: "rename-symbol", shortcut: "F2"))
                     StartRename(id, cache, text, in state);
+
+                // The language's quick actions, frozen since the menu opened.
+                // A disabled row rather than a Label when there are none:
+                // labels return before the shortcut column is drawn, and the
+                // chord is the point of the row.
+                if (cache.actions.Count == 0)
+                {
+                    NowContextMenu.Item("No Quick Actions", id: "no-code-actions",
+                        enabled: false, shortcut: QuickActionChord());
+                }
+
+                for (int i = 0; i < cache.actions.Count; ++i)
+                {
+                    if (NowContextMenu.Item(cache.actions[i].title, id: cache.actionMenuIds[i],
+                        shortcut: i == 0 ? QuickActionChord() : null))
+                    {
+                        cache.undo.Push(text, in state, typing: false);
+                        ApplyCodeAction(cache, ref text, ref state, i);
+                    }
+                }
 
                 NowContextMenu.Separator();
 
-                if (NowContextMenu.Item("Select All", Chord("A")))
+                if (NowContextMenu.Item("Select All", id: "select-all", shortcut: Chord("A")))
                     NowTextEdit.SelectAll(ref state, text);
 
                 NowContextMenu.End();
@@ -982,7 +1120,7 @@ namespace NowUI.CodeEditor
 
             result.changed = text != original;
             result.diagnosticCount = cache.diagnostics.Count;
-            result.isValid = cache.diagnostics.Count == 0;
+            result.isValid = !HasError(cache.diagnostics);
 
             int caretLine = LineOf(cache, state.caret);
             var caretSpan = cache.lines[caretLine];
@@ -1008,6 +1146,28 @@ namespace NowUI.CodeEditor
 
             editor.scrollY = Mathf.Clamp(editor.scrollY, 0f, maxScrollY);
             editor.scrollX = Mathf.Clamp(editor.scrollX, 0f, maxScrollX);
+
+            // The popups own the wheel while the pointer is over them — the
+            // consume below is first-wins, and without this the document
+            // scrolls underneath while the popup stays anchored to the caret.
+            // Moving the selection rather than the window lets the existing
+            // keep-selection-visible clamp do the scrolling.
+            if (CompletionsOpen(cache) &&
+                cache.completionPopupRect.Contains(NowInput.current.pointerPosition))
+            {
+                cache.completionSelected = WheelSelection(
+                    cache.completionPopupRect,
+                    cache.completionSelected,
+                    cache.completionVisible.Count);
+            }
+            else if (cache.quickActionsOpen &&
+                     cache.quickActionPopupRect.Contains(NowInput.current.pointerPosition))
+            {
+                cache.quickActionSelected = WheelSelection(
+                    cache.quickActionPopupRect,
+                    cache.quickActionSelected,
+                    cache.actions.Count);
+            }
 
             Vector2 pendingWheel = NowInput.current.scrollDelta;
             bool canWheelScroll = WouldWheelMove(editor.scrollX, editor.scrollY, maxScrollX, maxScrollY, pendingWheel, lineHeight);
@@ -1045,9 +1205,19 @@ namespace NowUI.CodeEditor
             editor.scrollX = Mathf.Clamp(editor.scrollX, 0f, maxScrollX);
 
             if (!focused)
+            {
                 CloseCompletions(cache);
+                CloseQuickActions(cache);
+            }
+            else if (QuickActionsOpen(cache, text, state.caret))
+            {
+                LayoutQuickActionPopup(id, cache, font, _fontSize, textStyle.fontStyle, textRect, lineHeight,
+                    in editor, caretLine, caretX);
+            }
             else if (CompletionsOpen(cache))
+            {
                 LayoutCompletionPopup(id, cache, text, font, _fontSize, textStyle.fontStyle, textRect, lineHeight, in editor, caretLine);
+            }
 
             if (focused && !NowInput.isPassive)
                 NowTextInput.setCompositionCursor?.Invoke(new Vector2(
@@ -1091,9 +1261,9 @@ namespace NowUI.CodeEditor
             // cancels, and losing focus (a click elsewhere, Tab) cancels.
             if (TryGetRenameFieldRect(cache, text, font, textStyle.fontStyle, textRect, lineHeight, in editor, out NowRect fieldRect))
             {
-                int fieldControlId = cache.idRenameField;
+                NowResolvedId fieldControlId = cache.idRenameField;
                 bool interactivePass = !NowInput.isPassive;
-                bool fieldFocused = NowFocus.focusedId == fieldControlId;
+                bool fieldFocused = NowFocus.focusedResolvedId == fieldControlId;
                 var inputFrame = NowTextInput.current;
 
                 // While an IME composition is open, Enter confirms the
@@ -1106,7 +1276,7 @@ namespace NowUI.CodeEditor
                     (cancelPressed || !fieldFocused);
 
                 NowFocus.DeclareOwner(fieldControlId, id);
-                Now.TextField(fieldRect, NowId.Resolved(fieldControlId))
+                Now.TextField(fieldRect, fieldControlId)
                     .SetSelectAllOnFocus()
                     .Draw(ref cache.renameBuffer);
 
@@ -1116,7 +1286,7 @@ namespace NowUI.CodeEditor
                     Rebuild(cache, text, font, _fontSize, textStyle.fontStyle);
                     result.changed = text != original;
                     result.diagnosticCount = cache.diagnostics.Count;
-                    result.isValid = cache.diagnostics.Count == 0;
+                    result.isValid = !HasError(cache.diagnostics);
                     cache.suppressCaretJump = true;
 
                     // The keystroke that committed the rename is spent: without
@@ -1160,7 +1330,7 @@ namespace NowUI.CodeEditor
             return !Mathf.Approximately(nextY, scrollY) || !Mathf.Approximately(nextX, scrollX);
         }
 
-        void DrawVisuals(int id, NowThemeAsset themeAsset, NowText textStyle, NowFontAsset font, NowRect rect, NowRect textRect,
+        void DrawVisuals(NowResolvedId id, NowThemeAsset themeAsset, NowText textStyle, NowFontAsset font, NowRect rect, NowRect textRect,
             float gutterWidth, float statusHeight, float lineHeight, string text, EditorCache cache,
             in NowTextEditState state, ref EditorState editor, bool focused, string composition,
             int caretLine, float caretX, Vector2 pointer, bool hovered)
@@ -1170,11 +1340,15 @@ namespace NowUI.CodeEditor
 
             Vector4 cornerRadius = themeAsset.Rectangle(rect, NowRectangleStyle.Outline).radius;
 
-            // The code canvas sits on the Background token — the darkest surface
-            // in IDE-style dark themes — while keeping the Surface preset's
-            // outline so the editor still reads as a bounded panel.
+            // The code canvas takes the plane with the most text contrast:
+            // the darkest surface on dark themes (the IDE-style inset), the
+            // lightest on light themes (the paper you type on). Either way it
+            // keeps the Surface preset's outline so the editor still reads as
+            // a bounded panel.
             themeAsset.Rectangle(rect, NowRectangleStyle.Surface)
-                .SetColor(themeAsset.GetColor(NowColorToken.Background, Color.white))
+                .SetColor(themeAsset.isDark
+                    ? themeAsset.GetColor(NowColorToken.Background, Color.black)
+                    : themeAsset.GetColor(NowColorToken.Surface, Color.white))
                 .SetRadius(cornerRadius)
                 .Draw();
 
@@ -1349,7 +1523,7 @@ namespace NowUI.CodeEditor
                     }
                 }
 
-                DrawSquiggles(text, cache, font, fontSize, fontStyle, textRect, lineHeight, ref editor, firstVisible, lastVisible);
+                DrawSquiggles(themeAsset, text, cache, font, fontSize, fontStyle, textRect, lineHeight, ref editor, firstVisible, lastVisible);
 
                 // While the inline rename field is open it owns the caret;
                 // focus-within keeps the editor visuals alive, but two blinking
@@ -1458,18 +1632,22 @@ namespace NowUI.CodeEditor
                 case NowCodeTokenKind.ListMarker:
                     return themeAsset.GetColor(NowColorToken.Accent, Color.blue);
                 case NowCodeTokenKind.Property:
+                    // Fixed on light mode too: a theme whose accent is a
+                    // bright hue (yellow, lime) has no contrast as text on a
+                    // light editor background, and identifiers are most of a
+                    // file.
                     return dark
                         ? new Vector4(0.757f, 0.569f, 1f, 1f)
-                        : themeAsset.GetColor(NowColorToken.Accent, Color.blue);
+                        : new Vector4(0.478f, 0.18f, 0.62f, 1f);
                 case NowCodeTokenKind.Attribute:
                     return dark
                         ? new Vector4(0.224f, 0.80f, 0.56f, 1f)
-                        : themeAsset.GetColor(NowColorToken.Accent, Color.blue);
+                        : new Vector4(0.153f, 0.475f, 0.294f, 1f);
                 case NowCodeTokenKind.String:
                 case NowCodeTokenKind.CodeSpan:
                     return dark
                         ? new Vector4(0.79f, 0.64f, 0.43f, 1f)
-                        : new Vector4(0.16f, 0.52f, 0.26f, 1f);
+                        : new Vector4(0.11f, 0.42f, 0.19f, 1f);
                 case NowCodeTokenKind.Number:
                     return dark
                         ? new Vector4(0.93f, 0.58f, 0.75f, 1f)
@@ -1485,9 +1663,11 @@ namespace NowUI.CodeEditor
                 case NowCodeTokenKind.Keyword:
                 case NowCodeTokenKind.Strong:
                 case NowCodeTokenKind.Tag:
+                    // Light keywords are the classic IDE blue, deep enough
+                    // to clear 5:1 on white and warm paper alike.
                     return dark
                         ? new Vector4(0.42f, 0.58f, 0.92f, 1f)
-                        : new Vector4(0.80f, 0.42f, 0.13f, 1f);
+                        : new Vector4(0.106f, 0.416f, 0.788f, 1f);
                 case NowCodeTokenKind.Comment:
                 case NowCodeTokenKind.Quote:
                 case NowCodeTokenKind.Fence:
@@ -1501,13 +1681,14 @@ namespace NowUI.CodeEditor
                         ? new Vector4(0.36f, 0.50f, 0.32f, 1f)
                         : new Vector4(0.34f, 0.50f, 0.30f, 1f);
                 case NowCodeTokenKind.Punctuation:
-                    // Rider renders operators and delimiters in the plain text
-                    // color on dark schemes; light schemes keep them muted.
-                    return dark
-                        ? themeAsset.GetColor(NowColorToken.Text, Color.white)
-                        : themeAsset.GetColor(NowColorToken.TextMuted, Color.gray);
+                    // Plain text color on both schemes: operators and braces
+                    // carry structure, and a muted theme's TextMuted can drop
+                    // them below readable contrast on a light background.
+                    return themeAsset.GetColor(NowColorToken.Text, dark ? Color.white : Color.black);
                 case NowCodeTokenKind.Error:
-                    return new Vector4(0.86f, 0.24f, 0.24f, 1f);
+                    return dark
+                        ? new Vector4(0.86f, 0.24f, 0.24f, 1f)
+                        : new Vector4(0.757f, 0.2f, 0.251f, 1f);
                 default:
                     return themeAsset.GetColor(NowColorToken.Text, Color.black);
             }
@@ -1833,14 +2014,45 @@ namespace NowUI.CodeEditor
             }
         }
 
-        void DrawSquiggles(string text, EditorCache cache, NowFontAsset font, float fontSize, NowFontStyle fontStyle,
-            NowRect textRect, float lineHeight, ref EditorState editor, int firstVisible, int lastVisible)
+        /// <summary>
+        /// The colour a diagnostic's marks draw in. The error red is the
+        /// literal every editor has always shown; warning and info resolve
+        /// through their theme tokens so a themed surface keeps its own
+        /// palette, with per-light-and-dark fallbacks the way the fixed
+        /// syntax literals in <see cref="KindColor"/> have them.
+        /// </summary>
+        static Vector4 SeverityColor(NowThemeAsset themeAsset, NowCodeDiagnosticSeverity severity)
         {
-            var color = new Vector4(0.86f, 0.24f, 0.24f, 1f);
+            switch (severity)
+            {
+                case NowCodeDiagnosticSeverity.Warning:
+                    return themeAsset.GetColor(NowColorToken.Warning, themeAsset.isDark
+                        ? new Color(0.91f, 0.72f, 0.36f, 1f)
+                        : new Color(0.72f, 0.51f, 0.09f, 1f));
+                case NowCodeDiagnosticSeverity.Info:
+                    return themeAsset.GetColor(NowColorToken.TextMuted, Color.gray);
+                default:
+                    return themeAsset.isDark
+                        ? new Vector4(0.86f, 0.24f, 0.24f, 1f)
+                        : new Vector4(0.757f, 0.2f, 0.251f, 1f);
+            }
+        }
 
+        void DrawSquiggles(NowThemeAsset themeAsset, string text, EditorCache cache, NowFontAsset font, float fontSize,
+            NowFontStyle fontStyle, NowRect textRect, float lineHeight, ref EditorState editor, int firstVisible,
+            int lastVisible)
+        {
+            // One pass per severity, worst last, so where spans overlap the
+            // error's chips land on top of a warning's rather than under them
+            // — list order is the validator's, not a z-order.
+            for (int pass = (int)NowCodeDiagnosticSeverity.Info; pass >= 0; --pass)
             for (int d = 0; d < cache.diagnostics.Count; ++d)
             {
                 var diagnostic = cache.diagnostics[d];
+                if ((int)diagnostic.severity != pass)
+                    continue;
+
+                var color = SeverityColor(themeAsset, diagnostic.severity);
                 int diagnosticEnd = diagnostic.start + diagnostic.length;
 
                 for (int i = firstVisible; i <= lastVisible; ++i)
@@ -1902,9 +2114,9 @@ namespace NowUI.CodeEditor
             positionStyle.SetFontSize(11f).Draw(cache.positionText);
 
             string message = cache.statusMessage ?? string.Empty;
-            Vector4 messageColor = cache.diagnostics.Count == 0
+            Vector4 messageColor = cache.statusDiagnostic < 0 || cache.statusDiagnostic >= cache.diagnostics.Count
                 ? themeAsset.GetColor(NowColorToken.TextMuted, Color.gray)
-                : new Vector4(0.86f, 0.24f, 0.24f, 1f);
+                : SeverityColor(themeAsset, cache.diagnostics[cache.statusDiagnostic].severity);
 
             float messageWidth = Advance(message, font, 11f, fontStyle);
             var messageRect = new NowRect(statusRect.xMax - messageWidth - 12f, statusRect.y, messageWidth + 8f, statusRect.height);
@@ -1925,12 +2137,13 @@ namespace NowUI.CodeEditor
         /// pointer. The tooltip stays while the pointer is over the span or
         /// the tooltip itself, so its text can be read, selected and copied.
         /// </summary>
-        void DrawDiagnosticTooltip(int id, string text, EditorCache cache, NowFontAsset font,
+        void DrawDiagnosticTooltip(NowResolvedId id, string text, EditorCache cache, NowFontAsset font,
             float fontSize, NowFontStyle fontStyle, NowRect textRect, float lineHeight, ref EditorState editor, Vector2 pointer)
         {
             int hoverIndex = -1;
             int diagnosticStart = -1;
             int diagnosticLength = 0;
+            int diagnosticSeverity = -1;
             string diagnosticMessage = null;
 
             // A pointer captured by an overlay (an open context menu above the
@@ -1947,17 +2160,29 @@ namespace NowUI.CodeEditor
                     var line = cache.lines[hoverLine];
                     hoverIndex = HitIndex(text, line, font, fontSize, fontStyle, pointer.x - textRect.x + editor.scrollX);
 
+                    // Of overlapping diagnostics the worst wins the tooltip —
+                    // an info note must not sit on top of the error under it.
+                    // Ties keep the validator's own order.
+                    int match = -1;
+
                     for (int d = 0; d < cache.diagnostics.Count; ++d)
                     {
                         var diagnostic = cache.diagnostics[d];
 
-                        if (hoverIndex >= diagnostic.start && hoverIndex <= diagnostic.start + diagnostic.length)
+                        if (hoverIndex >= diagnostic.start && hoverIndex <= diagnostic.start + diagnostic.length &&
+                            (match < 0 || diagnostic.severity < cache.diagnostics[match].severity))
                         {
-                            diagnosticStart = diagnostic.start;
-                            diagnosticLength = diagnostic.length;
-                            diagnosticMessage = diagnostic.message ?? string.Empty;
-                            break;
+                            match = d;
                         }
+                    }
+
+                    if (match >= 0)
+                    {
+                        var diagnostic = cache.diagnostics[match];
+                        diagnosticStart = diagnostic.start;
+                        diagnosticLength = diagnostic.length;
+                        diagnosticSeverity = (int)diagnostic.severity;
+                        diagnosticMessage = diagnostic.message ?? string.Empty;
                     }
                 }
             }
@@ -1977,7 +2202,7 @@ namespace NowUI.CodeEditor
                 if (diagnosticStart >= 0)
                 {
                     OpenTooltip(cache, text, font, fontSize, fontStyle, textRect, lineHeight, ref editor,
-                        diagnosticStart, diagnosticLength, diagnosticMessage);
+                        diagnosticStart, diagnosticLength, diagnosticMessage, diagnosticSeverity);
                 }
                 else if (hoverIndex >= 0)
                 {
@@ -2032,11 +2257,12 @@ namespace NowUI.CodeEditor
             // editor read as unfocused while the tooltip shows — on dismissal it
             // would "regain" focus and jump the caret to the end of the text.
             if (cache.tooltipAnchorStart >= 0 && !string.IsNullOrEmpty(cache.tooltipMessage))
-                NowOverlay.DeferPassive(id, s_drawDiagnosticTooltipOverlay);
+                NowOverlay.DeferPassive(id, cache.callbackState, s_drawDiagnosticTooltipOverlay);
         }
 
         void OpenTooltip(EditorCache cache, string text, NowFontAsset font, float fontSize, NowFontStyle fontStyle,
-            NowRect textRect, float lineHeight, ref EditorState editor, int anchorStart, int anchorLength, string message)
+            NowRect textRect, float lineHeight, ref EditorState editor, int anchorStart, int anchorLength, string message,
+            int severity = -1)
         {
             float width = Advance(message, font, TooltipFontSize, fontStyle) + 16f;
             const float Height = 24f;
@@ -2053,6 +2279,7 @@ namespace NowUI.CodeEditor
             cache.tooltipAnchorStart = anchorStart;
             cache.tooltipAnchorLength = anchorLength;
             cache.tooltipMessage = message;
+            cache.tooltipSeverity = severity;
             cache.tooltipRect = new NowRect(
                 Mathf.Clamp(x, textRect.x, Mathf.Max(textRect.x, textRect.xMax - width)), y, width, Height);
             cache.tooltipSelectionAnchor = 0;
@@ -2064,6 +2291,7 @@ namespace NowUI.CodeEditor
             cache.tooltipAnchorStart = -1;
             cache.tooltipAnchorLength = 0;
             cache.tooltipMessage = null;
+            cache.tooltipSeverity = -1;
             cache.tooltipSelectionAnchor = 0;
             cache.tooltipSelectionCaret = 0;
             cache.tooltipDragging = false;
@@ -2095,9 +2323,9 @@ namespace NowUI.CodeEditor
             return message.Length;
         }
 
-        static void DrawDiagnosticTooltipOverlay(int id)
+        static void DrawDiagnosticTooltipOverlay(int callbackState)
         {
-            if (!_caches.TryGetValue(id, out var cache) ||
+            if (!_callbackCaches.TryGetValue(callbackState, out var cache) ||
                 cache.tooltipAnchorStart < 0 ||
                 string.IsNullOrEmpty(cache.tooltipMessage))
             {
@@ -2110,6 +2338,17 @@ namespace NowUI.CodeEditor
             background.outline = 1f;
             background.outlineColor = theme.GetColor(NowColorToken.Border, Color.gray);
             background.SetRadius(4f).Draw();
+
+            // A diagnostic tooltip carries its severity as a left accent, in
+            // the squiggle's own color — the message no longer says "Warning"
+            // in words, so the box has to. Quick-info gets no bar.
+            if (cache.tooltipSeverity >= 0)
+            {
+                Now.Rectangle(new NowRect(tooltipRect.x + 1f, tooltipRect.y + 1f, 3f, tooltipRect.height - 2f))
+                    .SetColor(SeverityColor(theme, (NowCodeDiagnosticSeverity)cache.tooltipSeverity))
+                    .SetRadius(3f, 0f, 0f, 3f)
+                    .Draw();
+            }
 
             var font = cache.measureFont;
             int selectionMin = Mathf.Min(cache.tooltipSelectionAnchor, cache.tooltipSelectionCaret);
@@ -2144,9 +2383,28 @@ namespace NowUI.CodeEditor
             return NowTextInput.isMacPlatform ? "Cmd+" + key : "Ctrl+" + key;
         }
 
+        /// <summary>Platform-appropriate label for the quick-action chord.</summary>
+        static string QuickActionChord()
+        {
+            return NowTextInput.isMacPlatform ? "Option+Enter" : "Alt+Enter";
+        }
+
         static bool CompletionsOpen(EditorCache cache)
         {
             return cache.completionReplaceStart >= 0 && cache.completionVisible.Count > 0;
+        }
+
+        /// <summary>
+        /// True while the quick-action popup describes this exact document and
+        /// caret. Actions carry absolute spans, so an edit or a caret move
+        /// retires them the moment it happens rather than one frame later.
+        /// </summary>
+        static bool QuickActionsOpen(EditorCache cache, string text, int caret)
+        {
+            return cache.quickActionsOpen &&
+                cache.actions.Count > 0 &&
+                cache.actionCaret == caret &&
+                ReferenceEquals(cache.actionText, text);
         }
 
         /// <summary>
@@ -2154,7 +2412,7 @@ namespace NowUI.CodeEditor
         /// every span referring to it, the prompt prefills with the current
         /// name, and Enter applies the edit to all spans at once.
         /// </summary>
-        void StartRename(int editorId, EditorCache cache, string text, in NowTextEditState state)
+        void StartRename(NowResolvedId editorId, EditorCache cache, string text, in NowTextEditState state)
         {
             cache.renameSpans.Clear();
             cache.renameActive = false;
@@ -2199,7 +2457,7 @@ namespace NowUI.CodeEditor
             // captures text input and preselects the name. The field keeps no
             // frames of state between sessions — it stops drawing when rename
             // closes, so its recorded focus byte can be stale from last time.
-            int fieldControlId = cache.idRenameField;
+            NowResolvedId fieldControlId = cache.idRenameField;
             ref byte fieldHadFocus = ref NowControlState.Get<byte>(fieldControlId, "hadfocus");
             fieldHadFocus = 0;
             NowFocus.DeclareOwner(fieldControlId, editorId);
@@ -2212,9 +2470,9 @@ namespace NowUI.CodeEditor
         /// focus and the field itself — agrees on one identity, in any pass
         /// and under any id scope.
         /// </summary>
-        static int RenameFieldControlId(int editorId)
+        static NowResolvedId RenameFieldControlId(NowResolvedId editorId)
         {
-            return NowInput.GetId(editorId, "rename-field");
+            return editorId.Child("rename-field");
         }
 
         bool TryGetRenameFieldRect(EditorCache cache, string text, NowFontAsset font, NowFontStyle fontStyle,
@@ -2494,7 +2752,62 @@ namespace NowUI.CodeEditor
             CloseCompletions(cache);
         }
 
-        static void LayoutCompletionPopup(int id, EditorCache cache, string text, NowFontAsset font, float fontSize,
+        /// <summary>
+        /// Moves a popup's selection by the wheel over its rect, consuming the
+        /// scroll so it never reaches the document underneath. Selection, not
+        /// window: the keep-selection-visible clamp in the layout is what
+        /// scrolls, and it would snap a bare window move straight back.
+        /// </summary>
+        static int WheelSelection(NowRect popupRect, int selected, int count)
+        {
+            Vector2 wheel = NowInput.ConsumeScrollDelta(popupRect);
+
+            if (wheel.y == 0f || count <= 0)
+                return selected;
+
+            int step = -Mathf.RoundToInt(wheel.y);
+            if (step == 0)
+                step = wheel.y > 0f ? -1 : 1;
+
+            NowControlState.RequestRepaint();
+            return Mathf.Clamp(selected + step, 0, count - 1);
+        }
+
+        /// <summary>
+        /// The affordance a windowed popup owes its longer list: a thumb sized
+        /// to the visible share, in the editor scrollbar's own idiom. Without
+        /// one, eight rows read as the whole list and everything below them is
+        /// simply never found.
+        /// </summary>
+        static void DrawPopupScrollThumb(
+            NowThemeAsset theme,
+            NowRect rect,
+            int windowStart,
+            int rowsShown,
+            int count,
+            float rowHeight)
+        {
+            if (count <= rowsShown)
+                return;
+
+            var track = new NowRect(
+                rect.xMax - 8f,
+                rect.y + CompletionPadding,
+                4f,
+                rect.height - CompletionPadding * 2f);
+            var metrics = NowScrollbar.Calculate(
+                NowScrollbarAxis.Vertical,
+                track,
+                rowsShown * rowHeight,
+                count * rowHeight,
+                windowStart * rowHeight,
+                12f);
+            Color thumbColor = theme.GetColor(NowColorToken.Border, Color.gray);
+            thumbColor.a *= 0.8f;
+            Now.Rectangle(metrics.thumb).SetColor(thumbColor).SetRadius(2f).Draw();
+        }
+
+        static void LayoutCompletionPopup(NowResolvedId id, EditorCache cache, string text, NowFontAsset font, float fontSize,
             NowFontStyle fontStyle, NowRect textRect, float lineHeight, in EditorState editor, int caretLine)
         {
             int count = cache.completionVisible.Count;
@@ -2525,6 +2838,11 @@ namespace NowUI.CodeEditor
 
             width = Mathf.Min(width, 440f);
 
+            // A list taller than its window gets a thumb; the rows step aside
+            // for it so the detail column never draws underneath.
+            if (count > rows)
+                width += 10f;
+
             var anchorLine = cache.lines[LineOf(cache, Mathf.Min(cache.completionReplaceStart, text.Length))];
             float anchorX = Advance(text, font, fontSize, fontStyle, anchorLine.start,
                 Mathf.Max(cache.completionReplaceStart - anchorLine.start, 0));
@@ -2540,12 +2858,12 @@ namespace NowUI.CodeEditor
 
             cache.completionPopupRect = new NowRect(x, y, width, height);
             cache.completionRowHeight = rowHeight;
-            NowOverlay.DeferPassive(id, s_drawCompletionOverlay);
+            NowOverlay.DeferPassive(id, cache.callbackState, s_drawCompletionOverlay);
         }
 
-        static void DrawCompletionOverlay(int id)
+        static void DrawCompletionOverlay(int callbackState)
         {
-            if (!_caches.TryGetValue(id, out var cache) ||
+            if (!_callbackCaches.TryGetValue(callbackState, out var cache) ||
                 cache.completionReplaceStart < 0 ||
                 cache.completionVisible.Count == 0)
             {
@@ -2563,12 +2881,17 @@ namespace NowUI.CodeEditor
             float fontSize = cache.measureFontSize;
             float rowHeight = cache.completionRowHeight;
             int rows = Mathf.Min(MaxVisibleCompletions, cache.completionVisible.Count - cache.completionWindow);
+            float rowInset = cache.completionVisible.Count > MaxVisibleCompletions ? 10f : 0f;
 
             for (int r = 0; r < rows; ++r)
             {
                 int index = cache.completionWindow + r;
                 var item = cache.completionItems[cache.completionVisible[index]];
-                var rowRect = new NowRect(rect.x + 2f, rect.y + CompletionPadding + r * rowHeight, rect.width - 4f, rowHeight);
+                var rowRect = new NowRect(
+                    rect.x + 2f,
+                    rect.y + CompletionPadding + r * rowHeight,
+                    rect.width - 4f - rowInset,
+                    rowHeight);
 
                 if (index == cache.completionSelected)
                 {
@@ -2590,6 +2913,271 @@ namespace NowUI.CodeEditor
                     detailStyle.SetFontSize(fontSize * 0.85f).Draw(item.detail);
                 }
             }
+
+            DrawPopupScrollThumb(
+                theme,
+                rect,
+                cache.completionWindow,
+                rows,
+                cache.completionVisible.Count,
+                rowHeight);
+        }
+
+        /// <summary>
+        /// Asks the language for the quick actions at a caret position and
+        /// mints their menu rows. Actions with no id or title, and repeats of
+        /// an id already in the list, are dropped: a row delivers its click by
+        /// id one pass after the menu closes, so two rows sharing one would
+        /// silently run the first row's edits.
+        /// The list is frozen while the menu is up. The keyboard block is gated
+        /// on focus alone and the menu never takes focus, so the caret can move
+        /// underneath it — and a list rebuilt for the new caret would hand the
+        /// menu's pending click an edit against a stale span.
+        /// </summary>
+        static void RefreshCodeActions(EditorCache cache, NowCodeLanguage language, string text, int caret)
+        {
+            if (NowContextMenu.IsOpen(cache.idContextMenu))
+                return;
+
+            cache.actions.Clear();
+            cache.actionMenuIds.Clear();
+            cache.actionText = text;
+            cache.actionCaret = caret;
+
+            if (!language.TryGetCodeActions(text, caret, cache.actions) || cache.actions.Count == 0)
+            {
+                cache.actions.Clear();
+                return;
+            }
+
+            _codeActionIdScratch.Clear();
+            int kept = 0;
+
+            for (int i = 0; i < cache.actions.Count; ++i)
+            {
+                var action = cache.actions[i];
+
+                if (string.IsNullOrEmpty(action.id) ||
+                    string.IsNullOrEmpty(action.title) ||
+                    !_codeActionIdScratch.Add(action.id))
+                {
+                    WarnDroppedCodeAction(language, action.id);
+                    continue;
+                }
+
+                cache.actions[kept++] = action;
+                cache.actionMenuIds.Add(CodeActionIdPrefix + action.id);
+            }
+
+            cache.actions.RemoveRange(kept, cache.actions.Count - kept);
+        }
+
+        /// <summary>
+        /// Reports a dropped action once it happens in editor/development
+        /// builds: an action with no id, no title, or an id another action
+        /// already claimed cannot own a row, and dropping it quietly looks
+        /// exactly like the language never offering it.
+        /// </summary>
+        static void WarnDroppedCodeAction(NowCodeLanguage language, string id)
+        {
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+            Debug.LogWarning($"NowUI: the '{language.name}' language offered a code action with a missing or duplicate id ('{id}') or no title; menu rows are identified by id, so the action was dropped.");
+#endif
+        }
+
+        /// <summary>
+        /// Opens the quick-action popup at the caret. Nothing opens when the
+        /// language offers no action there — Alt+Enter is simply spent.
+        /// </summary>
+        static void OpenQuickActions(EditorCache cache, NowCodeLanguage language, string text, int caret)
+        {
+            CloseCompletions(cache);
+            CloseQuickActions(cache);
+            RefreshCodeActions(cache, language, text, caret);
+
+            if (cache.actions.Count == 0)
+                return;
+
+            cache.quickActionsOpen = true;
+            NowControlState.RequestRepaint();
+        }
+
+        /// <summary>Closes the popup; the action list outlives it, frozen for the context menu.</summary>
+        static void CloseQuickActions(EditorCache cache)
+        {
+            cache.quickActionsOpen = false;
+            cache.quickActionSelected = 0;
+            cache.quickActionWindow = 0;
+        }
+
+        /// <summary>
+        /// Applies one action's edits together. They run from the highest
+        /// offset down so every range keeps the position the language
+        /// reported, and the caret lands inside the first edit's replacement
+        /// text — the rule <see cref="AcceptCompletion"/> follows. An action
+        /// whose text changed under it, or whose spans no longer fit, is
+        /// dropped whole: half of a two-edit fix is worse than none of it.
+        /// </summary>
+        static void ApplyCodeAction(EditorCache cache, ref string text, ref NowTextEditState state, int index)
+        {
+            CloseQuickActions(cache);
+
+            if (index < 0 || index >= cache.actions.Count || !ReferenceEquals(cache.actionText, text))
+                return;
+
+            var edits = cache.actions[index].edits;
+
+            if (edits == null || edits.Length == 0)
+                return;
+
+            _codeEditOrderScratch.Clear();
+
+            for (int i = 0; i < edits.Length; ++i)
+            {
+                var edit = edits[i];
+
+                if (edit.start < 0 || edit.length < 0 || edit.start + edit.length > text.Length)
+                    return;
+
+                int at = _codeEditOrderScratch.Count;
+
+                while (at > 0 && edits[_codeEditOrderScratch[at - 1]].start < edit.start)
+                    --at;
+
+                _codeEditOrderScratch.Insert(at, i);
+            }
+
+            int anchorStart = edits[0].start;
+
+            for (int i = 0; i < _codeEditOrderScratch.Count; ++i)
+            {
+                var edit = edits[_codeEditOrderScratch[i]];
+                string replacement = edit.text ?? string.Empty;
+                text = text.Remove(edit.start, edit.length).Insert(edit.start, replacement);
+
+                // Edits below the anchoring one move where its text lands.
+                if (edit.start < edits[0].start)
+                    anchorStart += replacement.Length - edit.length;
+            }
+
+            string anchorText = edits[0].text ?? string.Empty;
+            state.caret = Mathf.Clamp(anchorStart + cache.actions[index].caretOffset,
+                anchorStart, anchorStart + anchorText.Length);
+            state.anchor = state.caret;
+
+            // The spans described the text that just went away.
+            cache.actionText = null;
+        }
+
+        static void LayoutQuickActionPopup(NowResolvedId id, EditorCache cache, NowFontAsset font, float fontSize,
+            NowFontStyle fontStyle, NowRect textRect, float lineHeight, in EditorState editor, int caretLine, float caretX)
+        {
+            int count = cache.actions.Count;
+            int rows = Mathf.Min(MaxVisibleCodeActions, count);
+            float rowHeight = Mathf.Ceil(fontSize + 8f);
+
+            // Keep the selection inside the visible window.
+            if (cache.quickActionSelected < cache.quickActionWindow)
+                cache.quickActionWindow = cache.quickActionSelected;
+
+            if (cache.quickActionSelected >= cache.quickActionWindow + rows)
+                cache.quickActionWindow = cache.quickActionSelected - rows + 1;
+
+            cache.quickActionWindow = Mathf.Clamp(cache.quickActionWindow, 0, Mathf.Max(0, count - rows));
+
+            float width = 160f;
+
+            for (int r = 0; r < rows; ++r)
+            {
+                var action = cache.actions[cache.quickActionWindow + r];
+                float rowWidth = 20f + Advance(action.title, font, fontSize, fontStyle);
+
+                if (!string.IsNullOrEmpty(action.detail))
+                    rowWidth += 24f + Advance(action.detail, font, fontSize * 0.85f, fontStyle);
+
+                width = Mathf.Max(width, rowWidth);
+            }
+
+            width = Mathf.Min(width, 440f);
+
+            // Room for the thumb, as the completion popup reserves it.
+            if (cache.actions.Count > rows)
+                width += 10f;
+
+            float height = rows * rowHeight + CompletionPadding * 2f;
+            float x = Mathf.Clamp(textRect.x + caretX - editor.scrollX, textRect.x, Mathf.Max(textRect.x, textRect.xMax - width));
+            float caretTop = textRect.y + caretLine * lineHeight - editor.scrollY;
+            float y = caretTop + lineHeight + 2f;
+
+            // Flip above the caret line when there is no room below.
+            if (y + height > textRect.yMax && caretTop - height - 2f >= textRect.y)
+                y = caretTop - height - 2f;
+
+            cache.quickActionPopupRect = new NowRect(x, y, width, height);
+            cache.quickActionRowHeight = rowHeight;
+            NowOverlay.DeferPassive(id, cache.callbackState, s_drawQuickActionOverlay);
+        }
+
+        static void DrawQuickActionOverlay(int callbackState)
+        {
+            if (!_callbackCaches.TryGetValue(callbackState, out var cache) ||
+                !cache.quickActionsOpen ||
+                cache.actions.Count == 0)
+            {
+                return;
+            }
+
+            var theme = NowTheme.themeAsset;
+            var rect = cache.quickActionPopupRect;
+            var background = theme.Rectangle(rect, NowRectangleStyle.Surface);
+            background.outline = 1f;
+            background.outlineColor = theme.GetColor(NowColorToken.Border, Color.gray);
+            background.SetRadius(4f).Draw();
+
+            var font = cache.measureFont;
+            float fontSize = cache.measureFontSize;
+            float rowHeight = cache.quickActionRowHeight;
+            int rows = Mathf.Min(MaxVisibleCodeActions, cache.actions.Count - cache.quickActionWindow);
+            float rowInset = cache.actions.Count > MaxVisibleCodeActions ? 10f : 0f;
+
+            for (int r = 0; r < rows; ++r)
+            {
+                int index = cache.quickActionWindow + r;
+                var action = cache.actions[index];
+                var rowRect = new NowRect(
+                    rect.x + 2f,
+                    rect.y + CompletionPadding + r * rowHeight,
+                    rect.width - 4f - rowInset,
+                    rowHeight);
+
+                if (index == cache.quickActionSelected)
+                {
+                    Now.Rectangle(rowRect)
+                        .SetColor(theme.palette.surfaceHover)
+                        .SetRadius(3f)
+                        .Draw();
+                }
+
+                var labelStyle = theme.Text(new NowRect(rowRect.x + 8f, rowRect.y, rowRect.width - 16f, rowRect.height), NowTextStyle.Body);
+                labelStyle.SetFontSize(fontSize).Draw(action.title);
+
+                if (!string.IsNullOrEmpty(action.detail))
+                {
+                    float detailWidth = Advance(action.detail, font, fontSize * 0.85f, cache.measureFontStyle);
+                    var detailStyle = theme.Text(
+                        new NowRect(rowRect.xMax - detailWidth - 8f, rowRect.y, detailWidth + 4f, rowRect.height),
+                        NowTextStyle.Muted);
+                    detailStyle.SetFontSize(fontSize * 0.85f).Draw(action.detail);
+                }
+            }
+
+            DrawPopupScrollThumb(
+                theme,
+                rect,
+                cache.quickActionWindow,
+                rows,
+                cache.actions.Count,
+                rowHeight);
         }
 
         static string NumberString(int value)
@@ -2600,7 +3188,7 @@ namespace NowUI.CodeEditor
             return _numberStrings[value - 1];
         }
 
-        static EditorCache GetCache(int id, NowCodeLanguage language)
+        static EditorCache GetCache(NowResolvedId id, NowCodeLanguage language)
         {
             if (!_caches.TryGetValue(id, out var cache))
             {
@@ -2609,24 +3197,26 @@ namespace NowUI.CodeEditor
 
                 cache = new EditorCache
                 {
-                    idEditor = NowInput.GetId(id, "editor"),
-                    idSelectionGesture = NowInput.GetId(id, "selection-gesture"),
-                    idVScroll = NowInput.GetId(id, "vscroll"),
-                    idHScroll = NowInput.GetId(id, "hscroll"),
-                    idContextMenu = NowInput.GetId(id, "context-menu"),
-                    idContextPress = NowInput.GetId(id, "context-press"),
-                    idEnter = NowInput.GetId(id, "enter"),
-                    idTab = NowInput.GetId(id, "tab"),
-                    idBackspace = NowInput.GetId(id, "bs"),
-                    idBackspaceEdit = NowInput.GetId(id, "bs-edit"),
-                    idDelete = NowInput.GetId(id, "del"),
-                    idLeft = NowInput.GetId(id, "left"),
-                    idRight = NowInput.GetId(id, "right"),
-                    idUp = NowInput.GetId(id, "up"),
-                    idDown = NowInput.GetId(id, "down"),
+                    idEditor = id.Child("editor"),
+                    idSelectionGesture = id.Child("selection-gesture"),
+                    idVScroll = id.Child("vscroll"),
+                    idHScroll = id.Child("hscroll"),
+                    idContextMenu = id.Child("context-menu"),
+                    idContextPress = id.Child("context-press"),
+                    idEnter = id.Child("enter"),
+                    idTab = id.Child("tab"),
+                    idBackspace = id.Child("bs"),
+                    idBackspaceEdit = id.Child("bs-edit"),
+                    idDelete = id.Child("del"),
+                    idLeft = id.Child("left"),
+                    idRight = id.Child("right"),
+                    idUp = id.Child("up"),
+                    idDown = id.Child("down"),
                     idRenameField = RenameFieldControlId(id),
+                    callbackState = NextCallbackState(),
                 };
                 _caches[id] = cache;
+                _callbackCaches[cache.callbackState] = cache;
             }
 
             cache.lastUse = ++s_cacheUse;
@@ -2636,6 +3226,10 @@ namespace NowUI.CodeEditor
                 cache.language = language;
                 cache.text = null;
                 cache.undo.Clear();
+                cache.actions.Clear();
+                cache.actionMenuIds.Clear();
+                cache.actionText = null;
+                CloseQuickActions(cache);
             }
 
             return cache;
@@ -2645,7 +3239,7 @@ namespace NowUI.CodeEditor
         {
             while (_caches.Count > targetCount)
             {
-                int oldestId = 0;
+                NowResolvedId oldestId = NowResolvedId.None;
                 long oldestUse = long.MaxValue;
 
                 foreach (var pair in _caches)
@@ -2660,8 +3254,24 @@ namespace NowUI.CodeEditor
                 if (oldestUse == long.MaxValue)
                     break;
 
+                if (_caches.TryGetValue(oldestId, out var oldest))
+                    _callbackCaches.Remove(oldest.callbackState);
+
                 _caches.Remove(oldestId);
             }
+        }
+
+        static int NextCallbackState()
+        {
+            int state;
+
+            do
+            {
+                state = unchecked(++s_nextCallbackState);
+            }
+            while (state == 0 || _callbackCaches.ContainsKey(state));
+
+            return state;
         }
 
         /// <summary>
@@ -2830,13 +3440,48 @@ namespace NowUI.CodeEditor
 
             if (cache.diagnostics.Count == 0)
             {
+                cache.statusDiagnostic = -1;
                 cache.statusMessage = $"{cache.language.name} — no problems";
             }
             else
             {
-                var diagnostic = cache.diagnostics[0];
+                // The worst problem, not the first: a warning higher up the
+                // file must not bury the error that actually blocks the
+                // author. Ties keep the validator's own order.
+                cache.statusDiagnostic = WorstDiagnostic(cache.diagnostics);
+                var diagnostic = cache.diagnostics[cache.statusDiagnostic];
                 cache.statusMessage = $"Line {LineOf(cache, diagnostic.start) + 1}: {diagnostic.message}";
             }
+        }
+
+        /// <summary>First diagnostic of the worst severity present.</summary>
+        static int WorstDiagnostic(List<NowCodeDiagnostic> diagnostics)
+        {
+            int worst = 0;
+
+            for (int i = 1; i < diagnostics.Count; ++i)
+            {
+                if (diagnostics[i].severity < diagnostics[worst].severity)
+                    worst = i;
+            }
+
+            return worst;
+        }
+
+        /// <summary>
+        /// Whether any diagnostic is an actual error — the question
+        /// <see cref="NowCodeEditorResult.isValid"/> answers, which warnings
+        /// and infos deliberately leave alone.
+        /// </summary>
+        static bool HasError(List<NowCodeDiagnostic> diagnostics)
+        {
+            for (int i = 0; i < diagnostics.Count; ++i)
+            {
+                if (diagnostics[i].severity == NowCodeDiagnosticSeverity.Error)
+                    return true;
+            }
+
+            return false;
         }
 
         static int LineOf(EditorCache cache, int index)

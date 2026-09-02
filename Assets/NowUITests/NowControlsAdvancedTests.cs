@@ -11,6 +11,14 @@ using NowUI;
 /// </summary>
 public class NowControlsAdvancedTests
 {
+    static readonly NowResolvedId TestIdentityRoot =
+        NowResolvedId.CreateOwnerRoot(0x414456434F4E5452UL);
+
+    static NowResolvedId TestId(int id)
+    {
+        return TestIdentityRoot.Child(id);
+    }
+
     sealed class FakePointer : INowInputProvider
     {
         public NowInputSnapshot snapshot;
@@ -74,14 +82,21 @@ public class NowControlsAdvancedTests
         public string label;
         public NowRect rect;
         public bool selected;
+        public bool isChecked;
         public bool hasSubmenu;
         public bool submenuOpen;
 
-        public RecordedContextMenuItem(string label, NowRect rect, bool selected, bool hasSubmenu)
+        public RecordedContextMenuItem(
+            string label,
+            NowRect rect,
+            bool selected,
+            bool isChecked,
+            bool hasSubmenu)
         {
             this.label = label;
             this.rect = rect;
             this.selected = selected;
+            this.isChecked = isChecked;
             this.hasSubmenu = hasSubmenu;
             submenuOpen = false;
         }
@@ -137,6 +152,8 @@ public class NowControlsAdvancedTests
         public int contextMenuItems;
         public readonly List<string> popupLabels = new List<string>();
         public readonly List<string> popupDetails = new List<string>();
+        public readonly List<bool> popupSelected = new List<bool>();
+        public readonly List<bool> popupChecked = new List<bool>();
         public readonly List<string> contextMenuLabels = new List<string>();
         public readonly List<NowRect> menuPopupRects = new List<NowRect>();
         public readonly List<RecordedContextMenuItem> contextMenuItemRecords = new List<RecordedContextMenuItem>();
@@ -145,6 +162,8 @@ public class NowControlsAdvancedTests
         public int horizontalScrollbars;
         public NowRect lastPopupRect;
         public NowRect lastMenuPopupRect;
+        public readonly List<string> dropdownFieldTexts = new List<string>();
+        public readonly List<bool> dropdownFieldPlaceholders = new List<bool>();
 
         public override void DrawButton(in NowButtonRenderContext context)
         {
@@ -179,6 +198,8 @@ public class NowControlsAdvancedTests
         public override void DrawDropdownField(in NowDropdownFieldRenderContext context)
         {
             ++dropdownFields;
+            dropdownFieldTexts.Add(context.showsPlaceholder ? context.placeholder : context.current);
+            dropdownFieldPlaceholders.Add(context.showsPlaceholder);
             base.DrawDropdownField(context);
         }
 
@@ -201,6 +222,8 @@ public class NowControlsAdvancedTests
             ++popupItems;
             popupLabels.Add(context.label);
             popupDetails.Add(context.detail);
+            popupSelected.Add(context.selected);
+            popupChecked.Add(context.isChecked);
             base.DrawPopupItem(context);
         }
 
@@ -212,6 +235,7 @@ public class NowControlsAdvancedTests
                 context.label,
                 context.rect,
                 context.selected,
+                context.isChecked,
                 context.hasSubmenu));
             base.DrawContextMenuItem(context);
         }
@@ -302,7 +326,7 @@ public class NowControlsAdvancedTests
     ContextMenuFrame DrawSiblingSubmenuFrame(
         NowThemeAsset theme,
         RecordingRenderer renderer,
-        int menuId,
+        NowResolvedId menuId,
         Vector2 anchor,
         Vector2 pointer,
         float time,
@@ -326,23 +350,23 @@ public class NowControlsAdvancedTests
 
             if (NowContextMenu.Begin(menuId))
             {
-                if (NowContextMenu.BeginSubmenu("First"))
+                if (NowContextMenu.BeginSubmenu("First", id: "first"))
                 {
-                    NowContextMenu.Item("First Child A");
+                    NowContextMenu.Item("First Child A", id: "first-child-a");
 
                     if (tallFirstSubmenu)
                     {
-                        NowContextMenu.Item("First Child B");
-                        NowContextMenu.Item("First Child C");
-                        NowContextMenu.Item("First Child D");
+                        NowContextMenu.Item("First Child B", id: "first-child-b");
+                        NowContextMenu.Item("First Child C", id: "first-child-c");
+                        NowContextMenu.Item("First Child D", id: "first-child-d");
                     }
 
                     NowContextMenu.EndSubmenu();
                 }
 
-                if (NowContextMenu.BeginSubmenu("Second"))
+                if (NowContextMenu.BeginSubmenu("Second", id: "second"))
                 {
-                    NowContextMenu.Item("Second Child");
+                    NowContextMenu.Item("Second Child", id: "second-child");
                     NowContextMenu.EndSubmenu();
                 }
 
@@ -362,7 +386,7 @@ public class NowControlsAdvancedTests
     ContextMenuFrame DrawNestedSubmenuFrame(
         NowThemeAsset theme,
         RecordingRenderer renderer,
-        int menuId,
+        NowResolvedId menuId,
         Vector2 anchor,
         Vector2 pointer,
         float time,
@@ -385,20 +409,20 @@ public class NowControlsAdvancedTests
 
             if (NowContextMenu.Begin(menuId))
             {
-                if (NowContextMenu.BeginSubmenu("Level 1"))
+                if (NowContextMenu.BeginSubmenu("Level 1", id: "level-1"))
                 {
-                    if (NowContextMenu.BeginSubmenu("Level 2"))
+                    if (NowContextMenu.BeginSubmenu("Level 2", id: "level-2"))
                     {
-                        NowContextMenu.Item("Deep Action");
-                        NowContextMenu.Item("Deep Settings");
+                        NowContextMenu.Item("Deep Action", id: "deep-action");
+                        NowContextMenu.Item("Deep Settings", id: "deep-settings");
                         NowContextMenu.EndSubmenu();
                     }
 
-                    NowContextMenu.Item("Level 1 Action");
+                    NowContextMenu.Item("Level 1 Action", id: "level-1-action");
                     NowContextMenu.EndSubmenu();
                 }
 
-                NowContextMenu.Item("Root Action");
+                NowContextMenu.Item("Root Action", id: "root-action");
                 NowContextMenu.End();
             }
 
@@ -418,6 +442,9 @@ public class NowControlsAdvancedTests
     FakePointer _pointer;
     FakeKeyboard _keyboard;
     NowDrawList _drawList;
+    NowResolvedId _fieldId;
+    NowResolvedId _outerScrollId;
+    NowResolvedId _innerScrollId;
 
     [SetUp]
     public void SetUp()
@@ -434,6 +461,10 @@ public class NowControlsAdvancedTests
         _keyboard = new FakeKeyboard();
         NowTextInput.source = _keyboard;
         _drawList = new NowDrawList();
+
+        using (NowInput.Begin(_pointer, Surface))
+        using (_drawList.Begin(Surface))
+            _fieldId = NowControls.GetControlId("name");
     }
 
     [TearDown]
@@ -466,28 +497,41 @@ public class NowControlsAdvancedTests
     {
         using (NowInput.Begin(_pointer, Surface))
         using (_drawList.Begin(Surface))
-        using (Now.ScrollView(new NowRect(0, 0, 240, 140), "outer").Begin())
         {
-            NowLayout.ReserveRect(height: 10f, stretchWidth: true);
+            _outerScrollId = NowControls.GetControlId("outer");
 
-            using (NowLayout.ScrollView("inner").SetHeight(70f).Begin())
+            using (Now.ScrollView(new NowRect(0, 0, 240, 140), _outerScrollId).Begin())
             {
-                for (int i = 0; i < 8; ++i)
-                    NowLayout.ReserveRect(height: 30f, stretchWidth: true);
-            }
+                NowLayout.ReserveRect(height: 10f, stretchWidth: true);
 
-            NowLayout.ReserveRect(height: 300f, stretchWidth: true);
+                _innerScrollId = NowControls.GetControlId("inner");
+
+                using (NowLayout.ScrollView(_innerScrollId).SetHeight(70f).Begin())
+                {
+                    for (int i = 0; i < 8; ++i)
+                        NowLayout.ReserveRect(height: 30f, stretchWidth: true);
+                }
+
+                NowLayout.ReserveRect(height: 300f, stretchWidth: true);
+            }
         }
     }
 
     void FocusField()
     {
-        NowFocus.Focus(NowInput.GetId("name"));
+        NowFocus.Focus(_fieldId);
     }
 
     ref NowTextEditState FieldState()
     {
-        return ref NowControlState.Get<NowTextEditState>(NowInput.GetId("name"));
+        return ref NowControlState.Get<NowTextEditState>(_fieldId);
+    }
+
+    NowResolvedId ResolveControlId(string id)
+    {
+        using (NowInput.Begin(_pointer, Surface))
+        using (_drawList.Begin(Surface))
+            return NowControls.GetControlId(id);
     }
 
     static Vector2 TextFieldPoint(string textBefore)
@@ -585,16 +629,12 @@ public class NowControlsAdvancedTests
             int selected = 0;
             var options = new List<string> { "Low", "Medium", "High" };
 
-            using (NowInput.Begin(_pointer, Surface))
-            {
-                int dropdownId = NowControls.GetControlId("quality");
-                NowControlState.Get<bool>(dropdownId) = true;
-            }
-
             using (NowTheme.Scope(theme))
             using (NowInput.Begin(_pointer, Surface))
             using (_drawList.Begin(Surface))
             {
+                NowResolvedId dropdownId = NowControls.GetControlId("quality");
+                NowControlState.Get<bool>(dropdownId) = true;
                 Now.Button(new NowRect(0, 0, 100, 28), "Save").Draw();
                 Now.Checkbox(new NowRect(0, 32, 140, 28), "Enabled").Draw(ref toggle);
                 Now.Radio(new NowRect(0, 64, 140, 28), "High", true).Draw();
@@ -610,12 +650,13 @@ public class NowControlsAdvancedTests
                     120f,
                     0f,
                     theme.controlStyles.scrollbarMinThumbSize);
-                NowScrollbar.Draw(theme, 8181, NowScrollbarAxis.Vertical, metrics);
+                NowScrollbar.Draw(theme, TestId(8181), NowScrollbarAxis.Vertical, metrics);
 
-                NowContextMenu.Open(7001, new Vector2(16, 160));
-                if (NowContextMenu.Begin(7001))
+                NowResolvedId menuId = TestId(7001);
+                NowContextMenu.Open(menuId, new Vector2(16, 160));
+                if (NowContextMenu.Begin(menuId))
                 {
-                    NowContextMenu.Item("Copy");
+                    NowContextMenu.Item("Copy", id: "copy", selected: true);
                     NowContextMenu.End();
                 }
 
@@ -632,11 +673,191 @@ public class NowControlsAdvancedTests
             Assert.GreaterOrEqual(renderer.popupItems, 1);
             Assert.GreaterOrEqual(renderer.contextMenuItems, 1);
             Assert.GreaterOrEqual(renderer.scrollbars, 1);
+            Assert.IsTrue(
+                renderer.popupChecked.Contains(true),
+                "The dropdown's current option must reach the renderer as checked.");
+            Assert.IsTrue(
+                renderer.contextMenuItemRecords.Exists(item => item.label == "Copy" && item.isChecked),
+                "An authored selected menu item must reach the renderer as checked.");
         }
         finally
         {
             Now.defaultFont = previousFont;
             Object.DestroyImmediate(font);
+            Object.DestroyImmediate(renderer);
+            Object.DestroyImmediate(theme);
+        }
+    }
+
+    /// <summary>
+    /// Tearing down a host that drew a file picker but never opened it must
+    /// not throw.
+    /// </summary>
+    /// <remarks>
+    /// A picker's popup state is created the first time it draws, but the
+    /// resolved id its open flag is keyed by only gets filled in when the
+    /// popup actually opens. Releasing the registration owner walks every
+    /// state, so a picker that was only ever sitting on screen asked
+    /// NowControlState for a default id and threw "a resolved child path
+    /// requires a non-empty parent" out of NowGraphic.OnDisable — taking down
+    /// any host carrying a file field, which is most of them.
+    /// </remarks>
+    [Test]
+    public void ReleasingAnOwnerWhosePickerNeverOpenedDoesNotThrow()
+    {
+        var theme = ScriptableObject.CreateInstance<NowThemeAsset>();
+        var renderer = ScriptableObject.CreateInstance<RecordingRenderer>();
+        SetRenderer(theme, renderer);
+
+        var rect = new NowRect(20f, 20f, 260f, 32f);
+        string path = string.Empty;
+        object owner = null;
+
+        try
+        {
+            NowOverlay.ForceNewFrame();
+            _pointer.snapshot = new NowInputSnapshot(new Vector2(-100f, -100f), false, false, false);
+
+            using (NowTheme.Scope(theme))
+            using (NowInput.Begin(_pointer, Surface))
+            using (_drawList.Begin(Surface))
+            {
+                Now.OpenFileField(rect, "never-opened").Draw(ref path);
+
+                // The owner the picker recorded, read from where it read it.
+                // Releasing anything else walks straight past the state this
+                // test exists to reach.
+                owner = NowOverlay.currentRegistrationOwner;
+                Assert.That(owner, Is.Not.Null);
+
+                // Released while the picker's state still names this owner,
+                // which is what destroying a host does: the frame's expiry
+                // pass would otherwise have cleared the owner first and let
+                // the walk skip the state entirely.
+                Assert.DoesNotThrow(() => NowOverlay.ReleaseRegistrationOwner(owner));
+                NowOverlay.Flush();
+            }
+        }
+        finally
+        {
+            Object.DestroyImmediate(renderer);
+            Object.DestroyImmediate(theme);
+        }
+    }
+
+    /// <summary>
+    /// A combo box with nothing selected shows its placeholder rather than an
+    /// empty box.
+    /// </summary>
+    /// <remarks>
+    /// The placeholder only ever reached the filter field inside the open
+    /// popup, so a picker that keeps no selection by design — "add a
+    /// modifier", "pick a preset" — rendered as a bare box with a chevron and
+    /// said nothing about what it was for until you clicked it.
+    /// </remarks>
+    [Test]
+    public void ComboBoxShowsItsPlaceholderWhileNothingIsSelected()
+    {
+        var theme = ScriptableObject.CreateInstance<NowThemeAsset>();
+        var renderer = ScriptableObject.CreateInstance<RecordingRenderer>();
+        SetRenderer(theme, renderer);
+
+        var options = new List<string> { "Bigger Bullet", "Single Shot" };
+        var rect = new NowRect(20f, 20f, 220f, 30f);
+        const string placeholder = "Search modifiers...";
+
+        void DrawFrame(int selected)
+        {
+            NowOverlay.ForceNewFrame();
+            _pointer.snapshot = new NowInputSnapshot(new Vector2(-100f, -100f), false, false, false);
+
+            using (NowTheme.Scope(theme))
+            using (NowInput.Begin(_pointer, Surface))
+            using (_drawList.Begin(Surface))
+            {
+                Now.ComboBox(rect, options)
+                    .SetId("placeholder-combo")
+                    .SetPlaceholder(placeholder)
+                    .Draw(ref selected);
+                NowOverlay.Flush();
+            }
+        }
+
+        try
+        {
+            DrawFrame(-1);
+
+            Assert.That(renderer.dropdownFields, Is.EqualTo(1));
+            Assert.That(renderer.dropdownFieldTexts[0], Is.EqualTo(placeholder));
+            Assert.That(renderer.dropdownFieldPlaceholders[0], Is.True);
+
+            // A real selection still wins: the placeholder is not a label.
+            DrawFrame(1);
+
+            Assert.That(renderer.dropdownFieldTexts[1], Is.EqualTo("Single Shot"));
+            Assert.That(renderer.dropdownFieldPlaceholders[1], Is.False);
+        }
+        finally
+        {
+            Object.DestroyImmediate(renderer);
+            Object.DestroyImmediate(theme);
+        }
+    }
+
+    /// <summary>
+    /// The stock placeholder covers a combo box nobody authored one for, and
+    /// clearing it deliberately still leaves the field bare.
+    /// </summary>
+    /// <remarks>
+    /// Every combo box starts with "Search...", so this fix reaches the ones
+    /// that never called SetPlaceholder as well — which is most of them, and
+    /// which is the point: a control that searches should say so before it is
+    /// opened, not after.
+    /// </remarks>
+    [Test]
+    public void TheStockPlaceholderCoversAnUnauthoredComboBox()
+    {
+        var theme = ScriptableObject.CreateInstance<NowThemeAsset>();
+        var renderer = ScriptableObject.CreateInstance<RecordingRenderer>();
+        SetRenderer(theme, renderer);
+
+        var options = new List<string> { "Bigger Bullet" };
+        var rect = new NowRect(20f, 20f, 220f, 30f);
+
+        void DrawFrame(NowId id, bool clearPlaceholder)
+        {
+            int selected = -1;
+            NowOverlay.ForceNewFrame();
+            _pointer.snapshot = new NowInputSnapshot(new Vector2(-100f, -100f), false, false, false);
+
+            using (NowTheme.Scope(theme))
+            using (NowInput.Begin(_pointer, Surface))
+            using (_drawList.Begin(Surface))
+            {
+                NowComboBox combo = Now.ComboBox(rect, options).SetId(id);
+
+                if (clearPlaceholder)
+                    combo = combo.SetPlaceholder(null);
+
+                combo.Draw(ref selected);
+                NowOverlay.Flush();
+            }
+        }
+
+        try
+        {
+            DrawFrame(new NowId("stock-combo"), clearPlaceholder: false);
+
+            Assert.That(renderer.dropdownFieldTexts[0], Is.EqualTo("Search..."));
+            Assert.That(renderer.dropdownFieldPlaceholders[0], Is.True);
+
+            DrawFrame(new NowId("bare-combo"), clearPlaceholder: true);
+
+            Assert.That(renderer.dropdownFieldTexts[1], Is.Empty);
+            Assert.That(renderer.dropdownFieldPlaceholders[1], Is.False);
+        }
+        finally
+        {
             Object.DestroyImmediate(renderer);
             Object.DestroyImmediate(theme);
         }
@@ -759,6 +980,231 @@ public class NowControlsAdvancedTests
     }
 
     [Test]
+    public void ContextMenuOpeningPressCannotImmediatelyDismissItButLaterOutsidePressCan()
+    {
+        NowResolvedId menuId = default;
+        var anchor = new Vector2(20f, 20f);
+        var outside = new Vector2(420f, 220f);
+        using var driver = new NowPopupTestDriver(Surface);
+
+        void DeclareMenu(bool open = false)
+        {
+            var resolvedMenuId = NowControls.GetControlId("opening-pass-context-menu");
+
+            if (!menuId.hasValue)
+                menuId = resolvedMenuId;
+
+            Assert.AreEqual(menuId, resolvedMenuId);
+
+            if (open)
+                NowContextMenu.Open(menuId, anchor);
+
+            if (NowContextMenu.Begin(menuId))
+            {
+                NowContextMenu.Item("Action", id: "action");
+                NowContextMenu.End();
+            }
+        }
+
+        driver.Press(
+            outside,
+            () => DeclareMenu(open: true),
+            NowPointerButton.Secondary);
+
+        Assert.IsTrue(
+            NowContextMenu.isOpen,
+            "The outside press that opened the menu must not dismiss it during the same input pass.");
+
+        driver.Press(outside, () => DeclareMenu(), NowPointerButton.Secondary);
+
+        Assert.IsFalse(
+            NowContextMenu.isOpen,
+            "A later outside press must retain the normal context-menu dismissal behavior.");
+    }
+
+    [Test]
+    public void ContextMenuBlocksBackgroundDeclaredLaterInItsOpeningPass()
+    {
+        var anchor = new Vector2(20f, 20f);
+        var pointer = new Vector2(420f, 220f);
+        var background = new NowRect(360f, 180f, 120f, 80f);
+        NowInteraction backgroundInteraction = default;
+
+        NowOverlay.ForceNewFrame();
+        _pointer.snapshot = PointerSnapshot(pointer, 1f);
+
+        using (NowInput.Begin(_pointer, Surface))
+        using (_drawList.Begin(Surface))
+        {
+            NowResolvedId menuId = NowControls.GetControlId("opening-frame-block-menu");
+            NowContextMenu.Open(menuId, anchor);
+
+            Assert.IsTrue(NowContextMenu.Begin(menuId));
+            NowContextMenu.Item("Action", id: "action");
+            NowContextMenu.End();
+
+            backgroundInteraction = NowInput.Interact(
+                NowControls.GetControlId("background-after-menu"), background);
+            NowOverlay.Flush();
+        }
+
+        Assert.IsFalse(backgroundInteraction.hovered);
+        Assert.IsFalse(backgroundInteraction.pressed);
+    }
+
+    [Test]
+    public void ContextActionPreservesPointerSourceAndTransformsActionAnchor()
+    {
+        var region = new NowRect(10f, 10f, 100f, 60f);
+        var actionAnchor = new NowRect(20f, 30f, 40f, 12f);
+        var pointer = new Vector2(80f, 70f);
+        using var driver = new NowPopupTestDriver(Surface);
+
+        NowContextTrigger secondary = default;
+        driver.Press(
+            pointer,
+            () =>
+            {
+                using (Now.Transform(2f, new Vector2(10f, 5f)))
+                    secondary = NowContextAction.Resolve(region, true, actionAnchor);
+            },
+            NowPointerButton.Secondary);
+
+        Assert.IsTrue(secondary.triggered);
+        Assert.AreEqual(NowContextTriggerSource.SecondaryPointer, secondary.source);
+        Assert.AreEqual(pointer, secondary.screenPointerPosition);
+        Assert.IsTrue(secondary.screenActionAnchor.isEmpty);
+
+        NowContextTrigger action = default;
+        driver.Hover(
+            new Vector2(400f, 200f),
+            () =>
+            {
+                using (Now.Transform(2f, new Vector2(10f, 5f)))
+                    action = NowContextAction.Resolve(region, true, actionAnchor);
+            });
+
+        Assert.IsTrue(action.triggered);
+        Assert.AreEqual(NowContextTriggerSource.Action, action.source);
+        Assert.IsTrue(RectsMatch(
+            new NowRect(50f, 65f, 80f, 24f),
+            action.screenActionAnchor));
+    }
+
+    [Test]
+    public void ContextMenuActionTriggerAnchorsBelowActionEnd()
+    {
+        NowResolvedId menuId = default;
+        var theme = ScriptableObject.CreateInstance<NowThemeAsset>();
+        var renderer = ScriptableObject.CreateInstance<RecordingRenderer>();
+        var previousFont = Now.defaultFont;
+        var font = ScriptableObject.CreateInstance<NowFont>();
+        var actionAnchor = new NowRect(280f, 40f, 48f, 24f);
+        using var driver = new NowPopupTestDriver(Surface);
+
+        try
+        {
+            SetRenderer(theme, renderer);
+            Now.defaultFont = font;
+
+            using (NowTheme.Scope(theme))
+                driver.Hover(
+                    new Vector2(450f, 200f),
+                    () =>
+                    {
+                        menuId = NowControls.GetControlId("action-anchor-context-menu");
+                        var trigger = NowContextAction.Resolve(
+                            new NowRect(0f, 0f, Surface.x, Surface.y),
+                            true,
+                            actionAnchor);
+                        NowContextMenu.Open(menuId, trigger);
+
+                        if (NowContextMenu.Begin(menuId))
+                        {
+                            NowContextMenu.Item("Action", id: "action");
+                            NowContextMenu.End();
+                        }
+                    });
+
+            float gap = theme.controlStyles.dropdownPopupGap;
+            Assert.AreEqual(actionAnchor.xMax, renderer.lastMenuPopupRect.xMax, 0.01f);
+            Assert.AreEqual(actionAnchor.yMax + gap, renderer.lastMenuPopupRect.y, 0.01f);
+        }
+        finally
+        {
+            Now.defaultFont = previousFont;
+            Object.DestroyImmediate(font);
+            Object.DestroyImmediate(renderer);
+            Object.DestroyImmediate(theme);
+        }
+    }
+
+    [Test]
+    public void OpeningSubmenuResetsItsTypedOverlayScrollStateWithoutTouchingSiblingState()
+    {
+        NowResolvedId menuId = default;
+        var anchor = new Vector2(20f, 20f);
+        var outside = new Vector2(420f, 220f);
+        var styles = NowTheme.themeAsset.controlStyles;
+        var submenuRow = new Vector2(
+            anchor.x + styles.popupPadding + 12f,
+            anchor.y + styles.popupPadding + styles.contextMenuItemHeight * 0.5f);
+
+        void DrawFrame(Vector2 pointer, float time, bool open = false)
+        {
+            NowOverlay.ForceNewFrame();
+            _pointer.snapshot = PointerSnapshot(pointer, time);
+
+            using (NowInput.Begin(_pointer, Surface))
+            using (_drawList.Begin(Surface))
+            {
+                var resolvedMenuId = NowControls.GetControlId("submenu-scroll-context-menu");
+
+                if (!menuId.hasValue)
+                    menuId = resolvedMenuId;
+
+                Assert.AreEqual(menuId, resolvedMenuId);
+
+                if (open)
+                    NowContextMenu.Open(menuId, anchor);
+
+                if (NowContextMenu.Begin(menuId))
+                {
+                    if (NowContextMenu.BeginSubmenu("More", id: "more"))
+                    {
+                        NowContextMenu.Item("Nested Action", id: "nested-action");
+                        NowContextMenu.EndSubmenu();
+                    }
+
+                    NowContextMenu.End();
+                }
+
+                NowOverlay.Flush();
+            }
+        }
+
+        DrawFrame(outside, 1f, open: true);
+
+        NowResolvedId pathId = menuId
+            .Child("ctx-authored-entry")
+            .Child("more");
+        NowResolvedId overlayId = pathId.Child("ctx-submenu-overlay");
+        NowResolvedId siblingStateId = pathId.Child("unrelated-sibling-state");
+        Assert.AreNotEqual(overlayId, siblingStateId);
+
+        NowControlState.Get<float>(overlayId, "ctx-scroll") = 37f;
+        NowControlState.Get<float>(siblingStateId, "ctx-scroll") = 19f;
+
+        DrawFrame(submenuRow, 1.1f);
+
+        Assert.AreEqual(0f, NowControlState.Get<float>(overlayId, "ctx-scroll"));
+        Assert.AreEqual(
+            19f,
+            NowControlState.Get<float>(siblingStateId, "ctx-scroll"),
+            "Opening a submenu must reset only that submenu source's scroll slot.");
+    }
+
+    [Test]
     public void ContextMenuFitsInsideInputSurface()
     {
         var theme = ScriptableObject.CreateInstance<NowThemeAsset>();
@@ -781,12 +1227,13 @@ public class NowControlsAdvancedTests
             using (NowInput.Begin(_pointer, Surface))
             using (_drawList.Begin(Surface))
             {
-                NowContextMenu.Open(7002, bottomRight);
+                NowResolvedId menuId = TestId(7002);
+                NowContextMenu.Open(menuId, bottomRight);
 
-                if (NowContextMenu.Begin(7002))
+                if (NowContextMenu.Begin(menuId))
                 {
-                    NowContextMenu.Item("Copy");
-                    NowContextMenu.Item("Select All");
+                    NowContextMenu.Item("Copy", id: "copy");
+                    NowContextMenu.Item("Select All", id: "select-all");
                     NowContextMenu.End();
                 }
 
@@ -835,7 +1282,7 @@ public class NowControlsAdvancedTests
     [Test]
     public void ContextMenuSubmenuDeliversNestedItemClick()
     {
-        const int menuId = 7011;
+        NowResolvedId menuId = TestId(7011);
         var anchor = new Vector2(20f, 20f);
         bool clicked = false;
 
@@ -849,9 +1296,9 @@ public class NowControlsAdvancedTests
 
                 if (NowContextMenu.Begin(menuId))
                 {
-                    if (NowContextMenu.BeginSubmenu("More"))
+                    if (NowContextMenu.BeginSubmenu("More", id: "more"))
                     {
-                        if (NowContextMenu.Item("Nested Action"))
+                        if (NowContextMenu.Item("Nested Action", id: "nested-action"))
                             clicked = true;
 
                         NowContextMenu.EndSubmenu();
@@ -890,9 +1337,9 @@ public class NowControlsAdvancedTests
     }
 
     [Test]
-    public void ContextMenuClickDeliversByLabelWhenItemsShift()
+    public void ContextMenuClickDoesNotShiftToSiblingWhenItemsChange()
     {
-        const int menuId = 7017;
+        NowResolvedId menuId = TestId(7017);
         var anchor = new Vector2(20f, 20f);
         bool includeCopy = true;
         bool copyClicked = false;
@@ -908,10 +1355,10 @@ public class NowControlsAdvancedTests
 
                 if (NowContextMenu.Begin(menuId))
                 {
-                    if (includeCopy && NowContextMenu.Item("Copy"))
+                    if (includeCopy && NowContextMenu.Item("Copy", id: "copy"))
                         copyClicked = true;
 
-                    if (NowContextMenu.Item("Select All"))
+                    if (NowContextMenu.Item("Select All", id: "select-all"))
                         selectAllClicked = true;
 
                     NowContextMenu.End();
@@ -957,9 +1404,231 @@ public class NowControlsAdvancedTests
     }
 
     [Test]
+    public void ContextMenuAuthoredItemIdDeliversAfterLabelChanges()
+    {
+        NowResolvedId menuId = default;
+        var anchor = new Vector2(20f, 20f);
+        string label = "Copy";
+        bool clicked = false;
+        using var driver = new NowPopupTestDriver(Surface);
+
+        void DeclareMenu(bool open = false)
+        {
+            var resolvedMenuId = NowControls.GetControlId("authored-delivery-context-menu");
+
+            if (!menuId.hasValue)
+                menuId = resolvedMenuId;
+
+            Assert.AreEqual(menuId, resolvedMenuId);
+
+            if (open)
+                NowContextMenu.Open(menuId, anchor);
+
+            if (NowContextMenu.Begin(menuId))
+            {
+                if (NowContextMenu.Item(label, id: "copy"))
+                    clicked = true;
+
+                NowContextMenu.End();
+            }
+        }
+
+        var styles = NowTheme.themeAsset.controlStyles;
+        var row = new Vector2(
+            anchor.x + styles.popupPadding + 12f,
+            anchor.y + styles.popupPadding + styles.contextMenuItemHeight * 0.5f);
+
+        driver.Hover(row, () => DeclareMenu(open: true));
+        driver.Press(row, () => DeclareMenu());
+        driver.Release(row, () => DeclareMenu());
+
+        Assert.IsFalse(clicked, "Delivery remains deferred until the owner declares the item again.");
+
+        label = "Copier";
+        driver.Hover(row, () => DeclareMenu());
+
+        Assert.IsTrue(clicked, "The authored id, not presentation text, must own click delivery.");
+    }
+
+    [Test]
+    public void ContextMenuAuthoredItemsDoNotTransferPressedSlotAcrossReorder()
+    {
+        NowResolvedId menuId = default;
+        var anchor = new Vector2(20f, 20f);
+        bool reversed = false;
+        bool firstClicked = false;
+        bool secondClicked = false;
+        using var driver = new NowPopupTestDriver(Surface);
+
+        void Item(string label, string id, ref bool clicked)
+        {
+            if (NowContextMenu.Item(label, id: id))
+                clicked = true;
+        }
+
+        void DeclareMenu(bool open = false)
+        {
+            NowResolvedId resolvedMenuId = NowControls.GetControlId("authored-press-reorder-context-menu");
+
+            if (!menuId.hasValue)
+                menuId = resolvedMenuId;
+
+            Assert.AreEqual(menuId, resolvedMenuId);
+
+            if (open)
+                NowContextMenu.Open(menuId, anchor);
+
+            if (!NowContextMenu.Begin(menuId))
+                return;
+
+            if (reversed)
+            {
+                Item("Second", "second", ref secondClicked);
+                Item("First", "first", ref firstClicked);
+            }
+            else
+            {
+                Item("First", "first", ref firstClicked);
+                Item("Second", "second", ref secondClicked);
+            }
+
+            NowContextMenu.End();
+        }
+
+        var styles = NowTheme.themeAsset.controlStyles;
+        var firstRow = new Vector2(
+            anchor.x + styles.popupPadding + 12f,
+            anchor.y + styles.popupPadding + styles.contextMenuItemHeight * 0.5f);
+
+        driver.Hover(firstRow, () => DeclareMenu(open: true));
+        driver.Press(firstRow, () => DeclareMenu());
+
+        reversed = true;
+        driver.Release(firstRow, () => DeclareMenu());
+        driver.Idle(() => DeclareMenu(), hasPointer: true);
+
+        Assert.IsFalse(firstClicked, "Moving the pressed item away from the pointer must cancel its click.");
+        Assert.IsFalse(secondClicked,
+            "The item moved into the pressed physical row must not inherit another item's active interaction.");
+    }
+
+    [Test]
+    public void ContextMenuKeyboardHighlightFollowsAuthoredItemAcrossReorder()
+    {
+        NowResolvedId menuId = TestId(7018);
+        var anchor = new Vector2(20f, 20f);
+        bool reversed = false;
+        string clicked = null;
+
+        void DeclareMenu(NowInputSnapshot snapshot, bool open = false)
+        {
+            NowOverlay.ForceNewFrame();
+            _pointer.snapshot = snapshot;
+
+            using (NowInput.Begin(_pointer, Surface))
+            using (_drawList.Begin(Surface))
+            {
+                if (open)
+                    NowContextMenu.Open(menuId, anchor);
+
+                if (NowContextMenu.Begin(menuId))
+                {
+                    if (reversed)
+                    {
+                        if (NowContextMenu.Item("Second", id: "second"))
+                            clicked = "Second";
+
+                        if (NowContextMenu.Item("First", id: "first"))
+                            clicked = "First";
+                    }
+                    else
+                    {
+                        if (NowContextMenu.Item("First", id: "first"))
+                            clicked = "First";
+
+                        if (NowContextMenu.Item("Second", id: "second"))
+                            clicked = "Second";
+                    }
+
+                    NowContextMenu.End();
+                }
+
+                NowOverlay.Flush();
+            }
+        }
+
+        var down = new Vector2(0f, -1f);
+        DeclareMenu(MenuKeyboard(anchor), open: true);
+        DeclareMenu(MenuKeyboard(anchor, navigation: down));
+        DeclareMenu(MenuKeyboard(anchor));
+        DeclareMenu(MenuKeyboard(anchor, navigation: down));
+
+        reversed = true;
+        DeclareMenu(MenuKeyboard(anchor));
+        DeclareMenu(MenuKeyboard(anchor, submitPressed: true));
+        DeclareMenu(MenuKeyboard(anchor));
+
+        Assert.AreEqual("Second", clicked,
+            "Keyboard highlight and submit must remain attached to the authored item path after reordering.");
+    }
+
+    [Test]
+    public void ContextMenuAuthoredSubmenuIdSurvivesPrecedingInsertion()
+    {
+        NowResolvedId menuId = default;
+        var anchor = new Vector2(20f, 20f);
+        bool includePrefix = false;
+        bool submenuDeclared = false;
+        using var driver = new NowPopupTestDriver(Surface);
+        var styles = NowTheme.themeAsset.controlStyles;
+        var submenuRow = new Vector2(
+            anchor.x + styles.popupPadding + 12f,
+            anchor.y + styles.popupPadding + styles.contextMenuItemHeight * 0.5f);
+
+        void DeclareMenu(bool open = false)
+        {
+            submenuDeclared = false;
+            var resolvedMenuId = NowControls.GetControlId("authored-submenu-context-menu");
+
+            if (!menuId.hasValue)
+                menuId = resolvedMenuId;
+
+            Assert.AreEqual(menuId, resolvedMenuId);
+
+            if (open)
+                NowContextMenu.Open(menuId, anchor);
+
+            if (NowContextMenu.Begin(menuId))
+            {
+                if (includePrefix)
+                    NowContextMenu.Item("Prefix", id: "prefix");
+
+                if (NowContextMenu.BeginSubmenu("More", id: "more"))
+                {
+                    submenuDeclared = true;
+                    NowContextMenu.Item("Nested", id: "nested");
+                    NowContextMenu.EndSubmenu();
+                }
+
+                NowContextMenu.End();
+            }
+        }
+
+        driver.Hover(submenuRow, () => DeclareMenu(open: true));
+        Assert.IsFalse(submenuDeclared, "The submenu opens from the deferred hover pass.");
+
+        includePrefix = true;
+        driver.Hover(submenuRow, () => DeclareMenu());
+
+        Assert.IsTrue(
+            submenuDeclared,
+            "Inserting a preceding row must not change an authored submenu path.");
+    }
+
+    [Test]
     public void ContextMenuSubmenuSurvivesDiagonalHoverThroughSiblingRows()
     {
-        const int menuId = 7013;
+        NowResolvedId menuId = TestId(7013);
         var anchor = new Vector2(20f, 20f);
 
         var theme = ScriptableObject.CreateInstance<NowThemeAsset>();
@@ -981,13 +1650,13 @@ public class NowControlsAdvancedTests
 
                 if (NowContextMenu.Begin(menuId))
                 {
-                    if (NowContextMenu.BeginSubmenu("More"))
+                    if (NowContextMenu.BeginSubmenu("More", id: "more"))
                     {
-                        NowContextMenu.Item("Nested Action");
+                        NowContextMenu.Item("Nested Action", id: "nested-action");
                         NowContextMenu.EndSubmenu();
                     }
 
-                    NowContextMenu.Item("Last");
+                    NowContextMenu.Item("Last", id: "last");
                     NowContextMenu.End();
                 }
 
@@ -1020,7 +1689,7 @@ public class NowControlsAdvancedTests
     [Test]
     public void ContextMenuHoverSwitchesBetweenSiblingSubmenus()
     {
-        const int menuId = 7311;
+        NowResolvedId menuId = TestId(7311);
         var anchor = new Vector2(20f, 20f);
 
         var theme = ScriptableObject.CreateInstance<NowThemeAsset>();
@@ -1081,7 +1750,7 @@ public class NowControlsAdvancedTests
     [Test]
     public void ContextMenuKeepsSubmenuOpenWhenAimingThroughSiblingSubmenuRow()
     {
-        const int menuId = 7312;
+        NowResolvedId menuId = TestId(7312);
         var anchor = new Vector2(20f, 20f);
 
         var theme = ScriptableObject.CreateInstance<NowThemeAsset>();
@@ -1138,7 +1807,7 @@ public class NowControlsAdvancedTests
     [Test]
     public void ContextMenuSubmenuFlipsLeftNearRightEdge()
     {
-        const int menuId = 7313;
+        NowResolvedId menuId = TestId(7313);
         var anchor = new Vector2(320f, 40f);
 
         var theme = ScriptableObject.CreateInstance<NowThemeAsset>();
@@ -1176,7 +1845,7 @@ public class NowControlsAdvancedTests
     [Test]
     public void ContextMenuNestedSubmenuPingPongsBackRightWhenLeftCannotFit()
     {
-        const int menuId = 7314;
+        NowResolvedId menuId = TestId(7314);
         var anchor = new Vector2(250f, 40f);
 
         var theme = ScriptableObject.CreateInstance<NowThemeAsset>();
@@ -1295,6 +1964,8 @@ public class NowControlsAdvancedTests
         var sourceRect = new NowRect(2f, 3f, 12f, 14f);
         NowRect fitted = default;
         bool freshRan = false;
+        NowResolvedId oldSourceId = TestId(1);
+        NowResolvedId freshSourceId = TestId(2);
 
         try
         {
@@ -1303,11 +1974,11 @@ public class NowControlsAdvancedTests
                 using (NowOverlay.Host(host))
                 using (NowPopupPlacement.FitProvider(fitProvider))
                 {
-                    NowOverlay.DeferScreen(oldBlock, 1, _ =>
+                    NowOverlay.DeferScreen(oldBlock, oldSourceId, 1, _ =>
                     {
                         NowOverlay.Reset();
                         fitted = NowOverlay.FitScreenToView(sourceRect);
-                        NowOverlay.DeferScreen(freshBlock, 2, __ => freshRan = true);
+                        NowOverlay.DeferScreen(freshBlock, freshSourceId, 2, __ => freshRan = true);
                     });
 
                     NowOverlay.Flush();
@@ -1341,25 +2012,29 @@ public class NowControlsAdvancedTests
 
     static int s_nestedPopupClicks;
     static bool s_nestedMenuDelivered;
-    const int NestedPopupOverlayId = 8242;
-    const int NestedMenuId = 8123;
+    static readonly NowResolvedId NestedPopupOverlayId = TestId(8242);
+    static readonly NowResolvedId NestedMenuId = TestId(8123);
+    const int NestedPopupOverlayState = 8242;
     static readonly NowRect NestedPopupRect = new NowRect(40f, 40f, 220f, 160f);
 
     static void DrawNestedPopupOverlay(int state)
     {
-        var interaction = NowInput.Interact(NowInput.CombineId(NestedPopupOverlayId, 1), NestedPopupRect);
+        var interaction = NowInput.Interact(NestedPopupOverlayId.Child(1), NestedPopupRect);
 
         if (interaction.clicked)
             ++s_nestedPopupClicks;
 
-        var context = NowInput.Interact(NowInput.CombineId(NestedPopupOverlayId, 2), NestedPopupRect, NowPointerButton.Secondary);
+        var context = NowInput.Interact(
+            NestedPopupOverlayId.Child(2),
+            NestedPopupRect,
+            NowPointerButton.Secondary);
 
         if (context.clicked)
             NowContextMenu.Open(NestedMenuId, context.pointerPosition, fitToView: false);
 
         if (NowContextMenu.Begin(NestedMenuId))
         {
-            if (NowContextMenu.Item("Smooth Tangents"))
+            if (NowContextMenu.Item("Smooth Tangents", id: "smooth-tangents"))
                 s_nestedMenuDelivered = true;
 
             NowContextMenu.End();
@@ -1385,7 +2060,11 @@ public class NowControlsAdvancedTests
             using (NowInput.Begin(_pointer, Surface))
             using (_drawList.Begin(Surface))
             {
-                NowOverlay.Defer(NestedPopupRect, NestedPopupOverlayId, DrawNestedPopupOverlay);
+                NowOverlay.Defer(
+                    NestedPopupRect,
+                    NestedPopupOverlayId,
+                    NestedPopupOverlayState,
+                    DrawNestedPopupOverlay);
                 NowOverlay.Flush();
             }
         }
@@ -1428,7 +2107,7 @@ public class NowControlsAdvancedTests
     [Test]
     public void TallContextMenuClampsToViewAndScrollsToReachEveryItem()
     {
-        const int menuId = 7301;
+        NowResolvedId menuId = TestId(7301);
         const int itemCount = 30;
         var anchor = new Vector2(20f, 10f);
         int clickedIndex = -1;
@@ -1453,7 +2132,7 @@ public class NowControlsAdvancedTests
                 {
                     for (int i = 0; i < itemCount; ++i)
                     {
-                        if (NowContextMenu.Item("Menu Item"))
+                        if (NowContextMenu.Item("Menu Item", id: i + 1))
                             clickedIndex = i;
                     }
 
@@ -1505,7 +2184,7 @@ public class NowControlsAdvancedTests
     [Test]
     public void ScrollingOutsideAContextMenuClosesIt()
     {
-        const int menuId = 7302;
+        NowResolvedId menuId = TestId(7302);
         var anchor = new Vector2(20f, 10f);
 
         void DrawFrame(NowInputSnapshot snapshot, bool open = false)
@@ -1521,8 +2200,8 @@ public class NowControlsAdvancedTests
 
                 if (NowContextMenu.Begin(menuId))
                 {
-                    NowContextMenu.Item("First");
-                    NowContextMenu.Item("Second");
+                    NowContextMenu.Item("First", id: "first");
+                    NowContextMenu.Item("Second", id: "second");
                     NowContextMenu.End();
                 }
 
@@ -1556,7 +2235,7 @@ public class NowControlsAdvancedTests
                 rightClicked = NowInput.WasRightClicked(region);
 
                 if (withOverlay)
-                    NowOverlay.DeferScreen(region, 9401, _ => { });
+                    NowOverlay.DeferScreen(region, TestId(9401), 9401, _ => { });
 
                 NowOverlay.Flush();
             }
@@ -1597,9 +2276,10 @@ public class NowControlsAdvancedTests
             }
         }
 
-        int dropdownId;
+        NowResolvedId dropdownId;
 
         using (NowInput.Begin(_pointer, Surface))
+        using (_drawList.Begin(Surface))
             dropdownId = NowControls.GetControlId("quality");
 
         NowControlState.Get<bool>(dropdownId) = true;
@@ -1629,7 +2309,7 @@ public class NowControlsAdvancedTests
     [Test]
     public void ContextMenuKeyboardNavigatesAndActivatesItems()
     {
-        const int menuId = 7305;
+        NowResolvedId menuId = TestId(7305);
         var anchor = new Vector2(20f, 10f);
         string clicked = null;
 
@@ -1646,10 +2326,10 @@ public class NowControlsAdvancedTests
 
                 if (NowContextMenu.Begin(menuId))
                 {
-                    if (NowContextMenu.Item("First"))
+                    if (NowContextMenu.Item("First", id: "first"))
                         clicked = "First";
 
-                    if (NowContextMenu.Item("Second"))
+                    if (NowContextMenu.Item("Second", id: "second"))
                         clicked = "Second";
 
                     NowContextMenu.End();
@@ -1676,7 +2356,7 @@ public class NowControlsAdvancedTests
     [Test]
     public void ContextMenuKeyboardDivesIntoAndOutOfSubmenus()
     {
-        const int menuId = 7306;
+        NowResolvedId menuId = TestId(7306);
         var anchor = new Vector2(20f, 10f);
         string clicked = null;
 
@@ -1699,11 +2379,11 @@ public class NowControlsAdvancedTests
 
                 if (NowContextMenu.Begin(menuId))
                 {
-                    NowContextMenu.Item("First");
+                    NowContextMenu.Item("First", id: "first");
 
-                    if (NowContextMenu.BeginSubmenu("More"))
+                    if (NowContextMenu.BeginSubmenu("More", id: "more"))
                     {
-                        if (NowContextMenu.Item("Nested"))
+                        if (NowContextMenu.Item("Nested", id: "nested"))
                             clicked = "Nested";
 
                         NowContextMenu.EndSubmenu();
@@ -1757,7 +2437,7 @@ public class NowControlsAdvancedTests
     [Test]
     public void SubmenuOverlappingItsParentOwnsThePointer()
     {
-        const int menuId = 7307;
+        NowResolvedId menuId = TestId(7307);
         const string wideA = "Wide Submenu Item A Extended";
         const string wideB = "Wide Submenu Item B Extended";
         const string wideC = "Wide Submenu Item C Extended";
@@ -1796,18 +2476,18 @@ public class NowControlsAdvancedTests
 
                 if (NowContextMenu.Begin(menuId))
                 {
-                    if (NowContextMenu.BeginSubmenu("More"))
+                    if (NowContextMenu.BeginSubmenu("More", id: "more"))
                     {
-                        NowContextMenu.Item(wideA);
+                        NowContextMenu.Item(wideA, id: "wide-a");
 
-                        if (NowContextMenu.Item(wideB))
+                        if (NowContextMenu.Item(wideB, id: "wide-b"))
                             clicked = "B";
 
-                        NowContextMenu.Item(wideC);
+                        NowContextMenu.Item(wideC, id: "wide-c");
                         NowContextMenu.EndSubmenu();
                     }
 
-                    if (NowContextMenu.Item("Under"))
+                    if (NowContextMenu.Item("Under", id: "under"))
                         clicked = "Under";
 
                     NowContextMenu.End();
@@ -1857,7 +2537,7 @@ public class NowControlsAdvancedTests
     [Test]
     public void SubmenuAtTheBottomOfAScrolledMenuOpensAndDelivers()
     {
-        const int menuId = 7303;
+        NowResolvedId menuId = TestId(7303);
         const int itemCount = 20;
         var anchor = new Vector2(20f, 10f);
         bool nestedClicked = false;
@@ -1881,11 +2561,11 @@ public class NowControlsAdvancedTests
                 if (NowContextMenu.Begin(menuId))
                 {
                     for (int i = 0; i < itemCount; ++i)
-                        NowContextMenu.Item("Filler Item");
+                        NowContextMenu.Item("Filler Item", id: i + 1);
 
-                    if (NowContextMenu.BeginSubmenu("More"))
+                    if (NowContextMenu.BeginSubmenu("More", id: "more"))
                     {
-                        if (NowContextMenu.Item("Nested Action"))
+                        if (NowContextMenu.Item("Nested Action", id: "nested-action"))
                             nestedClicked = true;
 
                         NowContextMenu.EndSubmenu();
@@ -1964,8 +2644,6 @@ public class NowControlsAdvancedTests
         var options = new List<string> { "Low", "Medium", "High" };
         int selected = 0;
         var rect = new NowRect(Surface.x - 84f, Surface.y - 26f, 96f, 24f);
-        int id = NowControls.ResolveNavigationTargetId("quality-fit");
-        NowControlState.Get<bool>(id) = true;
 
         try
         {
@@ -1973,6 +2651,8 @@ public class NowControlsAdvancedTests
             using (NowInput.Begin(_pointer, Surface))
             using (_drawList.Begin(Surface))
             {
+                NowResolvedId id = NowControls.GetControlId("quality-fit");
+                NowControlState.Get<bool>(id) = true;
                 Now.Dropdown(rect, "quality-fit", options).Draw(ref selected);
                 NowOverlay.Flush();
             }
@@ -2004,8 +2684,10 @@ public class NowControlsAdvancedTests
 
         int selected = 0;
         var rect = new NowRect(20f, 20f, 200f, 30f);
-        int id = NowControls.ResolveNavigationTargetId("quality-large");
-        NowControlState.Get<bool>(id) = true;
+
+        using (NowInput.Begin(_pointer, Surface))
+        using (_drawList.Begin(Surface))
+            NowControlState.Get<bool>(NowControls.GetControlId("quality-large")) = true;
 
         void DrawFrame()
         {
@@ -2221,7 +2903,7 @@ public class NowControlsAdvancedTests
         Assert.AreEqual("hello!", text);
 
         DrawTextFieldFrame(ref text, new NowTextInputFrame { escapePressed = true });
-        Assert.AreEqual(0, NowFocus.focusedId, "Escape must blur the field.");
+        Assert.AreEqual(NowResolvedId.None, NowFocus.focusedResolvedId, "Escape must blur the field.");
     }
 
     [Test]
@@ -2238,7 +2920,7 @@ public class NowControlsAdvancedTests
         }));
 
         Assert.AreEqual("ab", text, "Composition must not edit the text.");
-        Assert.AreNotEqual(0, NowFocus.focusedId, "Enter belongs to the IME while composing.");
+        Assert.IsTrue(NowFocus.focusedResolvedId.hasValue, "Enter belongs to the IME while composing.");
 
         Assert.IsTrue(DrawTextFieldFrame(ref text, new NowTextInputFrame { characters = "か" }));
         Assert.AreEqual("abか", text);
@@ -2287,8 +2969,8 @@ public class NowControlsAdvancedTests
     [Test]
     public void OverlayDeferredDrawRestoresCapturedControlIdScope()
     {
-        int expected = 0;
-        int actual = 0;
+        NowResolvedId expected = default;
+        NowResolvedId actual = default;
 
         using (NowInput.Begin(_pointer, Surface))
         using (_drawList.Begin(Surface))
@@ -2331,7 +3013,8 @@ public class NowControlsAdvancedTests
     [Test]
     public void OverlayDeferredDrawRestoresCapturedTransform()
     {
-        const int overlayId = 404;
+        NowResolvedId overlayId = TestId(404);
+        const int overlayState = 404;
         bool ran = false;
         bool hovered = false;
         bool insideTree = false;
@@ -2340,14 +3023,17 @@ public class NowControlsAdvancedTests
         Vector2 pointer = new Vector2(25f, 20f);
         _pointer.snapshot = new NowInputSnapshot(pointer, false, false, false);
 
-        void DrawOverlay(int id)
+        void DrawOverlay(int state)
         {
+            Assert.AreEqual(overlayState, state);
             ran = true;
             seenScale = Now.currentTransform.scale;
-            var interaction = NowInput.Interact(409, new NowRect(5f, 5f, 10f, 10f));
+            var interaction = NowInput.Interact(
+                overlayId.Child("interaction"),
+                new NowRect(5f, 5f, 10f, 10f));
             hovered = interaction.hovered;
             localPointer = interaction.pointerPosition;
-            insideTree = NowOverlay.IsPointerInsideOverlayTree(id, pointer);
+            insideTree = NowOverlay.IsPointerInsideOverlayTree(overlayId, pointer);
             Now.Rectangle(new NowRect(5f, 5f, 10f, 10f)).SetColor(Color.red).Draw();
         }
 
@@ -2355,7 +3041,11 @@ public class NowControlsAdvancedTests
         using (_drawList.Begin(Surface))
         {
             using (Now.Transform(2f, new Vector2(10f, 5f)))
-                NowOverlay.Defer(new NowRect(5f, 5f, 10f, 10f), overlayId, DrawOverlay);
+                NowOverlay.Defer(
+                    new NowRect(5f, 5f, 10f, 10f),
+                    overlayId,
+                    overlayState,
+                    DrawOverlay);
 
             Assert.IsFalse(ran, "Deferred draws must not run inline.");
         }
@@ -2369,14 +3059,16 @@ public class NowControlsAdvancedTests
     }
 
     [Test]
-    public void OverlayBlocksPointerUnderneathNextFrame()
+    public void OverlayBlocksPointerImmediatelyAndRetainsCompletedFootprint()
     {
         var blocked = new NowRect(0, 0, 100, 100);
 
         using (NowInput.Begin(_pointer, Surface))
         {
             NowOverlay.Block(blocked);
-            Assert.IsFalse(NowOverlay.IsPointerBlocked(new Vector2(50, 50)), "Blocking applies one frame late.");
+            Assert.IsTrue(
+                NowOverlay.IsPointerBlocked(new Vector2(50, 50)),
+                "A queued overlay must protect controls declared later in the same transaction.");
         }
 
         NowOverlay.ForceNewFrame();
@@ -2388,7 +3080,7 @@ public class NowControlsAdvancedTests
             Assert.IsTrue(NowOverlay.IsPointerBlocked(new Vector2(50, 50)));
             Assert.IsFalse(NowOverlay.IsPointerBlocked(new Vector2(200, 200)));
 
-            var interaction = NowInput.Interact(99, new NowRect(0, 0, 100, 100));
+            var interaction = NowInput.Interact(TestId(99), new NowRect(0, 0, 100, 100));
             Assert.IsFalse(interaction.hovered);
         }
     }
@@ -2396,8 +3088,10 @@ public class NowControlsAdvancedTests
     [Test]
     public void OverlayTracksNestedPopupTree()
     {
-        const int parentId = 101;
-        const int childId = 202;
+        NowResolvedId parentId = TestId(101);
+        NowResolvedId childId = TestId(202);
+        const int parentState = 101;
+        const int childState = 202;
         var parentRect = new NowRect(0, 0, 100, 100);
         var childRect = new NowRect(120, 0, 80, 80);
         var childPoint = new Vector2(140, 20);
@@ -2405,22 +3099,24 @@ public class NowControlsAdvancedTests
         bool parentHadChild = false;
         bool childSawSelf = false;
 
-        void DrawParent(int id)
+        void DrawParent(int state)
         {
-            NowOverlay.Defer(childRect, childId, DrawChild);
-            parentSawChild = NowOverlay.IsPointerInsideOverlayTree(id, childPoint);
-            parentHadChild = NowOverlay.HasNestedOverlay(id);
+            Assert.AreEqual(parentState, state);
+            NowOverlay.Defer(childRect, childId, childState, DrawChild);
+            parentSawChild = NowOverlay.IsPointerInsideOverlayTree(parentId, childPoint);
+            parentHadChild = NowOverlay.HasNestedOverlay(parentId);
         }
 
-        void DrawChild(int id)
+        void DrawChild(int state)
         {
-            childSawSelf = NowOverlay.IsPointerInsideOverlayTree(id, childPoint);
+            Assert.AreEqual(childState, state);
+            childSawSelf = NowOverlay.IsPointerInsideOverlayTree(childId, childPoint);
         }
 
         using (NowInput.Begin(_pointer, Surface))
         using (_drawList.Begin(Surface))
         {
-            NowOverlay.Defer(parentRect, parentId, DrawParent);
+            NowOverlay.Defer(parentRect, parentId, parentState, DrawParent);
         }
 
         Assert.IsTrue(parentSawChild);
@@ -2435,7 +3131,11 @@ public class NowControlsAdvancedTests
         using (NowInput.Begin(_pointer, Surface))
         {
             NowOverlay.BlockScreen(new NowRect(-1000f, -1000f, 2000f, 2000f));
-            NowOverlay.DeferScreen(new NowRect(40f, 30f, 80f, 50f), 303, _ => { });
+            NowOverlay.DeferScreen(
+                new NowRect(40f, 30f, 80f, 50f),
+                TestId(303),
+                303,
+                _ => { });
 
             Assert.IsTrue(NowOverlay.IsPointerInsideOverlay(new Vector2(60f, 40f)));
             Assert.IsFalse(NowOverlay.IsPointerInsideOverlay(new Vector2(200f, 200f)));
@@ -2467,9 +3167,10 @@ public class NowControlsAdvancedTests
                 NowLayout.ReserveRect(180, 30);
         }
 
-        int scrollId;
+        NowResolvedId scrollId;
 
         using (NowInput.Begin(_pointer, Surface))
+        using (_drawList.Begin(Surface))
             scrollId = NowControls.GetControlId("list");
 
         ref Vector2 scroll = ref NowControlState.Get<Vector2>(scrollId);
@@ -2662,10 +3363,7 @@ public class NowControlsAdvancedTests
 
             DrawFrame();
 
-            int scrollId;
-
-            using (NowInput.Begin(_pointer, Surface))
-                scrollId = NowControls.GetControlId("wheel-wide");
+            NowResolvedId scrollId = ResolveControlId("wheel-wide");
 
             ref Vector2 scroll = ref NowControlState.Get<Vector2>(scrollId);
             Assert.Greater(scroll.x, 0f, "Horizontal wheel delta should scroll wide content.");
@@ -2727,10 +3425,7 @@ public class NowControlsAdvancedTests
             DrawDragScrollFrame(new Vector2(100f, 92f), true, false, false, 0.15f);
             DrawDragScrollFrame(new Vector2(100f, 92f), true, false, false, 0.20f);
 
-            int scrollId;
-
-            using (NowInput.Begin(_pointer, Surface))
-                scrollId = NowControls.GetControlId("drag-scroll");
+            NowResolvedId scrollId = ResolveControlId("drag-scroll");
 
             ref Vector2 scroll = ref NowControlState.Get<Vector2>(scrollId);
             float afterHold = scroll.y;
@@ -2763,10 +3458,7 @@ public class NowControlsAdvancedTests
             DrawDragScrollFrame(new Vector2(100f, 60f), true, false, false, 0.15f);
             DrawDragScrollFrame(new Vector2(100f, 60f), true, false, false, 0.20f);
 
-            int scrollId;
-
-            using (NowInput.Begin(_pointer, Surface))
-                scrollId = NowControls.GetControlId("drag-scroll");
+            NowResolvedId scrollId = ResolveControlId("drag-scroll");
 
             ref Vector2 scroll = ref NowControlState.Get<Vector2>(scrollId);
             Assert.AreEqual(0f, scroll.y, 0.001f, "Dragging in the middle of the viewport should not auto-scroll.");
@@ -2794,10 +3486,7 @@ public class NowControlsAdvancedTests
                 false,
                 0.15f);
 
-            int scrollId;
-
-            using (NowInput.Begin(_pointer, Surface))
-                scrollId = NowControls.GetControlId("drag-scroll");
+            NowResolvedId scrollId = ResolveControlId("drag-scroll");
 
             ref Vector2 scroll = ref NowControlState.Get<Vector2>(scrollId);
             scroll.y = maxScroll.y;
@@ -2833,10 +3522,7 @@ public class NowControlsAdvancedTests
                 false,
                 0.15f);
 
-            int scrollId;
-
-            using (NowInput.Begin(_pointer, Surface))
-                scrollId = NowControls.GetControlId("drag-scroll");
+            NowResolvedId scrollId = ResolveControlId("drag-scroll");
 
             Assert.Greater(maxScroll.y, 1f);
             ref Vector2 scroll = ref NowControlState.Get<Vector2>(scrollId);
@@ -2890,10 +3576,7 @@ public class NowControlsAdvancedTests
             DrawPanScrollFrame(new Vector2(100f, 90f), false, false, false, false, 0.20f);
             DrawPanScrollFrame(new Vector2(100f, 90f), false, false, false, false, 0.25f);
 
-            int scrollId;
-
-            using (NowInput.Begin(_pointer, Surface))
-                scrollId = NowControls.GetControlId("pan-scroll");
+            NowResolvedId scrollId = ResolveControlId("pan-scroll");
 
             ref Vector2 scroll = ref NowControlState.Get<Vector2>(scrollId);
             float whilePanning = scroll.y;
@@ -2956,10 +3639,7 @@ public class NowControlsAdvancedTests
                 false,
                 0.15f);
 
-            int scrollId;
-
-            using (NowInput.Begin(_pointer, Surface))
-                scrollId = NowControls.GetControlId("pan-scroll");
+            NowResolvedId scrollId = ResolveControlId("pan-scroll");
 
             ref Vector2 scroll = ref NowControlState.Get<Vector2>(scrollId);
             scroll.y = maxScroll.y;
@@ -2997,10 +3677,7 @@ public class NowControlsAdvancedTests
                 false,
                 0.15f);
 
-            int scrollId;
-
-            using (NowInput.Begin(_pointer, Surface))
-                scrollId = NowControls.GetControlId("pan-scroll");
+            NowResolvedId scrollId = ResolveControlId("pan-scroll");
 
             Assert.Greater(maxScroll.y, 1f);
             ref Vector2 scroll = ref NowControlState.Get<Vector2>(scrollId);
@@ -3040,10 +3717,7 @@ public class NowControlsAdvancedTests
             DrawPanScrollFrame(new Vector2(100f, 90f), true, false, false, false, 0.15f);
             DrawPanScrollFrame(new Vector2(100f, 90f), true, false, false, false, 0.20f);
 
-            int scrollId;
-
-            using (NowInput.Begin(_pointer, Surface))
-                scrollId = NowControls.GetControlId("pan-scroll");
+            NowResolvedId scrollId = ResolveControlId("pan-scroll");
 
             ref Vector2 scroll = ref NowControlState.Get<Vector2>(scrollId);
             float whileHeld = scroll.y;
@@ -3066,17 +3740,8 @@ public class NowControlsAdvancedTests
         DrawNestedScrollViewsFrame();
         DrawNestedScrollViewsFrame();
 
-        int outerId;
-        int innerId;
-
-        using (NowInput.Begin(_pointer, Surface))
-        {
-            outerId = NowControls.GetControlId("outer");
-            innerId = NowControls.GetControlId("inner");
-        }
-
-        ref Vector2 outerScroll = ref NowControlState.Get<Vector2>(outerId);
-        ref Vector2 innerScroll = ref NowControlState.Get<Vector2>(innerId);
+        ref Vector2 outerScroll = ref NowControlState.Get<Vector2>(_outerScrollId);
+        ref Vector2 innerScroll = ref NowControlState.Get<Vector2>(_innerScrollId);
         outerScroll.y = 20f;
         innerScroll.y = 0f;
 
@@ -3095,7 +3760,8 @@ public class NowControlsAdvancedTests
     [Test]
     public void ScrollViewScrollsFocusedCulledControlIntoView()
     {
-        const int scrollId = 500;
+        NowResolvedId scrollId = TestId(500);
+        NowResolvedId thirdId = default;
         var viewport = new NowRect(0, 0, 200, 60);
 
         void DrawFrame()
@@ -3106,7 +3772,8 @@ public class NowControlsAdvancedTests
             {
                 NowLayout.Button("One").SetId(1).SetHeight(30).Draw();
                 NowLayout.Button("Two").SetId(2).SetHeight(30).Draw();
-                NowLayout.Button("Three").SetId(3).SetHeight(30).Draw();
+                thirdId = NowControls.GetControlId(new NowId(3));
+                NowLayout.Button("Three").SetId(thirdId).SetHeight(30).Draw();
                 NowLayout.Button("Four").SetId(4).SetHeight(30).Draw();
             }
         }
@@ -3114,7 +3781,7 @@ public class NowControlsAdvancedTests
         _pointer.snapshot = default;
         DrawFrame();
 
-        NowFocus.Focus(3);
+        NowFocus.Focus(thirdId);
         DrawFrame();
 
         ref Vector2 scroll = ref NowControlState.Get<Vector2>(scrollId);
@@ -3126,7 +3793,8 @@ public class NowControlsAdvancedTests
     {
         NowLayout.Reset();
 
-        const int scrollId = 501;
+        NowResolvedId scrollId = TestId(501);
+        NowResolvedId firstId = default;
         var viewport = new NowRect(0, 0, 200, 60);
 
         try
@@ -3139,7 +3807,8 @@ public class NowControlsAdvancedTests
                 using (_drawList.Begin(Surface))
                 using (Now.ScrollView(viewport, scrollId).Begin())
                 {
-                    NowLayout.Button("One").SetId(1).SetHeight(30).Draw();
+                    firstId = NowControls.GetControlId(new NowId(1));
+                    NowLayout.Button("One").SetId(firstId).SetHeight(30).Draw();
                     NowLayout.Button("Two").SetId(2).SetHeight(30).Draw();
                     NowLayout.Button("Three").SetId(3).SetHeight(30).Draw();
                     NowLayout.Button("Four").SetId(4).SetHeight(30).Draw();
@@ -3149,7 +3818,7 @@ public class NowControlsAdvancedTests
             DrawFrame();
             DrawFrame();
 
-            NowFocus.Focus(1);
+            NowFocus.Focus(firstId);
             DrawFrame();
 
             ref Vector2 scroll = ref NowControlState.Get<Vector2>(scrollId);
@@ -3193,10 +3862,7 @@ public class NowControlsAdvancedTests
         using (_drawList.Begin(Surface))
             Now.Dropdown(rect, "quality", options).Draw(ref selected);
 
-        int dropdownId;
-
-        using (NowInput.Begin(_pointer, Surface))
-            dropdownId = NowControls.GetControlId("quality");
+        NowResolvedId dropdownId = ResolveControlId("quality");
 
         Assert.IsTrue(NowControlState.Get<bool>(dropdownId), "Click must open the dropdown.");
 

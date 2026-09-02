@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Runtime.CompilerServices;
 using UnityEngine;
 
 namespace NowUI.Markdown
@@ -72,6 +73,7 @@ namespace NowUI.Markdown
             Rule,
             QuoteBar,
             CheckBox,
+            CheckBoxChecked,
             CheckFill,
             Bullet,
             TableLine,
@@ -113,15 +115,18 @@ namespace NowUI.Markdown
         readonly Vector4[] _roleColors = new Vector4[RoleCount];
         Vector4 _linkHoverColor;
         NowThemeAsset _colorThemeAsset;
+        NowControlRenderer _colorControlRenderer;
         Color _colorText;
         Color _colorTextMuted;
         Color _colorAccent;
+        Color _colorAccentHover;
         Color _colorBorder;
+        Color _colorBorderStrong;
         Color _colorSurfaceMuted;
         Color _colorSurface;
         Color _colorBackground;
         bool _hasSelection;
-        int _selectionId;
+        NowResolvedId _selectionId;
         string _documentText = string.Empty;
         bool _regionActive;
         int _regionSegmentStart;
@@ -173,9 +178,15 @@ namespace NowUI.Markdown
         /// is reported in the result, content below rect.height simply overflows
         /// unless an ambient mask clips it).
         /// </summary>
-        public NowMarkdownResult Draw(NowRect rect)
+        public NowMarkdownResult Draw(
+            NowRect rect,
+            [CallerFilePath] string file = "",
+            [CallerLineNumber] int line = 0)
         {
-            return Draw(rect, _embeds);
+            return DrawResolved(
+                rect,
+                _embeds,
+                NowControls.GetControlId(default, NowControls.SiteId(file, line)));
         }
 
         /// <summary>
@@ -184,7 +195,34 @@ namespace NowUI.Markdown
         /// sticky — it also serves later <see cref="Draw(NowRect)"/> and
         /// <see cref="MeasureHeight(float)"/> calls until replaced.
         /// </summary>
-        public NowMarkdownResult Draw(NowRect rect, NowMarkdownEmbedSet embeds)
+        public NowMarkdownResult Draw(
+            NowRect rect,
+            NowMarkdownEmbedSet embeds,
+            [CallerFilePath] string file = "",
+            [CallerLineNumber] int line = 0)
+        {
+            return DrawResolved(
+                rect,
+                embeds,
+                NowControls.GetControlId(default, NowControls.SiteId(file, line)));
+        }
+
+        /// <summary>Draws using an identity already resolved by the active host.</summary>
+        public NowMarkdownResult Draw(
+            NowRect rect,
+            NowResolvedId id,
+            NowMarkdownEmbedSet embeds = null)
+        {
+            if (!id.hasValue)
+                throw new ArgumentException("A resolved markdown document id is required.", nameof(id));
+
+            return DrawResolved(rect, embeds ?? _embeds, id);
+        }
+
+        internal NowMarkdownResult DrawResolved(
+            NowRect rect,
+            NowMarkdownEmbedSet embeds,
+            NowResolvedId docId)
         {
             _embeds = embeds;
 
@@ -201,8 +239,6 @@ namespace NowUI.Markdown
 
             if (_hasLoadingImages)
                 NowControlState.RequestRepaint();
-
-            int docId = NowInput.GetId(GetHashCode(), "markdown");
 
             // A link spanning several words is ONE link: the prepass finds the
             // word the pointer is over per link, then the link interacts ONCE
@@ -240,7 +276,8 @@ namespace NowUI.Markdown
                     }
 
                     var target = new NowRect(rect.x + op.rect.x, rect.y + op.rect.y, op.rect.width, op.rect.height);
-                    var interaction = NowInput.Interact(NowInput.CombineId(docId, op.link), target);
+                    var interaction = NowInput.Interact(
+                        docId.Child("link").Child(op.link + 1), target);
                     result.hoveredLink = _links[op.link];
                     NowControlState.RequestRepaint();
 
@@ -261,7 +298,7 @@ namespace NowUI.Markdown
                 {
                     case OpKind.Text:
                     {
-                        var text = theme.Text(target, _layoutFont);
+                        var text = theme.Text(target, _layoutFont).SetRaw();
                         text.fontSize = op.fontSize;
                         text.fontStyle = op.fontStyle;
                         text.color = hovered && op.role == Role.Link ? _linkHoverColor : _roleColors[(int)op.role];
@@ -271,9 +308,21 @@ namespace NowUI.Markdown
                     case OpKind.Fill:
                     case OpKind.Line:
                     {
+                        if (IsUnityEditorTheme(theme))
+                        {
+                            if (op.role == Role.CheckBox || op.role == Role.CheckBoxChecked)
+                            {
+                                DrawUnityEditorTaskBox(theme, target, op.role == Role.CheckBoxChecked);
+                                break;
+                            }
+
+                            if (op.role == Role.CheckFill)
+                                break;
+                        }
+
                         Now.Rectangle(target)
                             .SetColor(hovered && op.role == Role.Link ? _linkHoverColor : _roleColors[(int)op.role])
-                            .SetRadius(op.role == Role.CodePanel || op.role == Role.CheckBox ? 4f :
+                            .SetRadius(op.role == Role.CodePanel || op.role == Role.CheckBox || op.role == Role.CheckBoxChecked ? 4f :
                                 op.role == Role.Bullet ? op.rect.width * 0.5f : 0f)
                             .Draw();
                         break;
@@ -297,7 +346,7 @@ namespace NowUI.Markdown
                     }
                     case OpKind.Embed:
                     {
-                        DrawEmbed(op, target);
+                        DrawEmbed(op, target, docId);
                         break;
                     }
                 }
@@ -306,20 +355,37 @@ namespace NowUI.Markdown
             return result;
         }
 
+        static void DrawUnityEditorTaskBox(NowThemeAsset themeAsset, NowRect target, bool isChecked)
+        {
+            var glyphRect = new NowRect(
+                target.x - 1f,
+                target.center.y - 7.5f,
+                16f,
+                15f);
+            themeAsset.controlRenderer.DrawCheckbox(new NowToggleRenderContext(
+                themeAsset,
+                glyphRect,
+                glyphRect,
+                isChecked,
+                default,
+                false,
+                0f));
+        }
+
         /// <summary>
         /// Runs an embed renderer live inside its reserved rect and feeds the
         /// measured height back into layout: a change bumps the embed-heights
         /// version, which re-bakes the op list next frame — the same
         /// convergence contract images use.
         /// </summary>
-        void DrawEmbed(in Op op, NowRect target)
+        void DrawEmbed(in Op op, NowRect target, NowResolvedId docId)
         {
             var slot = _embedSlots[op.link];
 
             if (slot.renderer == null)
                 return;
 
-            var context = new NowMarkdownEmbedContext(target, slot.source, slot.info, op.link, GetHashCode());
+            var context = new NowMarkdownEmbedContext(target, slot.source, slot.info, op.link, docId);
             float measured;
 
             using (Now.Mask(target.Outset(2f)))
@@ -339,7 +405,7 @@ namespace NowUI.Markdown
             }
         }
 
-        void InteractDocumentSelection(int docId, NowRect origin)
+        void InteractDocumentSelection(NowResolvedId docId, NowRect origin)
         {
             _hasSelection = false;
 
@@ -388,24 +454,23 @@ namespace NowUI.Markdown
                     op.rect.height));
             }
 
-            int selectionId = NowInput.GetId(docId, "selection");
+            NowResolvedId selectionId = docId.Child("selection");
             _selectionId = selectionId;
             var selection = NowTextSelection.Interact(
                 selectionId, _documentText, _documentScratch, _layoutFont,
                 _style.fontSize, NowFontStyle.Regular, _exclusionScratch);
             _hasSelection = selection.hasSelection;
 
-            int menuId = NowInput.GetId(selectionId, "menu");
+            NowResolvedId menuId = selectionId.Child("menu");
 
-            if (selection.rightClicked)
-                NowContextMenu.Open(menuId, selection.rightClickPosition);
+            NowContextMenu.Open(menuId, in selection.contextTrigger);
 
             if (NowContextMenu.Begin(menuId))
             {
-                if (selection.hasSelection && NowContextMenu.Item("Copy"))
+                if (selection.hasSelection && NowContextMenu.Item("Copy", id: "copy"))
                     NowClipboard.Copy(NowTextSelection.GetSelection(selectionId, _documentText));
 
-                if (NowContextMenu.Item("Select All"))
+                if (NowContextMenu.Item("Select All", id: "select-all"))
                     NowTextSelection.SelectAll(selectionId, _documentText);
 
                 NowContextMenu.End();
@@ -436,9 +501,14 @@ namespace NowUI.Markdown
                 _layoutFont, region.fontSize, NowFontStyle.Regular, highlight);
         }
 
-        void DrawCopyButton(NowThemeAsset themeAsset, int docId, int opIndex, in Op op, NowRect target)
+        void DrawCopyButton(
+            NowThemeAsset themeAsset,
+            NowResolvedId docId,
+            int opIndex,
+            in Op op,
+            NowRect target)
         {
-            int buttonId = NowInput.CombineId(docId, ~opIndex);
+            NowResolvedId buttonId = docId.Child(~opIndex);
             ref float copiedAt = ref NowControlState.Get<float>(buttonId);
             bool showCopied = copiedAt > 0f && Time.realtimeSinceStartup - copiedAt < 1.2f;
 
@@ -455,7 +525,13 @@ namespace NowUI.Markdown
                 NowClipboard.Copy(op.text);
         }
 
-        void DrawImage(NowThemeAsset themeAsset, int docId, int opIndex, in Op op, NowRect target, bool linkHovered)
+        void DrawImage(
+            NowThemeAsset themeAsset,
+            NowResolvedId docId,
+            int opIndex,
+            in Op op,
+            NowRect target,
+            bool linkHovered)
         {
             if (NowMarkdownImages.GetState(op.text, out var texture) != NowMarkdownImageState.Loaded ||
                 texture == null)
@@ -470,21 +546,28 @@ namespace NowUI.Markdown
 
             image.Draw();
 
-            int menuId = NowInput.CombineId(NowInput.GetId(docId, "img-menu"), opIndex);
+            NowResolvedId menuId = docId.Child("img-menu").Child(opIndex + 1);
 
-            if (NowInput.WasRightClicked(target))
-                NowContextMenu.Open(menuId, NowInput.current.pointerPosition);
+            NowContextTrigger contextTrigger = NowContextAction.Resolve(
+                target,
+                actionInvoked: false,
+                actionAnchor: default);
+            NowContextMenu.Open(menuId, in contextTrigger);
 
             if (NowContextMenu.Begin(menuId))
             {
-                if (NowContextMenu.Item("Copy image address"))
+                if (NowContextMenu.Item("Copy image address", id: "copy-address"))
                     NowClipboard.Copy(op.text);
 
                 NowContextMenu.End();
             }
         }
 
-        bool DrawBadgeButton(NowThemeAsset themeAsset, int buttonId, NowRect target, ref float copiedAt)
+        bool DrawBadgeButton(
+            NowThemeAsset themeAsset,
+            NowResolvedId buttonId,
+            NowRect target,
+            ref float copiedAt)
         {
             var interaction = NowInput.Interact(buttonId, target);
             bool clicked = interaction.clicked;
@@ -528,24 +611,29 @@ namespace NowUI.Markdown
         /// <summary>
         /// Role colors run WCAG contrast searches (chains of pow calls), so they
         /// resolve once into a Role-indexed table. The cache keys on the theme
-        /// reference plus every palette color the contrast math reads, so it
-        /// stays correct when a theme asset's palette is edited in place.
+        /// reference, renderer, and every palette color the contrast math reads,
+        /// so it stays correct when a theme asset is edited in place.
         /// </summary>
         void EnsureRoleColors(NowThemeAsset themeAsset)
         {
             Color text = themeAsset.GetColor(NowColorToken.Text, Color.black);
             Color textMuted = themeAsset.GetColor(NowColorToken.TextMuted, Color.gray);
             Color accent = themeAsset.GetColor(NowColorToken.Accent, Color.blue);
+            Color accentHover = themeAsset.GetColor(NowColorToken.AccentHover, accent);
             Color border = themeAsset.GetColor(NowColorToken.Border, new Color(0.894f, 0.902f, 0.922f, 1f));
+            Color borderStrong = themeAsset.GetColor(NowColorToken.BorderStrong, border);
             Color surfaceMuted = themeAsset.GetColor(NowColorToken.SurfaceMuted, new Color(0.95f, 0.96f, 0.97f, 1f));
             Color surface = themeAsset.GetColor(NowColorToken.Surface, Color.white);
             Color background = themeAsset.GetColor(NowColorToken.Background, surface);
 
             if (ReferenceEquals(_colorThemeAsset, themeAsset) &&
+                ReferenceEquals(_colorControlRenderer, themeAsset.controlRenderer) &&
                 text.Equals(_colorText) &&
                 textMuted.Equals(_colorTextMuted) &&
                 accent.Equals(_colorAccent) &&
+                accentHover.Equals(_colorAccentHover) &&
                 border.Equals(_colorBorder) &&
+                borderStrong.Equals(_colorBorderStrong) &&
                 surfaceMuted.Equals(_colorSurfaceMuted) &&
                 surface.Equals(_colorSurface) &&
                 background.Equals(_colorBackground))
@@ -554,10 +642,13 @@ namespace NowUI.Markdown
             }
 
             _colorThemeAsset = themeAsset;
+            _colorControlRenderer = themeAsset.controlRenderer;
             _colorText = text;
             _colorTextMuted = textMuted;
             _colorAccent = accent;
+            _colorAccentHover = accentHover;
             _colorBorder = border;
+            _colorBorderStrong = borderStrong;
             _colorSurfaceMuted = surfaceMuted;
             _colorSurface = surface;
             _colorBackground = background;
@@ -582,16 +673,16 @@ namespace NowUI.Markdown
                     return CodePanelColor(themeAsset);
                 case Role.Link:
                 {
-                    Vector4 accent = themeAsset.GetColor(NowColorToken.Accent, Color.blue);
+                    Color background = themeAsset.GetColor(
+                        NowColorToken.Background,
+                        themeAsset.GetColor(NowColorToken.Surface, Color.white));
+                    Color contrastPole = BestContrastColor(background);
+                    Color accent = themeAsset.GetColor(
+                        NowColorToken.AccentHover,
+                        themeAsset.GetColor(NowColorToken.Accent, Color.blue));
+                    Color link = EnsureContrast(accent, background, contrastPole, 4.5f);
 
-                    if (hovered)
-                    {
-                        accent.x *= 1.2f;
-                        accent.y *= 1.2f;
-                        accent.z *= 1.2f;
-                    }
-
-                    return accent;
+                    return hovered ? Color.Lerp(link, contrastPole, 0.18f) : link;
                 }
                 case Role.Muted:
                     return themeAsset.GetColor(NowColorToken.TextMuted, Color.gray);
@@ -604,16 +695,40 @@ namespace NowUI.Markdown
                 case Role.SyntaxComment:
                     return ReadableOnCodePanel(themeAsset, themeAsset.GetColor(NowColorToken.TextMuted, Color.gray));
                 case Role.Rule:
+                    return themeAsset.GetColor(
+                        NowColorToken.BorderStrong,
+                        themeAsset.GetColor(NowColorToken.Border, new Color(0.894f, 0.902f, 0.922f, 1f)));
                 case Role.TableLine:
+                    return themeAsset.GetColor(
+                        IsUnityEditorTheme(themeAsset) ? NowColorToken.BorderStrong : NowColorToken.Border,
+                        new Color(0.894f, 0.902f, 0.922f, 1f));
                 case Role.CheckBox:
+                case Role.CheckBoxChecked:
                     return themeAsset.GetColor(NowColorToken.Border, new Color(0.894f, 0.902f, 0.922f, 1f));
                 case Role.QuoteBar:
                 case Role.Bullet:
                 case Role.CheckFill:
-                    return themeAsset.GetColor(NowColorToken.Accent, Color.blue);
+                {
+                    Color accent = themeAsset.GetColor(
+                        NowColorToken.AccentHover,
+                        themeAsset.GetColor(NowColorToken.Accent, Color.blue));
+                    Color background = themeAsset.GetColor(
+                        NowColorToken.Background,
+                        themeAsset.GetColor(NowColorToken.Surface, Color.white));
+                    return EnsureContrast(
+                        accent,
+                        background,
+                        themeAsset.GetColor(NowColorToken.Text, Color.black),
+                        3f);
+                }
                 default:
                     return themeAsset.GetColor(NowColorToken.Text, Color.black);
             }
+        }
+
+        static bool IsUnityEditorTheme(NowThemeAsset themeAsset)
+        {
+            return themeAsset.controlRenderer is NowUnityEditorControlRenderer;
         }
 
         static Color CodePanelColor(NowThemeAsset themeAsset)
@@ -1031,7 +1146,9 @@ namespace NowUI.Markdown
                 {
                     float box = _style.fontSize * 0.85f;
                     float boxY = y + (lineHeight - box) * 0.5f;
-                    AddFill(Role.CheckBox, new NowRect(x + 1f, boxY, box, box));
+                    AddFill(
+                        item.isChecked ? Role.CheckBoxChecked : Role.CheckBox,
+                        new NowRect(x + 1f, boxY, box, box));
 
                     if (item.isChecked)
                     {

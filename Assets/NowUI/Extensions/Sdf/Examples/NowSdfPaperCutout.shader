@@ -80,6 +80,7 @@ Shader "NowUI/SDF Examples/Paper Cutout"
             #pragma target 3.0
             #pragma vertex vert
             #pragma fragment frag
+            #pragma multi_compile_instancing
             #pragma multi_compile_local _ UNITY_UI_CLIP_RECT
             #pragma multi_compile_local _ UNITY_UI_ALPHACLIP
 
@@ -120,7 +121,7 @@ Shader "NowUI/SDF Examples/Paper Cutout"
                 paper += _PaperHighlightColor.rgb * pow(saturate(facing), 5.0) * bevel * _PaperHighlightColor.a;
                 float4 inside = float4(saturate(paper), _PaperColor.a * fill.a * coverage);
 
-                float shadowDistance = NowSdfEvaluateDistanceV2(
+                float shadowDistance = NowSdfEvaluateEffectDistanceV2(
                     sourceScenePosition - _PaperShadowOffset.xy) - _PaperShadowSpread;
                 float shadowAlpha = smoothstep(
                     max(_PaperShadowSoftness, pixelWidth) + edge,

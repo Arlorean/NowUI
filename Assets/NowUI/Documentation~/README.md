@@ -10,9 +10,12 @@ installed NowUI revision. AI coding agents should begin with the
   correctness rules, ownership, performance, and verification.
 - [Feature Usage](Features.md): core drawing lifecycle, rectangles, text, UGUI,
   and font compilation examples.
-- [Text Gradients And Animation](TextStyling.md): first-class linear, radial,
-  and conic text fills plus caller-timed typewriter, fade, movement, scale, and
-  wave presets.
+- [Text Gradients And Animation](TextStyling.md): adaptive text outlines,
+  first-class linear, radial, and conic fills, plus caller-timed typewriter,
+  fade, movement, scale, and wave presets.
+- [Text Preprocessor](TextPreprocessor.md): one registered hook every UI
+  string resolves through before measurement — localization and other string
+  transforms with correct layout, memoized results, and raw opt-outs.
 - [Masks](Masks.md): exact rectangular clips plus anti-aliased analytic
   rectangles, rounded rectangles, circles, ellipses, and capsules with soft
   screen-pixel feathers.
@@ -20,6 +23,9 @@ installed NowUI revision. AI coding agents should begin with the
   Unity ramps, spread modes, styling, batching, and warmup behavior.
 - [Public API](API.md): supported runtime/extension surfaces, compatibility
   rules, and allocation expectations for public APIs.
+- [Identity](Identity.md): authored versus resolved IDs, owner/domain
+  isolation, keyed collections, composite hit regions, context actions, and
+  migration from raw integer composition.
 - [Lines](Lines.md): anti-aliased straight lines, cubic Beziers, dashed
   strokes, arrow heads, clipping, and performance notes.
 - [Shapes](Shapes.md): filled or outlined circles, ellipses, triangles, and

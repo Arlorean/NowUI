@@ -71,6 +71,9 @@ namespace NowUI
 
         public static Vector2 Layout(in NowText style, string text, float width, List<NowTextRun> runs)
         {
+            if (!style.raw)
+                text = Now.PreprocessText(text);
+
             var fontAsset = style.font != null ? style.font : Now.font;
 
             if (fontAsset == null || string.IsNullOrEmpty(text))
@@ -195,20 +198,19 @@ namespace NowUI
         public static void Draw(in NowText style, string text, List<NowTextRun> runs, Vector2 origin)
         {
             var runStyle = style;
+
+            if (!runStyle.raw)
+            {
+                text = Now.PreprocessText(text);
+                runStyle.raw = true;
+            }
+
             runStyle.font = style.font != null ? style.font : Now.font;
 
             if (runStyle.font == null || string.IsNullOrEmpty(text))
                 return;
 
             float lineHeight = runStyle.font.GetLineHeight(runStyle.fontStyle) * runStyle.fontSize;
-
-            if (!runStyle.hasExplicitMask && !runStyle.mask.isEmpty)
-            {
-                float motionOutset = runStyle.animation.isAnimated
-                    ? runStyle.animation.boundedOutset
-                    : 0f;
-                runStyle.mask = runStyle.mask.Outset(4f + motionOutset);
-            }
 
             int totalAnimationUnits = 0;
 

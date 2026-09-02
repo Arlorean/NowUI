@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="Docs/media/readme/logo.png" width="760" alt="NowUI — immediate-mode UI for Unity. Logo banner rendered by NowUI itself.">
+</p>
+
 # Now-UI
 
 Now-UI is an immediate-mode UI renderer for Unity. You call the drawing API
@@ -12,10 +16,34 @@ a `RenderTexture`, or IMGUI — same drawing code everywhere.
 
 ## Showcase
 
-Every image below was drawn by NowUI itself: the repository's deterministic
-visual harness renders each scene into an offscreen `RenderTexture` and writes
-the PNG to disk (`Tools/NowUI-Harness.ps1 -Mode Visual`). No editor
-screenshots, no compositing.
+Every image in this README — the logo above included — was drawn by NowUI
+itself. The repository's deterministic visual harness renders still scenes
+into an offscreen `RenderTexture` (`Tools/NowUI-Harness.ps1 -Mode Visual`),
+while its animation mode steps an explicit caller-owned clock and encodes the
+resulting frame sequence (`-Mode Animation`). No editor screenshots or
+hand-composited UI layers.
+
+![macOS-inspired native desktop application shell rendered and animated entirely with NowUI](Docs/media/readme/desktop-fidelity.gif)
+
+*A native desktop-style application shell made from NowUI primitives: animated
+procedural wallpaper, frosted menu/window/dock surfaces, window chrome,
+cursor-responsive content, a live control panel, dock magnification, and a
+texture-backed custom vertex modifier that bends the entire window into its
+Dock icon and restores it. No OS screenshots or platform artwork.*
+
+![Animated SDF metamorphosis cycling between organic, ticket, and prism forms with contours and lighting](Docs/media/readme/sdf-metamorphosis.gif)
+
+*Three unrelated SDF graphs transition through real distance-field morphs —
+not crossfades — with boolean cutouts, animated contour reveal, warp, emboss,
+shadow, outline, and glow. The animated field itself is one quad.*
+
+![A feathered x-ray lens moving over one SDF graph, revealing topographic contours beneath paper-cutout shading](Docs/media/readme/sdf-shader-xray.gif)
+
+*One reusable SDF graph, two custom final-shading materials: a relit paper
+cutout on the surface and topographic contours beneath a moving feathered
+analytic mask. Both passes share the identical field; only the final shader
+and mask coverage differ. [SDF Shapes](Assets/NowUI/Documentation~/SDF.md),
+[Masks](Assets/NowUI/Documentation~/Masks.md).*
 
 ![In-app documentation browser rendered with NowUI, including live 3D model previews and syntax-highlighted code](Docs/media/readme/docs-model-preview-demo.png)
 
@@ -190,6 +218,12 @@ Toolkit, world-space, and manual-host examples, see
   shaping for ligatures, kerning, and complex scripts where the plugin is
   present, falling back per codepoint elsewhere; contextual font stack via
   `using (Now.Font(...))`.
+- **Text Preprocessor** — one registered hook every UI string resolves
+  through before measurement, so localization (and any other string
+  transform: casing, terminology, pseudo-loc) gets correct layout for free;
+  memoized per unique string, explicit invalidation on language switch, and
+  `SetRaw()` opt-outs for verbatim text.
+  [Documentation~/TextPreprocessor.md](Assets/NowUI/Documentation~/TextPreprocessor.md)
 - **Layout** — fluent `Row`/`Horizontal` and `Column`/`Vertical` container
   aliases with gaps, padding, growth, alignment, justification, and
   exact-measure layout hosts.
@@ -201,6 +235,9 @@ Toolkit, world-space, and manual-host examples, see
 - **Controls** — buttons, checkboxes, radios, sliders, text fields,
   dropdowns, and scroll views with focus navigation, theming, and a public
   toolkit for building custom controls. [Documentation~/Controls.md](Assets/NowUI/Documentation~/Controls.md)
+- **Typed identity** — authored `NowId` keys, opaque host-owned
+  `NowResolvedId` paths, reorder-safe keyed collection scopes, and composite
+  hit-region exclusions. [Documentation~/Identity.md](Assets/NowUI/Documentation~/Identity.md)
 - **Lottie** — vector animations tessellated live on the CPU, never
   rasterized to textures. [Documentation~/Lottie.md](Assets/NowUI/Documentation~/Lottie.md)
 - **Themes** — ScriptableObject color/spacing/radius tokens and presets.
@@ -301,11 +338,10 @@ changes its bundled toolchain.
   switching materials flushes the active mesh.
 - Use id-less controls and interactions for one-off UI
   (`NowLayout.Button("Save")`, `NowInput.Interact(rect)`). Prefer stable
-  non-zero integer ids (`SetId(item.id)`, `IdScope(item.id)`,
-  `NowInput.Interact(item.id, rect)`) for data-backed controls that can appear,
-  disappear, or reorder; strings remain convenient for one-off named controls.
-  Both are local to the active host/id scope. Use `NowId.Resolved(...)` only
-  when reusing an already-resolved or composed integer.
+  data keys (`SetId(item.id)`, `KeyedItem(item.id)`) for controls that can
+  appear, disappear, or reorder. Authored strings/integers use `NowId` and stay
+  local to the active host/id scope. Runtime paths use the opaque
+  `NowResolvedId`; pass them directly and derive children with `.Child(...)`.
 - The hot path is allocation-free once buffers, glyphs, effect textures, and
   world-space material batches are warm. First use, new ids, new material
   batches, and capacity growth may allocate.

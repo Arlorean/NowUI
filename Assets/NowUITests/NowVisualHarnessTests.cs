@@ -1,5 +1,7 @@
+using System.Collections.Generic;
 using NUnit.Framework;
 using NowUI.Editor;
+using UnityEditor;
 using UnityEngine;
 
 public class NowVisualHarnessTests
@@ -62,6 +64,103 @@ public class NowVisualHarnessTests
         GoldenComparisonTolerance strict = NowVisualHarnessRunner.ToleranceForScenario("landing-page-now-layout");
 
         Assert.IsTrue(NowVisualHarnessRunner.PixelsMatch(expected, actual, strict, out string difference), difference);
+    }
+
+    [Test]
+    public void ThemeReviewScenariosCoverEveryShippedTheme()
+    {
+        string[] guids = AssetDatabase.FindAssets(
+            "t:NowThemeAsset",
+            new[] { "Assets/NowUI/Assets/Themes" });
+        var expectedPaths = new HashSet<string>();
+
+        for (int i = 0; i < guids.Length; ++i)
+            expectedPaths.Add(AssetDatabase.GUIDToAssetPath(guids[i]).Replace('\\', '/'));
+
+        IReadOnlyList<NowHarnessScenario> scenarios = NowHarnessScenarios.ThemeReviewScenarios();
+        var actualPaths = new HashSet<string>();
+        var scenarioNames = new HashSet<string>();
+
+        for (int i = 0; i < scenarios.Count; ++i)
+        {
+            NowHarnessScenario scenario = scenarios[i];
+            StringAssert.StartsWith("theme-review-", scenario.name);
+            Assert.IsTrue(scenarioNames.Add(scenario.name), $"Duplicate review scenario '{scenario.name}'.");
+            Assert.IsFalse(scenario.includeInGoldens, scenario.name);
+            Assert.IsFalse(scenario.includeInPerf, scenario.name);
+            Assert.IsTrue(scenario.suppressBadge, scenario.name);
+            Assert.IsNotNull(scenario.draw, scenario.name);
+            Assert.IsFalse(string.IsNullOrWhiteSpace(scenario.themePath), scenario.name);
+            Assert.IsTrue(actualPaths.Add(scenario.themePath), $"Duplicate theme path '{scenario.themePath}'.");
+        }
+
+        CollectionAssert.AreEquivalent(expectedPaths, actualPaths);
+    }
+
+    [Test]
+    public void CoreScenarioEnumerationExcludesThemeReviews()
+    {
+        IReadOnlyList<NowHarnessScenario> scenarios = NowHarnessScenarios.All(includeThemeReviews: false);
+
+        for (int i = 0; i < scenarios.Count; ++i)
+            Assert.IsFalse(scenarios[i].name.StartsWith("theme-review-"), scenarios[i].name);
+    }
+
+    [Test]
+    public void EditorComparisonScenarioUsesARealWindowCaptureOnly()
+    {
+        IReadOnlyList<NowHarnessScenario> scenarios =
+            NowHarnessScenarios.All(includeThemeReviews: false);
+        NowHarnessScenario comparison = null;
+
+        for (int i = 0; i < scenarios.Count; ++i)
+        {
+            if (scenarios[i].name == "editorgui-unity-editor-dark")
+            {
+                comparison = scenarios[i];
+                break;
+            }
+        }
+
+        Assert.IsNotNull(comparison);
+        Assert.IsNotNull(comparison.capture);
+        Assert.IsNull(comparison.draw);
+        Assert.IsFalse(comparison.includeInGoldens);
+        Assert.IsFalse(comparison.includeInPerf);
+        Assert.IsTrue(comparison.suppressBadge);
+        Assert.AreEqual(1100, comparison.width);
+        Assert.AreEqual(660, comparison.height);
+    }
+
+    [Test]
+    public void UnityEditorFilePickerScenarioOpensTheRealDeterministicDialog()
+    {
+        IReadOnlyList<NowHarnessScenario> scenarios =
+            NowHarnessScenarios.All(includeThemeReviews: false);
+        NowHarnessScenario picker = null;
+
+        for (int i = 0; i < scenarios.Count; ++i)
+        {
+            if (scenarios[i].name == "file-picker-unity-editor-dark-open")
+            {
+                picker = scenarios[i];
+                break;
+            }
+        }
+
+        Assert.IsNotNull(picker);
+        Assert.AreEqual("Assets/NowUI/Assets/Themes/UnityEditorDark.asset", picker.themePath);
+        Assert.AreEqual(1024, picker.width);
+        Assert.AreEqual(640, picker.height);
+        Assert.AreEqual(4, picker.warmupFrames);
+        Assert.IsNotNull(picker.prepare);
+        Assert.IsNotNull(picker.createInputProvider);
+        Assert.IsNotNull(picker.afterWarmup);
+        Assert.IsNotNull(picker.draw);
+        Assert.IsNull(picker.capture);
+        Assert.IsFalse(picker.includeInGoldens);
+        Assert.IsFalse(picker.includeInPerf);
+        Assert.IsTrue(picker.suppressBadge);
     }
 
     static Color32[] SolidPixels(int count, Color32 color)

@@ -8,6 +8,11 @@ using Object = UnityEngine.Object;
 
 public class NowWorldGraphicTests
 {
+    static readonly NowResolvedId TestIdentityRoot =
+        NowResolvedId.CreateOwnerRoot(0x574F524C44544553UL);
+
+    static NowResolvedId TestId(int id) => TestIdentityRoot.Child(id);
+
     sealed class RectWorldGraphic : NowWorldGraphic
     {
         public bool drawTextured;
@@ -51,7 +56,7 @@ public class NowWorldGraphicTests
         public AnimationCurve curve = AnimationCurve.Linear(0f, 0f, 1f, 1f);
         public bool hovered;
         public bool open;
-        public int controlId;
+        public NowResolvedId controlId;
 
         protected override INowInputProvider GetInputProvider()
         {
@@ -100,6 +105,7 @@ public class NowWorldGraphicTests
     sealed class CountingWorldGraphic : NowWorldGraphic
     {
         public int drawCount;
+        public bool drawModal;
 
         public void TickLateUpdate()
         {
@@ -109,6 +115,10 @@ public class NowWorldGraphicTests
         protected override void DrawNowUI(NowRect rect)
         {
             ++drawCount;
+
+            if (drawModal)
+                NowOverlay.BlockAllSurfaces(
+                    NowControls.GetControlId(new NowId(7801)));
 
             Now.Rectangle(new NowRect(0, 0, rect.width, rect.height))
                 .SetColor(Color.white)
@@ -212,7 +222,9 @@ public class NowWorldGraphicTests
         protected override void DrawNowUI(NowRect rect)
         {
             var full = new NowRect(0, 0, rect.width, rect.height);
-            var press = NowInput.Interact(NowInput.CombineId(GetEntityId().GetHashCode(), 101), full);
+            NowResolvedId surfaceId = NowControls.GetControlId("world-menu-surface");
+            NowResolvedId resolvedMenuId = NowControls.GetControlId(new NowId(menuId));
+            var press = NowInput.Interact(surfaceId.Child(101), full);
 
             if (press.clicked)
                 ++behindClicks;
@@ -220,14 +232,14 @@ public class NowWorldGraphicTests
             if (!ownsMenu)
                 return;
 
-            var context = NowInput.Interact(NowInput.CombineId(GetEntityId().GetHashCode(), 102), full, NowPointerButton.Secondary);
+            var context = NowInput.Interact(surfaceId.Child(102), full, NowPointerButton.Secondary);
 
             if (context.clicked)
-                NowContextMenu.Open(menuId, context.pointerPosition, fitToView: false);
+                NowContextMenu.Open(resolvedMenuId, context.pointerPosition, fitToView: false);
 
-            if (NowContextMenu.Begin(menuId))
+            if (NowContextMenu.Begin(resolvedMenuId))
             {
-                if (NowContextMenu.Item("Do the thing"))
+                if (NowContextMenu.Item("Do the thing", id: "do-the-thing"))
                     ++itemClicks;
 
                 NowContextMenu.End();
@@ -603,6 +615,69 @@ public class NowWorldGraphicTests
 
             Assert.AreEqual(1, graphic.drawCount);
             Assert.IsTrue(graphic.hasGeometry);
+        }
+        finally
+        {
+            Object.DestroyImmediate(panelObject);
+            Object.DestroyImmediate(cameraObject);
+        }
+    }
+
+    [Test]
+    public void FrustumCulledWorldGraphicReleasesAndRestoresItsModalFootprint()
+    {
+        Assert.NotNull(Resources.Load<Material>("NowUI/UIMaterial"));
+        var cameraObject = new GameObject("Now World Overlay Camera");
+        var panelObject = new GameObject("Now World Overlay Panel");
+
+        try
+        {
+            var camera = cameraObject.AddComponent<Camera>();
+            camera.orthographic = true;
+            camera.orthographicSize = 1f;
+            camera.pixelRect = new Rect(0, 0, 200, 200);
+            cameraObject.transform.position = new Vector3(0, 0, -5);
+            cameraObject.transform.rotation = Quaternion.identity;
+
+            var graphic = panelObject.AddComponent<CountingWorldGraphic>();
+            graphic.facingMode = NowWorldFacingMode.None;
+            graphic.targetCamera = camera;
+            graphic.frustumCullRebuilds = true;
+            graphic.size = new Vector2(100f, 50f);
+            graphic.pixelsPerUnit = 100f;
+            graphic.drawModal = true;
+
+            graphic.TickLateUpdate();
+            NowOverlay.ForceNewFrame();
+            NowOverlay.ForceNewFrame();
+
+            Assert.AreEqual(1, graphic.drawCount);
+            Assert.AreEqual(1, NowOverlay.previousBlockCount);
+
+            panelObject.transform.position = new Vector3(5f, 0f, 0f);
+            graphic.TickLateUpdate();
+
+            Assert.AreEqual(0, NowOverlay.currentBlockCount);
+            Assert.AreEqual(0, NowOverlay.previousBlockCount);
+            Assert.AreEqual(0, NowOverlay.registrationOwnerCount);
+
+            graphic.RebuildNowUI();
+
+            Assert.AreEqual(2, graphic.drawCount);
+            Assert.AreEqual(
+                0,
+                NowOverlay.currentBlockCount,
+                "A manual off-frustum rebuild must not re-register an invisible modal footprint.");
+            Assert.AreEqual(0, NowOverlay.registrationOwnerCount);
+
+            panelObject.transform.position = Vector3.zero;
+            graphic.TickLateUpdate();
+
+            Assert.AreEqual(3, graphic.drawCount);
+            Assert.AreEqual(
+                1,
+                NowOverlay.currentBlockCount,
+                "Returning to the camera frustum must rebuild and restore the popup footprint.");
         }
         finally
         {
@@ -1325,9 +1400,9 @@ public class NowWorldGraphicTests
             var replayProvider = new FakeProvider { snapshot = pressSnapshot };
 
             using (NowInput.Begin(replayProvider, surface))
-                Assert.IsTrue(NowInput.Interact(7, new NowRect(0, 0, 100, 50)).pressed);
+                Assert.IsTrue(NowInput.Interact(TestId(7), new NowRect(0, 0, 100, 50)).pressed);
 
-            Assert.AreEqual(7, NowInput.activeId);
+            Assert.AreEqual(TestId(7), NowInput.activeId);
 
             provider.TryGetSnapshot(surface, new NowMouseInput
             {
@@ -1339,9 +1414,9 @@ public class NowWorldGraphicTests
             replayProvider.snapshot = releaseSnapshot;
 
             using (NowInput.Begin(replayProvider, surface))
-                Assert.IsTrue(NowInput.Interact(7, new NowRect(0, 0, 100, 50)).released);
+                Assert.IsTrue(NowInput.Interact(TestId(7), new NowRect(0, 0, 100, 50)).released);
 
-            Assert.AreEqual(0, NowInput.activeId);
+            Assert.AreEqual(NowResolvedId.None, NowInput.activeId);
         }
         finally
         {
@@ -1436,8 +1511,8 @@ public class NowWorldGraphicTests
 
             provider.snapshot = new NowInputSnapshot(fieldPoint, true, true, false);
             graphic.RebuildNowUI();
-            Assert.AreNotEqual(0, NowInput.activeId, "Pressing the curve field must capture active pointer input.");
-            int pressedId = NowInput.activeId;
+            Assert.IsTrue(NowInput.activeId.hasValue, "Pressing the curve field must capture active pointer input.");
+            NowResolvedId pressedId = NowInput.activeId;
             Assert.AreEqual(graphic.controlId, pressedId, "The curve field press must capture the same id used by its open state.");
             Assert.IsFalse(NowInput.hasContext, "World graphic input should restore the previous input context after rebuilding.");
 
@@ -1445,7 +1520,7 @@ public class NowWorldGraphicTests
             Assert.AreEqual(pressedId, NowInput.activeId, "The active id must survive until the release frame begins.");
             graphic.RebuildNowUI();
             Assert.AreEqual(pressedId, graphic.controlId, "The curve field id must stay stable between press and release.");
-            Assert.AreEqual(0, NowInput.activeId, $"Releasing the curve field should clear active pointer input captured by id {pressedId}.");
+            Assert.AreEqual(NowResolvedId.None, NowInput.activeId, $"Releasing the curve field should clear active pointer input captured by id {pressedId}.");
             Assert.IsTrue(graphic.hovered, "Releasing over the curve field should still hover it.");
             Assert.IsTrue(graphic.open, "Clicking the curve field should toggle its popup open state.");
 
@@ -1560,6 +1635,7 @@ public class NowWorldGraphicTests
             Assert.AreEqual(1f, material.GetFloat("_NowMaterialGlassMode"), 0.001f);
             Assert.AreEqual(0f, material.GetFloat("_NowMaterialGlassUseBackdrop"), 0.001f);
             Assert.AreEqual(1f, material.GetFloat("_NowMaterialGlassUseSceneDepth"), 0.001f);
+            Assert.IsTrue(material.IsKeywordEnabled("NOWUI_GLASS_SCENE_DEPTH"));
 
             graphic.ApplyGlassBackdropTexture(Texture2D.whiteTexture, Texture2D.blackTexture);
             material = go.GetComponent<MeshRenderer>().sharedMaterial;
@@ -1576,9 +1652,70 @@ public class NowWorldGraphicTests
             Assert.AreEqual(1f, material.GetFloat("_NowMaterialGlassMode"), 0.001f);
             Assert.AreEqual(0f, material.GetFloat("_NowMaterialGlassUseBackdrop"), 0.001f);
             Assert.AreEqual(0f, material.GetFloat("_NowMaterialGlassUseSceneDepth"), 0.001f);
+            Assert.IsFalse(material.IsKeywordEnabled("NOWUI_GLASS_SCENE_DEPTH"));
         }
         finally
         {
+            Object.DestroyImmediate(go);
+        }
+    }
+
+    [TestCase(1)]
+    [TestCase(2)]
+    public void WorldGlassMaterialBindsArrayBackdrops(int volumeDepth)
+    {
+        if (!SystemInfo.supports2DArrayTextures)
+            Assert.Ignore("The active graphics device does not support 2D texture arrays.");
+
+        var go = new GameObject("Now World Stereo Glass");
+        RenderTexture backdrop = null;
+        RenderTexture sharpBackdrop = null;
+
+        try
+        {
+            var descriptor = new RenderTextureDescriptor(32, 16, RenderTextureFormat.ARGB32, 0)
+            {
+                dimension = TextureDimension.Tex2DArray,
+                volumeDepth = volumeDepth,
+                vrUsage = volumeDepth > 1 ? VRTextureUsage.TwoEyes : VRTextureUsage.DeviceSpecific,
+                msaaSamples = 1
+            };
+            var layout = NowGlassTextureLayout.FromDescriptor(descriptor);
+            backdrop = NowGlassBackdropSurface.CreateTexture(32, 16, "Stereo Glass Backdrop Test", layout);
+            sharpBackdrop = NowGlassBackdropSurface.CreateTexture(32, 16, "Stereo Glass Sharp Test", layout);
+            var graphic = go.AddComponent<GlassWorldGraphic>();
+            graphic.glassBackdropMode = NowWorldGlassBackdropMode.Camera;
+            graphic.RebuildNowUI();
+            graphic.ApplyGlassBackdropTexture(backdrop, sharpBackdrop);
+
+            var material = go.GetComponent<MeshRenderer>().sharedMaterial;
+
+            Assert.NotNull(material);
+            Assert.AreEqual(1f, material.GetFloat("_NowMaterialGlassUseBackdrop"), 0.001f);
+            Assert.AreEqual(1f, material.GetFloat("_NowMaterialGlassUseStereoBackdrop"), 0.001f);
+            Assert.AreEqual(
+                volumeDepth,
+                material.GetFloat("_NowMaterialGlassBackdropSliceCount"),
+                0.001f);
+            Assert.AreSame(Texture2D.blackTexture, material.GetTexture("_NowMaterialBackdropTex"));
+            Assert.AreSame(Texture2D.blackTexture, material.GetTexture("_NowMaterialGlassSharpBackdropTex"));
+            Assert.AreSame(backdrop, material.GetTexture("_NowMaterialBackdropArrayTex"));
+            Assert.AreSame(sharpBackdrop, material.GetTexture("_NowMaterialGlassSharpBackdropArrayTex"));
+        }
+        finally
+        {
+            if (backdrop != null)
+            {
+                backdrop.Release();
+                Object.DestroyImmediate(backdrop);
+            }
+
+            if (sharpBackdrop != null)
+            {
+                sharpBackdrop.Release();
+                Object.DestroyImmediate(sharpBackdrop);
+            }
+
             Object.DestroyImmediate(go);
         }
     }

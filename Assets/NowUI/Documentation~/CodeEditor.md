@@ -25,18 +25,20 @@ NowCode.Editor(rect, NowMarkupCodeLanguage.instance).Draw(ref markupText);
 ```
 
 `NowCodeEditorResult` reports `changed`, `isValid` and `diagnosticCount`, so
-"save only when valid" is one if.
+"save only when valid" is one if. `isValid` means *no errors*: diagnostics
+carry a `NowCodeDiagnosticSeverity` (`Error`, `Warning`, `Info`), and
+warnings or infos advise without failing the gate.
 
 Builder options: `SetHeight` / `SetWidth` (stretch width by default in
 layout flow), `SetFontSize` (default 14), `SetLineNumbers(false)`,
-`SetStatusBar(false)`.
+`SetStatusBar(false)`, and authored or resolved `SetId(...)` overloads.
 
 Each explicitly identified editor retains its parsed line table and undo
 history between draws. Retention is bounded to the 128 most recently drawn
 editors by default; tune `NowCodeEditor.cacheCapacity` for unusually large
 editor grids. When a dynamic editor is removed permanently, call
 `NowCodeEditor.ReleaseCache(id)` from the same host/id scope (or pass a fully
-resolved `NowId`) to release it immediately. `ResetCaches()` releases every
+resolved `NowResolvedId`) to release it immediately. `ResetCaches()` releases every
 editor cache.
 
 ## Example
@@ -50,8 +52,11 @@ the resulting UI.
 
 - **Highlighting** through the language profile, with state carried across
   lines (multi-line constructs color correctly).
-- **Validation squiggles** under each diagnostic; hover one for the message,
-  or read the status bar — clicking the status error jumps the caret to it.
+- **Validation squiggles** under each diagnostic, colored by severity —
+  errors red, warnings amber through the theme's `Warning` token, infos
+  muted. Hover one for the message (the worst wins an overlap), or read the
+  status bar, which shows the worst problem in its severity's color —
+  clicking it jumps the caret there.
 - **Auto-close pairs**: typing `{`, `[`, `(` or `"` inserts the pair with
   the caret between; typing the closer over an auto-closed one skips it;
   Backspace inside an empty pair deletes both; typing an opener with a
@@ -71,6 +76,11 @@ the resulting UI.
 - **Held-key repeat** applies to newlines and Tab as well as characters, so
   holding Enter or Tab keeps inserting (matching how holding a letter
   repeats).
+- **Quick actions** contributed by the language: the right-click menu lists
+  them under Rename Symbol, and Alt+Enter opens the same list in a popup at
+  the caret (Up/Down selects, Enter applies, Escape closes). An action applies
+  all of its edits as one undo step. A plain Enter always breaks the line —
+  only the chord and an open popup reach the action.
 - **Undo/redo** (Ctrl+Z / Ctrl+Y or Ctrl+Shift+Z) with typing coalesced
   into single steps.
 - Line numbers, current-line highlight, two-axis scrolling with the caret
@@ -117,7 +127,16 @@ public sealed class MyIniLanguage : NowCodeLanguage
         return 0;
     }
 
-    public override void Validate(string text, List<NowCodeDiagnostic> diagnostics) { /* optional */ }
+    public override void Validate(string text, List<NowCodeDiagnostic> diagnostics)
+    {
+        // Optional. Severity defaults to Error; a warning renders amber and
+        // leaves result.isValid true.
+        // diagnostics.Add(new NowCodeDiagnostic
+        // {
+        //     start = 0, length = 3, message = "Prefer lowercase keys",
+        //     severity = NowCodeDiagnosticSeverity.Warning
+        // });
+    }
 }
 
 NowCodeLanguage.Register(new MyIniLanguage());   // findable by markdown fences too
@@ -126,6 +145,36 @@ NowCodeLanguage.Register(new MyIniLanguage());   // findable by markdown fences 
 Override `aliases` to add alternate registry keys, `autoPairs` to change the
 auto-close set, `TryComplete` for IDE-style character completions, and
 `IsIndentOpener`/`IsIndentCloser` to teach Enter your block characters.
+
+Override `TryGetCodeActions` to contribute quick actions — the rows the
+context menu lists under Rename Symbol and Alt+Enter opens at the caret:
+
+```csharp
+public override bool TryGetCodeActions(string text, int caret, List<NowCodeAction> actions)
+{
+    actions.Add(new NowCodeAction
+    {
+        id = "implement-ibar",                 // stable, and never a title
+        title = "Change 'struct' to 'class' and implement IBar",
+        detail = "IBar",
+        // Ranges index into this text and must not overlap; the editor
+        // applies them from the highest offset down, so both land. List the
+        // edit the author should end up in first — caretOffset is measured
+        // into its text.
+        edits = new[]
+        {
+            new NowCodeEdit(bodyStart, 0, "\n    public void Tick() { }\n"),
+            new NowCodeEdit(headerStart, "struct".Length, "class")
+        },
+        caretOffset = 5
+    });
+
+    return true;
+}
+```
+
+Ids must be unique within the list: rows deliver their click by id one pass
+after the menu closes, so two actions may share a title but never an id.
 
 The editor renders with the theme font at per-codepoint metrics; assign a
 monospace face via the theme for the classic look — everything works either

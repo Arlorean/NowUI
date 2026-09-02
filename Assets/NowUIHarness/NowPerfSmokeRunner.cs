@@ -15,14 +15,20 @@ namespace NowUI.Editor
         public static void Run()
         {
             NowHarnessScenarios.renderScale = 1;
+            NowHarnessScenarios.brandCaptures = false;
             string outputRoot = NowHarnessScenarios.ReadArgument(
                 "-nowuiArtifactsPath",
                 Path.Combine(NowHarnessScenarios.ProjectPath(), "artifacts", "local", "perf"));
             Directory.CreateDirectory(outputRoot);
 
             var metrics = new List<PerfMetric>();
-            foreach (var scenario in NowHarnessScenarios.All())
+            foreach (var scenario in NowHarnessScenarios.All(includeThemeReviews: false))
+            {
+                if (!scenario.includeInPerf)
+                    continue;
+
                 metrics.Add(MeasureScenario(scenario));
+            }
 
             string path = Path.Combine(outputRoot, "nowui-perf.json");
             File.WriteAllText(path, BuildJson(metrics));

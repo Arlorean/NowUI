@@ -75,12 +75,12 @@ namespace NowUI
     {
         const float DefaultLineHeight = 1.25f;
 
-        readonly string _value;
+        string _value;
         readonly int _site;
         readonly NowRect _rect;
         readonly bool _hasRect;
 
-        NowId _id;
+        NowControlIdentity _id;
         NowText _style;
         NowLayoutOptions _options;
         IReadOnlyList<NowRichTextSpan> _spans;
@@ -133,9 +133,12 @@ namespace NowUI
             public LayoutInputs measuredInputs;
             public float measuredWidth;
             public float measuredHeight;
+            public bool hasIntrinsicWidth;
+            public LayoutInputs intrinsicInputs;
+            public float intrinsicWidth;
         }
 
-        int ResolveControlId() => NowControls.GetControlId(_id, _site);
+        NowResolvedId ResolveControlId() => _id.Resolve(_site);
 
         internal NowRichText(string value, NowText style, int site)
         {
@@ -162,6 +165,9 @@ namespace NowUI
 
         public NowRichText SetId(NowId id) { _id = id; return this; }
 
+        /// <summary>Uses an identity that has already been fully resolved.</summary>
+        public NowRichText SetId(NowResolvedId id) { _id = id; return this; }
+
         public NowRichText SetOptions(NowLayoutOptions options) { _options = options; return this; }
 
         public NowRichText SetWidth(float width) { _options = _options.SetWidth(width); return this; }
@@ -172,6 +178,8 @@ namespace NowUI
 
         public NowRichText SetStretchHeight(float weight = 1f) { _options = _options.SetStretchHeight(weight); return this; }
 
+        public NowRichText SetAlign(NowLayoutAlign align) { _options = _options.SetAlign(align); return this; }
+
         public NowRichText SetFont(NowFontAsset font) { _style = _style.SetFont(font); return this; }
 
         public NowRichText SetFontSize(float fontSize) { _style = _style.SetFontSize(fontSize); return this; }
@@ -181,6 +189,12 @@ namespace NowUI
         public NowRichText SetColor(Color color) { _style = _style.SetColor(color); return this; }
 
         public NowRichText SetColor(Vector4 color) { _style = _style.SetColor(color); return this; }
+
+        public NowRichText SetOutline(float outline) { _style = _style.SetOutline(outline); return this; }
+
+        public NowRichText SetOutlinePixels(float pixels) { _style = _style.SetOutlinePixels(pixels); return this; }
+
+        public NowRichText SetOutlineColor(Vector4 color) { _style = _style.SetOutlineColor(color); return this; }
 
         public NowRichText SetGradient(Color from, Color to) { _style = _style.SetGradient(from, to); return this; }
 
@@ -270,10 +284,22 @@ namespace NowUI
 
         public NowRichText SetSelectable(bool selectable = true) { _selectable = selectable; return this; }
 
+        /// <summary>
+        /// Renders the value verbatim, skipping the registered text
+        /// preprocessor (<see cref="Now.SetTextPreprocessor"/>).
+        /// </summary>
+        public NowRichText SetRaw(bool value = true) { _style = _style.SetRaw(value); return this; }
+
         [NowConsumer]
         public NowRichTextResult Draw()
         {
-            int id = ResolveControlId();
+            if (!_style.raw)
+            {
+                _value = Now.PreprocessText(_value);
+                _style = _style.SetRaw();
+            }
+
+            NowResolvedId id = ResolveControlId();
             float lineHeight = _lineHeight > 0f ? _lineHeight : _style.fontSize * DefaultLineHeight;
             ref var state = ref NowControlState.Get<State>(id);
             var document = PrepareDocument(ref state);
@@ -338,14 +364,14 @@ namespace NowUI
             return result;
         }
 
-        bool DrawSelection(int id, NowRichTextLayout layout)
+        bool DrawSelection(NowResolvedId id, NowRichTextLayout layout)
         {
             string text = layout.text;
 
             if (string.IsNullOrEmpty(text) || layout.selectionLines.Count == 0 || _style.font == null)
                 return false;
 
-            int selectionId = NowInput.GetId(id, "selection");
+            NowResolvedId selectionId = id.Child("selection");
             var selection = NowTextSelection.Interact(
                 selectionId,
                 text,
@@ -354,17 +380,16 @@ namespace NowUI
                 _style.fontSize,
                 _style.fontStyle);
 
-            int menuId = NowInput.GetId(selectionId, "menu");
+            NowResolvedId menuId = selectionId.Child("menu");
 
-            if (selection.rightClicked)
-                NowContextMenu.Open(menuId, selection.rightClickPosition);
+            NowContextMenu.Open(menuId, in selection.contextTrigger);
 
             if (NowContextMenu.Begin(menuId))
             {
-                if (selection.hasSelection && NowContextMenu.Item("Copy"))
+                if (selection.hasSelection && NowContextMenu.Item("Copy", new NowId("copy")))
                     NowClipboard.Copy(NowTextSelection.GetSelection(selectionId, text));
 
-                if (NowContextMenu.Item("Select All"))
+                if (NowContextMenu.Item("Select All", new NowId("select-all")))
                     NowTextSelection.SelectAll(selectionId, text);
 
                 NowContextMenu.End();
@@ -386,7 +411,7 @@ namespace NowUI
         NowRichTextDocument PrepareDocument(ref State state)
         {
             var baseStyle = new NowRichTextStyle(_style.fontSize, _style.fontStyle).SetColor(_style.color);
-            Vector4 accentColor = NowTheme.themeAsset.GetColor(NowColorToken.Accent);
+            Vector4 accentColor = NowRichTextParser.DefaultLinkColor(NowTheme.themeAsset);
 
             if (state.document == null)
                 state.document = new NowRichTextDocument();
@@ -542,7 +567,7 @@ namespace NowUI
                 return NowLayout.ReserveRect(options);
             }
 
-            float width = ResolveLayoutWidth(document.text);
+            float width = ResolveLayoutWidth(lineHeight, document, ref state, inputs);
 
             if (!state.hasMeasuredHeight || state.measuredWidth != width || !state.measuredInputs.Matches(inputs))
             {
@@ -576,15 +601,32 @@ namespace NowUI
             }
         }
 
-        float ResolveLayoutWidth(string text)
+        float ResolveLayoutWidth(float lineHeight, NowRichTextDocument document, ref State state, in LayoutInputs inputs)
         {
             if (_options.Has(NowLayoutOptions.Field.Width))
                 return _options.width;
 
-            if (_options.Has(NowLayoutOptions.Field.StretchWidth))
-                return Mathf.Max(_style.Measure(text).x + 1f, 1f);
+            if (!state.hasIntrinsicWidth || !state.intrinsicInputs.Matches(inputs))
+            {
+                state.intrinsicWidth = MeasureIntrinsicWidth(lineHeight, document);
+                state.intrinsicInputs = inputs;
+                state.hasIntrinsicWidth = true;
+            }
 
-            return Mathf.Max(_style.Measure(text).x + 1f, 1f);
+            return state.intrinsicWidth;
+        }
+
+        /// <summary>
+        /// Widest unwrapped line, flowed with the document's real spans — a
+        /// base-style string measure undercounts bold/size spans and inlines,
+        /// reserving a too-narrow rect that wraps spuriously.
+        /// </summary>
+        float MeasureIntrinsicWidth(float lineHeight, NowRichTextDocument document)
+        {
+            SharedLayout.Clear();
+            BuildLayout(SharedLayout, new NowRect(0f, 0f, float.MaxValue, float.MaxValue), lineHeight, document);
+            SharedLayout.CompleteLines();
+            return Mathf.Max(SharedLayout.bounds.width, 1f);
         }
 
         float MeasureHeight(float width, float lineHeight, NowRichTextDocument document)
@@ -820,7 +862,7 @@ namespace NowUI
 
                 var style = _style
                     .SetPosition(run.rect)
-                    .SetMask(RunMask(run.rect, mask, motionOutset))
+                    .SetAutomaticMask(mask.Union(run.rect))
                     .SetFontSize(run.fontSize)
                     .SetFontStyle(run.fontStyle)
                     .SetAnimationSequence(animationUnitOffset, totalAnimationUnits);
@@ -890,7 +932,7 @@ namespace NowUI
             [CallerFilePath] string file = "",
             [CallerLineNumber] int line = 0)
         {
-            return new NowRichText(rect, value, NowTheme.themeAsset.ResolveText(NowTextStyle.Body), NowControls.SiteId(file, line));
+            return new NowRichText(rect, value, NowTheme.themeAsset.ResolveText(NowTextStyle.Body), NowControls.SiteToken(file, line));
         }
     }
 
@@ -908,7 +950,7 @@ namespace NowUI
             [CallerFilePath] string file = "",
             [CallerLineNumber] int line = 0)
         {
-            return new NowRichText(value, NowTheme.themeAsset.ResolveText(NowTextStyle.Body), NowControls.SiteId(file, line));
+            return new NowRichText(value, NowTheme.themeAsset.ResolveText(NowTextStyle.Body), NowControls.SiteToken(file, line));
         }
     }
 }

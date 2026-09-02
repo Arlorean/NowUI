@@ -96,7 +96,15 @@ using (NowLayout.Column(NowScreen.safeArea).Padding(16).Gap(8).Begin())
     NowLayout.Badge("3").SetStyle(NowRectangleStyle.Danger).Draw();
     if (NowLayout.Chip("Filter: Active").SetSelected(filtered).Draw()) filtered = !filtered;
 
-    NowLayout.FloatField().SetRange(0f, 10f).SetSpinner(0.5f).Draw(ref spacingValue);
+    using (NowLayout.HorizontalScope(spacing: 8f, alignItems: NowLayoutAlign.Center))
+    {
+        var spacingLabel = NowLayout.Label("Spacing").SetWidth(88f).Reserve();
+        spacingLabel.Draw();
+        NowLayout.FloatField()
+            .SetRange(0f, 10f)
+            .SetScrubRect(spacingLabel.rect)
+            .Draw(ref spacingValue);
+    }
 
     NowLayout.TabBar(pageNames).Draw(ref page);
 
@@ -120,15 +128,26 @@ using (NowLayout.Column(NowScreen.safeArea).Padding(16).Gap(8).Begin())
 - `Badge(text)` is a non-interactive pill; `Chip(text)` is selectable and
   optionally removable via `SetRemovable().Draw(out bool removed)` — the return
   value reports click/submit only, removal comes solely from the out parameter.
-- `SetSpinner(step)` on numeric text fields adds increment/decrement buttons
-  with press-and-hold repeat; up/down navigation steps while focused.
+- Numeric fields accept arithmetic such as `1 + 1`, parentheses, `*`, `/`,
+  `%`, and `^`; Enter or moving focus away resolves the expression and formats
+  the result.
+- `SetScrubRect(label.rect)` turns a separately reserved label into a
+  Unity-style drag handle. Drag horizontally, hold Shift for 4x movement, or
+  hold Alt/Option or Ctrl/Command for 0.25x movement. The default sensitivity
+  adapts to the current value; pass a positive second argument to set value per
+  pointer pixel explicitly.
+- `SetSpinner(step)` remains available as an opt-in compact stepper: a click
+  steps once, a deliberate hold repeats after its delay, and up/down navigation
+  steps while the field is focused.
 - `TabBar(labels).Draw(ref index)` is a caller-owned tab strip;
   `TabView(labels).Begin(ref index)` adds a masked page area below the bar.
 - `SplitView(rect).Begin(ref ratio)` returns a plain result describing two panes
   with a draggable, focusable divider. The result itself is not disposable;
   `BeginFirst()`/`BeginSecond()` return the scopes that open each pane.
 - `TreeView(state).Begin()` renders collapsible rows; expansion and selection
-  live in a caller-owned `NowTreeViewState`.
+  live in a caller-owned `NowTreeViewState`. The state exposes semantic
+  `NowTreeNodeKey` values (`selectedKey`, `IsExpanded`, `SetExpanded`) rather
+  than host-resolved UI IDs; use explicit node IDs whenever siblings reorder.
 - `ComboBox(options).Draw(ref index)` is a searchable dropdown: open it and
   type to filter, up/down highlight, submit commits.
   `Draw(ref string value)` stores the selected option text directly; combine it
@@ -161,15 +180,19 @@ using (NowLayout.Column(NowScreen.safeArea).Padding(16).Gap(8).Begin())
 - `Checkbox(...).Draw(ref value)` / `Slider(...).Draw(ref value)` mutate the
   ref and return true when it changed.
 - `FloatField` / `IntField` are typed text-field helpers with optional
-  `SetRange(...)`; `Slider(...).Draw(ref int)` snaps to whole numbers, and
+  `SetRange(...)`, arithmetic input, and external-label scrubbing via
+  `SetScrubRect(...)`; `Slider(...).Draw(ref int)` snaps to whole numbers, and
   `Slider(...).SetStep(step)` snaps floats to increments.
 - `Vector2Field`, `Vector3Field`, `Vector4Field`, `Vector2IntField` and
-  `Vector3IntField` draw component fields for Unity vector structs;
+  `Vector3IntField` draw component fields for Unity vector structs. Their
+  X/Y/Z/W labels scrub the matching component by default; use
+  `SetLabelScrubbing(false)` when those labels should remain passive.
   `VectorField().Draw(ref Rect)` / `Draw(ref RectInt)` draw X Y W H rows for
   rect structs.
 - Numeric text fields also bind wide types: `TextField().Draw(ref double)` and
   `Draw(ref long)` mirror the float/int helpers, including `SetRange(...)` and
-  `SetSpinner(...)`.
+  `SetScrubRect(...)` (with `SetSpinner(...)` still available when explicit
+  up/down buttons are desired).
 - `Foldout(label)` is a collapsible section header. `Draw(ref bool)` edits
   caller-owned expansion and returns true when toggled; `Draw()` keeps the
   expansion in control state and returns whether the section is open.
@@ -329,28 +352,49 @@ void DrawSettings()
 
 ## File picker fields
 
-File picker fields are ordinary controls with overlay popups. They only return
-paths; opening, saving, importing, and validation beyond the selected mode stay
-in your code. The popup includes an address bar, a folder tree for upstream and
-local navigation, and a details list with extension-aware file icons.
+File picker fields are ordinary controls with modal overlay popups. They only
+return paths; opening, saving, importing, and validation beyond the selected
+mode stay in your code. By default, the popup is centered and clamped to the
+input surface, with a themed scrim separating it from the UI underneath.
+
+The view slider moves through `NowFilePickerView.Details`, `SmallThumbnails`,
+`MediumThumbnails`, and `LargeThumbnails`. Details view keeps the folder tree
+and file list. In Open mode, when space allows and the active filter is
+preview-capable, it also adds a contextual **Details** pane. PNG, JPG, and JPEG
+selections use a decoded preview there; other selected entries show generic
+metadata. Save and Directory modes never reserve the pane. Thumbnail views
+arrange entries in progressively larger grids; supported images use decoded
+thumbnails and other files keep their extension-aware icons.
+
+On wider pickers, the **Places** sidebar provides quick access to existing
+common user folders. Windows uses the system's Desktop, Downloads, Documents,
+Pictures, Music, and Videos locations; macOS uses the equivalent folders with
+Movies in place of Videos; Linux follows `xdg-user-dirs`, including localized
+or customized paths. Missing and explicitly disabled locations are omitted,
+and Places shares one scrollable sidebar with the folder tree. Activating a
+Place keeps that shortcut selected and visible while the main file view
+navigates; it does not scroll down to the matching tree node. Navigation to a
+folder that is not a Place reveals its current tree node instead; scroll upward
+to return to the shortcuts.
 
 ```csharp
-string loadPath = "";
+string previewPath = "";
 string savePath = "";
 string outputDirectory = "";
 
 using (NowLayout.Area(NowScreen.safeArea, padding: 16f, spacing: 8f))
 {
-    if (NowLayout.OpenFileField("load-config")
-        .SetTitle("Open config")
+    if (NowLayout.OpenFileField("preview-image")
+        .SetTitle("Choose preview image")
         .SetStartDirectory(Application.dataPath)
+        .SetInitialView(NowFilePickerView.MediumThumbnails)
         .SetFilters(
-            new NowFileFilter("Config", "json", "yaml", "yml"),
+            new NowFileFilter("Images", "png", "jpg", "jpeg"),
             new NowFileFilter("All files", "*"))
         .SetPopupSize(780f, 480f)
-        .Draw(ref loadPath))
+        .Draw(ref previewPath))
     {
-        LoadConfig(loadPath);
+        SetPreviewImage(previewPath);
     }
 
     if (NowLayout.SaveFileField("save-config")
@@ -376,14 +420,23 @@ using (NowLayout.Area(NowScreen.safeArea, padding: 16f, spacing: 8f))
 
 - `SetExtensions(...)` is the quick form for one unnamed filter; use
   `SetFilter(name, ...)` for one named filter and `SetFilters(...)` for a
-  popup filter dropdown.
+  popup filter dropdown. A concrete active filter enables the **Details**
+  pane only when it contains `png`, `jpg`, or `jpeg`. No filter, an empty
+  extension list, and the `*` wildcard are broad and remain preview-capable in
+  Open mode; the selected entry then determines whether the pane shows an image
+  or generic metadata. A wildcard mixed with concrete extensions remains broad.
 - Save fields append `SetDefaultExtension(...)` when the selected file name
   has no extension. If no default extension is set, the first concrete filter
   extension is used.
 - `SetShowHidden(true)` includes hidden filesystem entries. The default keeps
   them out of the browser list.
-- `SetFitToView(false)` disables popup fitting when a host wants exact
-  placement.
+- `SetInitialView(...)` chooses the view used when the picker first opens. The
+  popup slider can change it without closing the picker, and that choice is
+  preserved on later opens.
+- `SetPopupSize(...)` sets the preferred browser size; the modal remains
+  centered and is clamped when the input surface is smaller.
+- `SetFitToView(false)` restores field-anchored placement and disables clamping
+  for a host that requires exact popup sizing.
 - Selection is delivered on the next `Draw(ref path)` after the popup commits,
   matching dropdown popup behavior.
 - See the file-picker section in the packaged
@@ -589,39 +642,53 @@ for (int i = 0; i < rows.Count; ++i)
 Draw-order salting means state follows the *position* in the loop, not the
 item. When looped items can reorder, appear, or vanish — or when one logical
 control draws from several code paths — anchor identity to your data instead.
-`NowId` is the preferred explicit identity type: it can hold a string or a
-non-zero integer, and integer ids avoid per-frame string hashing for
-data-backed controls. Both forms are local to the active retained host and
-`NowControls.IdScope`, so two reusable panels can safely use the same ids.
+`NowId` is the authored identity type: it can hold a string or any integer
+including zero. Both forms are local to the active retained host and identity scope,
+so two reusable panels can safely use the same application keys.
 
 ```csharp
 NowLayout.Button("Delete").SetId(item.id).Draw();
 
-for (int i = 0; i < rows.Count; ++i)
-    using (NowControls.IdScope(rows[i].id))
+foreach (var row in rows)
+    using (NowControls.KeyedItem(row.id))
         if (NowLayout.Button("Delete").Draw())
-            Delete(rows[i]);
+            Delete(row);
 ```
 
-When an integer is already fully resolved—such as a value returned by
-`graphic.ResolveControlId(item.id)` or composed from a resolved parent with
-`NowInput.CombineId`—wrap it with `NowId.Resolved(value)` before passing it
-back to `SetId`. This explicit escape hatch prevents accidental double-scoping;
-ordinary application/data ids should stay as plain integers.
+`KeyedItem(key)` uses its call site as the list namespace. Use
+`KeyedItemIn(listId, key)` when several helpers or call sites draw the same
+logical collection.
+
+`NowResolvedId` is a separate opaque type returned by
+`NowControls.GetControlId(...)`, host `ResolveControlId(...)` methods, and
+`NowInteraction.id`. Pass a resolved value directly to a `NowResolvedId`
+overload and derive private sub-controls with `resolved.Child(...)`. Never
+persist it, turn it into an integer, or feed it back through `NowId`; that type
+boundary prevents accidental double-scoping. See [Identity](Identity.md).
 
 `TextField`, `Dropdown`, and `ScrollView` keep their optional explicit id as
 the first parameter (`TextField(player.id)` or `TextField("player-name")`) for
 the same purpose; omit it and the call site is the id. Custom controls get site
 identity by declaring the caller-info parameters themselves and passing them
 through `NowControls.Interact(...)`. Builder-style custom controls can store
-`NowControls.SiteId(file, line)` in the factory and pass that fallback identity
-to `NowControls.Interact(id, fallbackIdentity, rect, ...)`.
+`NowControls.SiteId(file, line)` plus a `NowControlIdentity`, resolve it once in
+`Draw()`, and pass the resulting `NowResolvedId` to
+`NowControls.Interact(...)`.
+The `SiteId` return value is an opaque `NowCallSiteId` that lets the resolver
+recover the caller file/line. It is not an authored or resolved control ID and
+must not be persisted.
 
 A composite custom control that draws several child controls should wrap its
 body in `NowControls.ControlScope(id, file, line)`. The scope mixes the custom
 control invocation into every descendant id, allowing reusable local child ids
 without shared focus or state. Its default identity is occurrence-salted; use a
 stable explicit id when repeated instances can reorder.
+
+When a composite parent contains independent child controls, declaration order
+does not make the child win hit testing. Build a `NowInteractionRegion` for the
+parent and exclude every child rectangle before calling the parent's
+interaction. This prevents one-frame parent hover/press reactions through the
+child.
 
 ## Compile-time misuse warnings
 
@@ -876,21 +943,23 @@ The toolkit pieces:
 | `NowControls.Interact(id, rect, navigation, navigationLock, consumesCancel, out focused, out submitted)` | Register a custom control's directional/full navigation and cancel ownership while focused |
 | `NowInput.Interact(rect)` | Id-less interaction: identity from the call site |
 | `interaction.GetId("slot")` / `interaction.State<T>("slot")` | Sub-state keys derived from the resolved control id |
-| `NowInput.CombineId(a, b)` | Mint sub-element ids (rows, links, items) without strings |
+| `resolvedId.Child(id)` | Mint typed sub-element ids for rows, links, and items beneath an already-resolved owner |
+| `NowInteractionRegion.From(rect).Exclude(childRect)` | Define a composite parent's hit region with allocation-free child-control holes |
 | `using (Now.Transform(scale, origin))` | Scale/pan drawing and input together when a host already scales explicit rects, such as zoomable node content |
 | `NowControlState.Get<T>(id)` / `Get<T>(id, "slot")` | Persistent ephemeral slot (struct), evicted when stale |
 | `NowControlState.Transition / Repeat / DetectDoubleClick / ClickStreak / Blink` | The standard timing behaviors; common animation/repeat helpers also accept `NowInteraction` |
 | `NowControlState.RequestRepaint()` | Tell retained hosts (UGUI) to render another frame |
 | `NowFocus.IsFocused / Focus / Clear / LockDirectionalNavigation / LockNavigation` | Focus queries, explicit control, directional-only or full navigation ownership while editing |
 | `Now.Mask(rect)` / `Now.Mask(shape)` | Ambient exact-rectangle or analytic/soft clipping scope; ScrollView uses the rectangular form |
-| `NowOverlay.Defer(blockRect, draw)` | Draw above everything; input beneath is blocked |
-| `NowContextMenu.Open / Begin / Item / End` | Modal right-click menus on the overlay layer |
+| `NowOverlay.Defer(blockRect, draw)` | Draw above everything; input beneath is blocked; deferred callbacks restore their queued input/host/id context |
+| `NowOverlay.Defer(blockRect, sourceId, state, callback)` | Named non-capturing overlay with typed source identity and separate integer callback payload; the three-argument `int state` form is anonymous |
+| `NowContextAction.Resolve` + `NowContextMenu.Open / Begin / Item / End` | Source-aware modal context menus; use explicit item/submenu `NowId` values for stable next-owner-pass delivery |
 | `NowTextInput.current` / `ClaimActivity()` | Frame-sampled keyboard text/editing input, including IME composition; custom focused consumers claim one-shot activity so later IMGUI passes cannot replay it |
 | `NowTextInput.setImeEnabled / setCompositionCursor` | IME hooks: editors toggle on focus and report the caret for the candidate window |
 | `NowTextEdit` | Headless caret/selection/editing engine for custom editors |
 | `NowTextWrap.Layout / Draw` | Word wrap: lay out once into positioned runs, draw many frames |
 | `NowTextArea.LayoutLines / LineOf` | Editing-grade line layout: every character covered, caret-exact metrics |
-| `NowTextSelection.Draw / Interact / DrawHighlights` | Browser-style text selection over positioned line segments |
+| `NowTextSelection.Draw / Interact / DrawHighlights` | Browser-style text selection; pass `NowTextSelectionResult.contextTrigger` directly to `NowContextMenu.Open` |
 | `NowClipboard.Copy / Paste / setText / getText` | The single clipboard hook every copy/paste path uses |
 | `NowLayout.ContentRect()` → `content.End(height)` | Reserve/measure for width-dependent content; same-cycle in layout hosts, cached in one-pass hosts |
 | `theme.Rectangle / theme.Text / theme.ResolveText / theme.GetColor ...` | Themed visuals; `ResolveText` is the rect-free, mask-free starting point |

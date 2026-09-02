@@ -46,6 +46,123 @@ namespace NowUI
         /// </summary>
         internal static int contentVersion => _contentVersion;
 
+        // Per-instance memo of fully resolved presets. Every control resolves
+        // its text style (twice) and its surface rectangle from theme tokens on
+        // every draw; the tokens only change when contentVersion moves, so the
+        // resolved values are cached per style until then. Text presets also
+        // depend on the ambient default font when the preset names none.
+        const int ResolvedTextStyleCount = (int)NowTextStyle.Caption + 1;
+
+        const int ResolvedRectangleStyleCount = (int)NowRectangleStyle.Ghost + 1;
+
+        struct ResolvedRectanglePreset
+        {
+            public Vector4 color;
+            public Vector4 radius;
+            public Vector4 padding;
+            public float blur;
+            public float outline;
+            public Vector4 outlineColor;
+            public bool hasPreset;
+        }
+
+        [NonSerialized] NowText[] _resolvedTexts;
+
+        [NonSerialized] bool[] _resolvedTextValid;
+
+        [NonSerialized] NowFontAsset _resolvedTextFont;
+
+        [NonSerialized] int _resolvedTextVersion = -1;
+
+        [NonSerialized] ResolvedRectanglePreset[] _resolvedRectangles;
+
+        [NonSerialized] bool[] _resolvedRectangleValid;
+
+        [NonSerialized] int _resolvedRectangleVersion = -1;
+
+        NowText ResolveTextCached(NowTextStyle style)
+        {
+            int index = (int)style;
+            var font = Now.font;
+
+            if (_resolvedTextVersion != _contentVersion ||
+                !ReferenceEquals(_resolvedTextFont, font) ||
+                _resolvedTexts == null)
+            {
+                _resolvedTexts ??= new NowText[ResolvedTextStyleCount];
+                _resolvedTextValid ??= new bool[ResolvedTextStyleCount];
+                Array.Clear(_resolvedTextValid, 0, _resolvedTextValid.Length);
+                _resolvedTextVersion = _contentVersion;
+                _resolvedTextFont = font;
+            }
+
+            if ((uint)index >= (uint)ResolvedTextStyleCount)
+                return ResolveTextUncached(default, style);
+
+            if (!_resolvedTextValid[index])
+            {
+                _resolvedTexts[index] = ResolveTextUncached(default, style);
+                _resolvedTextValid[index] = true;
+            }
+
+            return _resolvedTexts[index];
+        }
+
+        NowText ResolveTextUncached(NowRect rect, NowTextStyle style)
+        {
+            var text = ApplyTextPreset(Now.Text(rect, null), style);
+
+            if (text.font == null)
+                text = text.SetFont(Now.font);
+
+            return text;
+        }
+
+        bool TryGetResolvedRectanglePreset(NowRectangleStyle style, out ResolvedRectanglePreset resolved)
+        {
+            int index = (int)style;
+
+            if ((uint)index >= (uint)ResolvedRectangleStyleCount)
+            {
+                resolved = default;
+                return false;
+            }
+
+            if (_resolvedRectangleVersion != _contentVersion || _resolvedRectangles == null)
+            {
+                _resolvedRectangles ??= new ResolvedRectanglePreset[ResolvedRectangleStyleCount];
+                _resolvedRectangleValid ??= new bool[ResolvedRectangleStyleCount];
+                Array.Clear(_resolvedRectangleValid, 0, _resolvedRectangleValid.Length);
+                _resolvedRectangleVersion = _contentVersion;
+            }
+
+            if (!_resolvedRectangleValid[index])
+            {
+                ref var slot = ref _resolvedRectangles[index];
+
+                if (TryGetRectanglePreset(style, out var preset))
+                {
+                    var probe = preset.Apply(this, new NowRectangle(default(NowRect)));
+                    slot.color = probe.color;
+                    slot.radius = probe.radius;
+                    slot.padding = probe.padding;
+                    slot.blur = probe.blur;
+                    slot.outline = probe.outline;
+                    slot.outlineColor = probe.outlineColor;
+                    slot.hasPreset = true;
+                }
+                else
+                {
+                    slot = default;
+                }
+
+                _resolvedRectangleValid[index] = true;
+            }
+
+            resolved = _resolvedRectangles[index];
+            return true;
+        }
+
         public NowRectangleStyle defaultRectangleStyle => _defaultRectangleStyle;
 
         public NowTextStyle defaultTextStyle => _defaultTextStyle;
@@ -174,11 +291,12 @@ namespace NowUI
 
         public NowText Text(NowRect rect, NowTextStyle style)
         {
-            var text = ApplyTextPreset(Now.Text(rect, null), style);
-
-            if (text.font == null)
-                text = text.SetFont(Now.font);
-
+            // The constructor only stores the rect and mirrors it into the
+            // default mask, so the cached preset plus those two fields is the
+            // same value the uncached path builds.
+            var text = ResolveTextCached(style);
+            text.rect = rect;
+            text.mask = rect;
             return text;
         }
 
@@ -196,6 +314,20 @@ namespace NowUI
 
         public NowRectangle ApplyRectanglePreset(NowRectangle rectangle, NowRectangleStyle style)
         {
+            if (TryGetResolvedRectanglePreset(style, out var resolved))
+            {
+                if (!resolved.hasPreset)
+                    return rectangle;
+
+                rectangle.color = resolved.color;
+                rectangle.radius = resolved.radius;
+                rectangle = rectangle.SetPadding(resolved.padding);
+                rectangle.blur = resolved.blur;
+                rectangle.outline = resolved.outline;
+                rectangle.outlineColor = resolved.outlineColor;
+                return rectangle;
+            }
+
             if (!TryGetRectanglePreset(style, out var preset))
                 return rectangle;
 
@@ -1670,7 +1802,25 @@ namespace NowUI
         public readonly bool focused;
         public readonly float hoverT;
 
+        /// <summary>
+        /// Shown in place of <see cref="current"/> while it is empty, muted
+        /// and italic like every other field's placeholder.
+        /// </summary>
+        /// <remarks>
+        /// A combo box that holds no selection — an "add something" picker, a
+        /// filter nobody has set — otherwise renders as a bare box with a
+        /// chevron, which says nothing about what it is for. The placeholder
+        /// was already authored on those controls and was only ever reaching
+        /// the filter field inside the open popup.
+        /// </remarks>
+        public readonly string placeholder;
+
         public NowDropdownFieldRenderContext(NowThemeAsset themeAsset, NowRect rect, string current, bool open, NowInteraction interaction, bool focused, float hoverT)
+            : this(themeAsset, rect, current, open, interaction, focused, hoverT, null)
+        {
+        }
+
+        public NowDropdownFieldRenderContext(NowThemeAsset themeAsset, NowRect rect, string current, bool open, NowInteraction interaction, bool focused, float hoverT, string placeholder)
         {
             this.themeAsset = themeAsset;
             this.rect = rect;
@@ -1679,7 +1829,12 @@ namespace NowUI
             this.interaction = interaction;
             this.focused = focused;
             this.hoverT = hoverT;
+            this.placeholder = placeholder;
         }
+
+        /// <summary>True when the field has nothing to show but a placeholder to show instead.</summary>
+        public bool showsPlaceholder =>
+            string.IsNullOrEmpty(current) && !string.IsNullOrEmpty(placeholder);
     }
 
     public readonly struct NowPopupItemRenderContext
@@ -1691,6 +1846,7 @@ namespace NowUI
         public readonly bool selected;
         public readonly NowInteraction interaction;
         public readonly bool hasSubmenu;
+        public readonly bool isChecked;
 
         public NowPopupItemRenderContext(
             NowThemeAsset themeAsset,
@@ -1699,7 +1855,19 @@ namespace NowUI
             bool selected,
             NowInteraction interaction,
             bool hasSubmenu = false)
-            : this(themeAsset, rect, label, null, selected, interaction, hasSubmenu)
+            : this(themeAsset, rect, label, null, selected, interaction, hasSubmenu, selected)
+        {
+        }
+
+        public NowPopupItemRenderContext(
+            NowThemeAsset themeAsset,
+            NowRect rect,
+            string label,
+            bool selected,
+            NowInteraction interaction,
+            bool hasSubmenu,
+            bool isChecked)
+            : this(themeAsset, rect, label, null, selected, interaction, hasSubmenu, isChecked)
         {
         }
 
@@ -1711,6 +1879,19 @@ namespace NowUI
             bool selected,
             NowInteraction interaction,
             bool hasSubmenu = false)
+            : this(themeAsset, rect, label, detail, selected, interaction, hasSubmenu, selected)
+        {
+        }
+
+        public NowPopupItemRenderContext(
+            NowThemeAsset themeAsset,
+            NowRect rect,
+            string label,
+            string detail,
+            bool selected,
+            NowInteraction interaction,
+            bool hasSubmenu,
+            bool isChecked)
         {
             this.themeAsset = themeAsset;
             this.rect = rect;
@@ -1719,6 +1900,7 @@ namespace NowUI
             this.selected = selected;
             this.interaction = interaction;
             this.hasSubmenu = hasSubmenu;
+            this.isChecked = isChecked;
         }
     }
 
@@ -2188,7 +2370,11 @@ namespace NowUI
                 DrawFocusRing(context.themeAsset, context.rect, radius);
 
             var inner = DropdownFieldInnerRect(context.themeAsset, context.rect, LabelHeight(context.themeAsset));
-            NowControls.DrawLeftLabel(context.themeAsset, inner, context.current, NowTextStyle.Body);
+
+            if (context.showsPlaceholder)
+                NowControls.DrawLeftPlaceholder(context.themeAsset, inner, context.placeholder);
+            else
+                NowControls.DrawLeftLabel(context.themeAsset, inner, context.current, NowTextStyle.Body);
 
             float chevron = context.themeAsset.controlStyles.fieldChevronSize;
             DrawFieldChevron(
@@ -2282,6 +2468,23 @@ namespace NowUI
             float left = context.themeAsset.controlStyles.contextMenuPaddingX * 0.7f;
             float right = context.hasSubmenu ? context.themeAsset.controlStyles.submenuIndicatorInset + 4f : 4f;
             NowControls.DrawLeftLabel(context.themeAsset, context.rect.Inset(left, 0f, right, 0f), context.label, NowTextStyle.Body);
+        }
+
+        public virtual void DrawContextMenuSelectionIndicator(
+            NowThemeAsset themeAsset,
+            NowRect rect,
+            bool enabled,
+            bool highlighted)
+        {
+            Color accent = themeAsset.GetColor(NowColorToken.Accent);
+
+            if (!enabled)
+                accent.a *= 0.62f;
+
+            Now.Rectangle(new NowRect(rect.x + 3f, rect.y + 5f, 3f, Mathf.Max(0f, rect.height - 10f)))
+                .SetColor(accent)
+                .SetRadius(2f)
+                .Draw();
         }
 
         public virtual void DrawContextMenuSubmenuIndicator(NowThemeAsset themeAsset, NowRect rect, bool enabled, bool open)

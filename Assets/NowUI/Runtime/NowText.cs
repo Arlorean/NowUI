@@ -183,6 +183,10 @@ namespace NowUI
 
         internal bool hasExplicitMask;
 
+        internal float rangeOutline;
+
+        internal bool outlineOnlyPass;
+
         internal Vector4 resolvedGradientPayload;
 
         internal float resolvedGradientRamp;
@@ -198,6 +202,8 @@ namespace NowUI
         internal int animationUnitOffset;
 
         internal int animationUnitCount;
+
+        internal bool raw;
 
         public NowText(NowRect rect, NowFontAsset font)
         {
@@ -222,6 +228,8 @@ namespace NowUI
             gradientBounds = default;
             hasGradientBounds = false;
             hasExplicitMask = false;
+            rangeOutline = 0f;
+            outlineOnlyPass = false;
             resolvedGradientPayload = default;
             resolvedGradientRamp = 0f;
             animation = default;
@@ -230,32 +238,38 @@ namespace NowUI
             animationTimeNormalized = false;
             animationUnitOffset = 0;
             animationUnitCount = 0;
+            raw = false;
         }
 
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
         public NowText SetFont(NowFontAsset font)
         {
             this.font = font;
             return this;
         }
 
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
         public NowText SetFontStyle(NowFontStyle fontStyle)
         {
             this.fontStyle = fontStyle;
             return this;
         }
 
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
         public NowText SetBold(bool value = true)
         {
             fontStyle = value ? fontStyle | NowFontStyle.Bold : fontStyle & ~NowFontStyle.Bold;
             return this;
         }
 
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
         public NowText SetItalic(bool value = true)
         {
             fontStyle = value ? fontStyle | NowFontStyle.Italic : fontStyle & ~NowFontStyle.Italic;
             return this;
         }
 
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
         public NowText SetFontSize(float fontSize)
         {
             this.fontSize = fontSize;
@@ -265,15 +279,30 @@ namespace NowUI
         /// <summary>
         /// Outline thickness relative to the font size (em units), so the stroke
         /// keeps the same visual weight at any size: 0.05 ≈ a 5%-of-em outline.
-        /// Negative values inset the outline. For an absolute pixel width, pass
-        /// <c>pixels / fontSize</c>.
+        /// Negative values inset the outline. Use <see cref="SetOutlinePixels(float)"/>
+        /// when the width is authored in local UI pixels.
         /// </summary>
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
         public NowText SetOutline(float outline)
         {
             this.outline = outline;
             return this;
         }
 
+        /// <summary>
+        /// Sets the outline in local UI pixels using the current <see cref="fontSize"/>.
+        /// The conversion to em units happens immediately: call
+        /// <see cref="SetFontSize(float)"/> first, because changing the font size later
+        /// also changes the final pixel width. A non-positive font size clears the outline.
+        /// </summary>
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+        public NowText SetOutlinePixels(float pixels)
+        {
+            outline = fontSize > 0f ? pixels / fontSize : 0f;
+            return this;
+        }
+
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
         public NowText SetOutlineColor(Vector4 outline)
         {
             outlineColor = outline;
@@ -285,6 +314,7 @@ namespace NowUI
         /// the rect) follows the move; a mask pinned with
         /// <see cref="SetMask(NowRect)"/> stays where it was put.
         /// </summary>
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
         public NowText SetPosition(NowRect rect)
         {
             if (!hasExplicitMask && mask == this.rect)
@@ -298,6 +328,7 @@ namespace NowUI
         /// Pins the clip mask independently of the rect: later
         /// <see cref="SetPosition(NowRect)"/> calls no longer move it.
         /// </summary>
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
         public NowText SetMask(NowRect mask)
         {
             this.mask = mask;
@@ -305,12 +336,26 @@ namespace NowUI
             return this;
         }
 
+        /// <summary>
+        /// Installs a framework-generated text mask. Unlike a caller-authored
+        /// <see cref="SetMask(NowRect)"/> mask, the renderer may add glyph,
+        /// outline, and animation padding after applying the active transform.
+        /// </summary>
+        internal NowText SetAutomaticMask(NowRect mask)
+        {
+            this.mask = mask;
+            hasExplicitMask = false;
+            return this;
+        }
+
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
         public NowText SetColor(Color color)
         {
             this.color = color;
             return this;
         }
 
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
         public NowText SetColor(Vector4 color)
         {
             this.color = color;
@@ -321,6 +366,7 @@ namespace NowUI
         /// Fills the glyphs with a cached two-color gradient. <see cref="color"/>
         /// remains a multiplicative tint and the outline remains independently solid.
         /// </summary>
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
         public NowText SetGradient(Color from, Color to)
         {
             gradientEnabled = true;
@@ -332,6 +378,7 @@ namespace NowUI
         }
 
         /// <summary>Vector overload of <see cref="SetGradient(Color, Color)"/>.</summary>
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
         public NowText SetGradient(Vector4 from, Vector4 to)
         {
             gradientEnabled = true;
@@ -347,6 +394,7 @@ namespace NowUI
         /// Increment <paramref name="revision"/> after mutating the same instance,
         /// or call <see cref="Now.InvalidateGradient(UnityEngine.Gradient)"/>.
         /// </summary>
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
         public NowText SetGradient(UnityEngine.Gradient gradient, int revision = 0)
         {
             gradientEnabled = true;
@@ -356,12 +404,14 @@ namespace NowUI
         }
 
         /// <summary>Alias that makes Unity-gradient assignment explicit at call sites.</summary>
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
         public NowText SetGradientRamp(UnityEngine.Gradient gradient, int revision = 0)
         {
             return SetGradient(gradient, revision);
         }
 
         /// <summary>Maps the ramp across the text bounds in a named CSS-style direction.</summary>
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
         public NowText SetGradientLinear(NowGradientDirection direction = NowGradientDirection.ToBottom)
         {
             gradientEnabled = true;
@@ -385,6 +435,7 @@ namespace NowUI
         }
 
         /// <summary>Maps the ramp at a CSS-style angle: 0 is up and 90 is right.</summary>
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
         public NowText SetGradientLinear(float angleDegrees)
         {
             float radians = angleDegrees * Mathf.Deg2Rad;
@@ -392,6 +443,7 @@ namespace NowUI
         }
 
         /// <summary>Maps the ramp along a UI-space direction (positive y points down).</summary>
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
         public NowText SetGradientLinear(Vector2 direction)
         {
             gradientEnabled = true;
@@ -401,6 +453,7 @@ namespace NowUI
         }
 
         /// <summary>Uses a centered ellipse or circle across the text bounds.</summary>
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
         public NowText SetGradientRadial(NowGradientShape shape = NowGradientShape.Ellipse)
         {
             gradientEnabled = true;
@@ -411,6 +464,7 @@ namespace NowUI
         }
 
         /// <summary>Uses an ellipse in normalized text-bound coordinates.</summary>
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
         public NowText SetGradientRadial(Vector2 center, Vector2 radius)
         {
             gradientEnabled = true;
@@ -421,6 +475,7 @@ namespace NowUI
         }
 
         /// <summary>Uses a circle whose radius is relative to the smaller text-bound dimension.</summary>
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
         public NowText SetGradientRadial(Vector2 center, float radius)
         {
             gradientEnabled = true;
@@ -431,12 +486,14 @@ namespace NowUI
         }
 
         /// <summary>Uses a clockwise conic sweep centered on the text bounds.</summary>
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
         public NowText SetGradientConic()
         {
             return SetGradientConic(new Vector2(0.5f, 0.5f), 0f);
         }
 
         /// <summary>Uses a clockwise conic sweep around a normalized center.</summary>
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
         public NowText SetGradientConic(Vector2 center, float startAngle = 0f)
         {
             gradientEnabled = true;
@@ -445,6 +502,7 @@ namespace NowUI
             return this;
         }
 
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
         public NowText SetGradientSpread(NowGradientSpread spread)
         {
             gradientEnabled = true;
@@ -452,6 +510,7 @@ namespace NowUI
             return this;
         }
 
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
         public NowText SetGradientRepetitions(float repetitions)
         {
             gradientEnabled = true;
@@ -463,6 +522,7 @@ namespace NowUI
         /// Pins gradient mapping to a stable rectangle. By default each draw maps
         /// over this text builder's rect; pinning is useful across styled runs.
         /// </summary>
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
         public NowText SetGradientBounds(NowRect bounds)
         {
             gradientBounds = bounds;
@@ -480,6 +540,7 @@ namespace NowUI
         /// Applies an allocation-free, per-cluster animation. Playback has no
         /// hidden clock; provide the sample time with <see cref="SetTime"/>.
         /// </summary>
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
         public NowText SetAnimation(NowTextAnimation animation)
         {
             this.animation = animation;
@@ -487,6 +548,7 @@ namespace NowUI
         }
 
         /// <summary>Samples the animation at an absolute caller-owned time in seconds.</summary>
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
         public NowText SetTime(float seconds)
         {
             animationTime = seconds;
@@ -499,6 +561,7 @@ namespace NowUI
         /// Scrubs a finite animation from 0 to 1 without requesting continuous
         /// repaint. Continuous Wave animation should use <see cref="SetTime"/>.
         /// </summary>
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
         public NowText SetNormalizedTime(float progress)
         {
             animationTime = Mathf.Clamp01(progress);
@@ -526,10 +589,23 @@ namespace NowUI
             return this;
         }
 
+        /// <summary>
+        /// Draws and measures this string verbatim, skipping the registered
+        /// text preprocessor (<see cref="Now.SetTextPreprocessor"/>) — for
+        /// content that must never be transformed: identifiers, user input,
+        /// code. Editable controls set this on their content internally.
+        /// </summary>
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+        public NowText SetRaw(bool value = true)
+        {
+            raw = value;
+            return this;
+        }
+
         [NowConsumer]
         public NowText Draw(string value)
         {
-            Now.DrawString(this, value);
+            Now.DrawString(this, raw ? value : Now.PreprocessText(value));
             return this;
         }
 
@@ -575,6 +651,9 @@ namespace NowUI
 
         public Vector2 Measure(string value)
         {
+            if (!raw)
+                value = Now.PreprocessText(value);
+
             return font != null ? font.MeasureText(value, fontSize, fontStyle) : default;
         }
 
@@ -609,6 +688,9 @@ namespace NowUI
 
         public readonly Vector4 MeasureBounds(string value)
         {
+            if (!raw)
+                value = Now.PreprocessText(value);
+
             return font != null ? font.MeasureTextBounds(value, fontSize, fontStyle) : default;
         }
 
