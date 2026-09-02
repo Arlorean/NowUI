@@ -3428,21 +3428,31 @@ public class NowSdfTests
 
     // Colors authored against the public API are display/sRGB and the render path owes
     // them a working-space conversion (Documentation~/StylesAndThemes.md). The SDF scene
-    // is the one path that cannot be checked by rendering: its shape and effect colors
-    // are shader constants uploaded with SetVectorArray/SetVector, which Unity never
-    // converts, and in a Gamma project NowUIColorToWorkingSpace compiles to the identity,
-    // so a missing conversion is invisible until someone opens the project in Linear.
-    // Assert the conversion at the source instead, so a color input added later without
-    // one fails here rather than in a downstream Linear project.
-    static readonly string[] SdfConstantColors =
+    // is the one path that cannot be checked by rendering: its shape colors are shader
+    // constants uploaded with SetVectorArray, which Unity never converts, and in a Gamma
+    // project NowUIColorToWorkingSpace compiles to the identity, so a missing conversion
+    // is invisible until someone opens the project in Linear. Assert the conversion at
+    // the source instead, so a color input added later without one fails here rather
+    // than in a downstream Linear project.
+    //
+    // The five effect colors are the other half of the contract: they arrive already
+    // converted, so effectColor must NOT convert them again. Converting both puts one
+    // gamma between them — measured in a single frame, a 0.5 grey outline presented at
+    // 0x36 beside a 0.5 grey fill at 0x80.
+    static readonly string[] SdfEffectColors =
     {
-        "_SdfColors",
         "_SdfOutlineColor",
         "_SdfGlowColor",
         "_SdfShadowColor",
         "_SdfInnerShadowColor",
         "_SdfContourColor",
     };
+
+    static string StripComments(string source)
+    {
+        source = Regex.Replace(source, @"/\*.*?\*/", string.Empty, RegexOptions.Singleline);
+        return Regex.Replace(source, @"//[^\n]*", string.Empty);
+    }
 
     [TestCase("NowSdfShaderV1.cginc")]
     [TestCase("NowSdfShaderV2.cginc")]
@@ -3457,32 +3467,53 @@ public class NowSdfTests
             source,
             $"{shaderFile} must include the shared color-space helper.");
 
-        // Every constant color converts in exactly one place, so the shape fill and the
-        // five effects cannot drift apart.
-        StringAssert.IsMatch(
-            @"float4\s+effectColor\s*\([^)]*\)\s*\{\s*return\s+NowUIColorToWorkingSpace\(\s*color\s*\)\s*\*\s*tint\s*;",
-            source,
-            $"{shaderFile}: effectColor must convert its authored color before tinting.");
+        string code = StripComments(source);
 
-        foreach (string uniform in SdfConstantColors)
+        // Shape colors ride _SdfColors, which Unity leaves in the authored space. Every
+        // code read of it converts, and there is exactly one such read.
+        int shapeColorReads =
+            Regex.Matches(code, @"_SdfColors\s*\[").Count -
+            Regex.Matches(code, @"float4\s+_SdfColors\s*\[").Count;
+        int shapeColorConversions = Regex.Matches(
+            code,
+            @"NowUIColorToWorkingSpace\(\s*_SdfColors\s*\[").Count;
+
+        Assert.AreEqual(
+            shapeColorReads,
+            shapeColorConversions,
+            $"{shaderFile}: every read of _SdfColors must convert to working space. " +
+            "A raw read multiplies an sRGB constant into working-space output.");
+        Assert.Greater(shapeColorReads, 0, $"{shaderFile}: expected at least one _SdfColors read.");
+
+        // effectColor is the single place the effect colors are tinted, and it must pass
+        // them through unconverted.
+        StringAssert.IsMatch(
+            @"float4\s+effectColor\s*\([^)]*\)\s*\{\s*return\s+color\s*\*\s*tint\s*;",
+            code,
+            $"{shaderFile}: effectColor must tint its already-converted color without converting it.");
+
+        foreach (string uniform in SdfEffectColors)
         {
             string escaped = Regex.Escape(uniform);
 
             // Alpha carries no color space, so the effects' `.a > 0` early-outs read the
-            // raw constant on purpose and are not conversion sites. Any other swizzle is.
+            // raw constant on purpose and are not conversion sites. Any other read is.
             int reads =
-                Regex.Matches(source, escaped + @"\b").Count -
-                Regex.Matches(source, @"float4\s+" + escaped + @"\s*[;\[]").Count -
-                Regex.Matches(source, escaped + @"\.a\b").Count;
-            int converted = Regex.Matches(
-                source,
-                @"effectColor\(\s*" + escaped + @"(\[index\])?\s*,").Count;
+                Regex.Matches(code, escaped + @"\b").Count -
+                Regex.Matches(code, @"float4\s+" + escaped + @"\s*[;\[]").Count -
+                Regex.Matches(code, escaped + @"\.a\b").Count;
+            int tinted = Regex.Matches(code, @"effectColor\(\s*" + escaped + @"\s*,").Count;
 
             Assert.AreEqual(
                 reads,
-                converted,
-                $"{shaderFile}: every read of {uniform} must go through effectColor. " +
-                "A raw read multiplies an sRGB constant into working-space output.");
+                tinted,
+                $"{shaderFile}: every read of {uniform} must go through effectColor, " +
+                "so the effects cannot drift apart from each other or from the fill.");
+
+            StringAssert.DoesNotMatch(
+                @"NowUIColorToWorkingSpace\(\s*" + escaped,
+                code,
+                $"{shaderFile}: {uniform} arrives already converted and must not convert twice.");
         }
 
         // The canvas converts COLOR on the way to the shader, so only the non-canvas
@@ -3490,7 +3521,7 @@ public class NowSdfTests
         // split the same way.
         StringAssert.IsMatch(
             @"o\.tint\s*=\s*lerp\(\s*NowUIColorToWorkingSpace\(\s*v\.data3\s*\)\s*,\s*v\.canvasColor\s*,",
-            source,
+            code,
             $"{shaderFile}: the non-canvas SetTint color must convert, and the canvas color must not.");
     }
 }
