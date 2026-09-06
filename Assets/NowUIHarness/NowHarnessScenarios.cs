@@ -355,6 +355,7 @@ namespace NowUI.Editor
                 new NowHarnessScenario { name = "sdf-mask-gallery", width = 960, height = 520, includeInGoldens = true, warmupFrames = 2, draw = DrawSdfMaskGallery },
                 new NowHarnessScenario { name = "sdf-planar-primitives", width = 960, height = 390, includeInGoldens = true, warmupFrames = 2, draw = DrawSdfPlanarPrimitives },
                 new NowHarnessScenario { name = "sdf-radial-primitives", width = 840, height = 360, includeInGoldens = true, warmupFrames = 2, draw = DrawSdfRadialPrimitives },
+                new NowHarnessScenario { name = "sdf-image-effects", width = 960, height = 390, includeInGoldens = false, warmupFrames = 2, draw = DrawSdfImageEffects },
                 new NowHarnessScenario { name = "sdf-custom-shaders", width = 960, height = 430, includeInGoldens = false, warmupFrames = 2, draw = DrawSdfCustomShaders },
                 new NowHarnessScenario { name = "lottie", width = 512, height = 512, includeInGoldens = true, draw = DrawLottie },
                 new NowHarnessScenario { name = "logo", width = 960, height = 240, includeInGoldens = false, warmupFrames = 2, draw = DrawLogo },
@@ -3079,6 +3080,174 @@ namespace NowUI.Editor
                 .SetFontSize(11f)
                 .SetColor(new Color(0.70f, 0.80f, 0.92f, 1f))
                 .Draw(note);
+        }
+
+        static Texture2D _sdfImageSprite;
+
+        /// <summary>
+        /// Procedural transparent sprite: a five-petal flower with a hole,
+        /// antialiased alpha, and an angular color sweep so the fill is visibly
+        /// sampled from the image rather than from a scene color.
+        /// </summary>
+        static Texture2D _sdfImageSpriteLarge;
+
+        internal static Texture2D GetSdfImageSprite()
+        {
+            return _sdfImageSprite != null
+                ? _sdfImageSprite
+                : _sdfImageSprite = CreateSdfImageSprite(96);
+        }
+
+        /// <summary>The same flower rasterized at 512 texels, for size-dependent checks.</summary>
+        internal static Texture2D GetSdfImageSpriteLarge()
+        {
+            return _sdfImageSpriteLarge != null
+                ? _sdfImageSpriteLarge
+                : _sdfImageSpriteLarge = CreateSdfImageSprite(512);
+        }
+
+        static Texture2D CreateSdfImageSprite(int size)
+        {
+            float scale = size / 96f;
+            var texture = new Texture2D(size, size, TextureFormat.RGBA32, false)
+            {
+                name = "NowHarness SDF Image Sprite " + size,
+                hideFlags = HideFlags.HideAndDontSave,
+                wrapMode = TextureWrapMode.Clamp,
+                filterMode = FilterMode.Bilinear
+            };
+            var pixels = new Color32[size * size];
+            var center = new Vector2(size * 0.5f, size * 0.5f);
+
+            for (int y = 0; y < size; ++y)
+            {
+                for (int x = 0; x < size; ++x)
+                {
+                    var p = (new Vector2(x + 0.5f, y + 0.5f) - center) / scale;
+                    float distance = p.magnitude - 22f;
+
+                    for (int petal = 0; petal < 5; ++petal)
+                    {
+                        float angle = petal * Mathf.PI * 2f / 5f + Mathf.PI * 0.5f;
+                        var petalCenter = new Vector2(Mathf.Cos(angle), Mathf.Sin(angle)) * 27f;
+                        distance = Mathf.Min(distance, (p - petalCenter).magnitude - 15f);
+                    }
+
+                    distance = Mathf.Max(distance, 8f - p.magnitude);
+                    float alpha = Mathf.Clamp01(0.5f - distance * scale);
+                    float hue = Mathf.Repeat(Mathf.Atan2(p.y, p.x) / (Mathf.PI * 2f), 1f);
+                    Color color = Color.HSVToRGB(hue, 0.55f, 1f);
+                    pixels[y * size + x] = new Color32(
+                        (byte)Mathf.RoundToInt(color.r * 255f),
+                        (byte)Mathf.RoundToInt(color.g * 255f),
+                        (byte)Mathf.RoundToInt(color.b * 255f),
+                        (byte)Mathf.RoundToInt(alpha * 255f));
+                }
+            }
+
+            texture.SetPixels32(pixels);
+            texture.Apply(false, false);
+            return texture;
+        }
+
+        static Texture2D _sdfImageRing;
+
+        /// <summary>A second, unrelated texture: a cyan ring with antialiased alpha.</summary>
+        internal static Texture2D GetSdfImageRing()
+        {
+            if (_sdfImageRing != null)
+                return _sdfImageRing;
+
+            const int size = 48;
+            var texture = new Texture2D(size, size, TextureFormat.RGBA32, false)
+            {
+                name = "NowHarness SDF Image Ring",
+                hideFlags = HideFlags.HideAndDontSave,
+                wrapMode = TextureWrapMode.Clamp,
+                filterMode = FilterMode.Bilinear
+            };
+            var pixels = new Color32[size * size];
+            var center = new Vector2(size * 0.5f, size * 0.5f);
+
+            for (int y = 0; y < size; ++y)
+            {
+                for (int x = 0; x < size; ++x)
+                {
+                    float distance = Mathf.Abs((new Vector2(x + 0.5f, y + 0.5f) - center).magnitude - 15f) - 6f;
+                    byte alpha = (byte)Mathf.RoundToInt(Mathf.Clamp01(0.5f - distance) * 255f);
+                    pixels[y * size + x] = new Color32(90, 230, 255, alpha);
+                }
+            }
+
+            texture.SetPixels32(pixels);
+            texture.Apply(false, false);
+            _sdfImageRing = texture;
+            return texture;
+        }
+
+        static void DrawSdfImageEffects(NowRect rect)
+        {
+            Now.Rectangle(rect).SetColor(new Color(0.018f, 0.026f, 0.050f, 1f)).Draw();
+            Now.Text(new NowRect(26f, 18f, rect.width - 52f, 30f))
+                .SetFontSize(23f)
+                .SetBold()
+                .SetColor(Color.white)
+                .Draw("SDF image effects");
+            Now.Text(new NowRect(26f, 50f, rect.width - 52f, 21f))
+                .SetFontSize(13f)
+                .SetColor(new Color(0.65f, 0.76f, 0.89f, 1f))
+                .Draw("One transparent sprite; every effect follows its alpha silhouette through a GPU-baked field.");
+
+            const float cardWidth = 219f;
+            const float cardGap = 12f;
+            var shadowCard = new NowRect(24f, 92f, cardWidth, 270f);
+            var glowCard = new NowRect(shadowCard.xMax + cardGap, 92f, cardWidth, 270f);
+            var embossCard = new NowRect(glowCard.xMax + cardGap, 92f, cardWidth, 270f);
+            var booleanCard = new NowRect(embossCard.xMax + cardGap, 92f, cardWidth, 270f);
+
+            DrawSdfPlanarCard(shadowCard, "SHADOW + OUTLINE", "Drop shadow hugs the petals");
+            DrawSdfPlanarCard(glowCard, "GLOW", "Rotated 20° · outside halo");
+            DrawSdfPlanarCard(embossCard, "EMBOSS + INNER", "Edge lighting on the image");
+            DrawSdfPlanarCard(booleanCard, "CONTOURS + CUT", "Second texture unioned · circle cut");
+
+            Texture2D sprite = GetSdfImageSprite();
+            Texture2D ring = GetSdfImageRing();
+            var imageRect = new NowRect(32f, 10f, 127f, 127f);
+
+            var shadowScene = new NowRect(shadowCard.x + 14f, shadowCard.y + 50f, shadowCard.width - 28f, 146f);
+            NowSdf.Scene(shadowScene, "visual-sdf-image-shadow")
+                .SetFeather(0.5f)
+                .SetShadow(new Vector2(6f, 8f), 10f, new Color(0f, 0f, 0f, 0.6f), 1f)
+                .SetOutline(2.5f, Color.white, 0.5f)
+                .Image(imageRect, sprite)
+                .Draw();
+
+            var glowScene = new NowRect(glowCard.x + 14f, glowCard.y + 50f, glowCard.width - 28f, 146f);
+            NowSdf.Scene(glowScene, "visual-sdf-image-glow")
+                .SetFeather(0.5f)
+                .SetGlow(16f, new Color(0.16f, 0.9f, 1f, 0.5f), 1.4f)
+                .RotateNext(20f)
+                .Image(imageRect, sprite)
+                .Draw();
+
+            var embossScene = new NowRect(embossCard.x + 14f, embossCard.y + 50f, embossCard.width - 28f, 146f);
+            NowSdf.Scene(embossScene, "visual-sdf-image-emboss")
+                .SetFeather(0.5f)
+                .SetEmboss(new Vector2(-0.6f, -0.8f), 0.45f, 5f)
+                .SetInnerShadow(new Vector2(-3f, -4f), 8f, new Color(0f, 0f, 0f, 0.5f))
+                .Image(imageRect, sprite)
+                .Draw();
+
+            var booleanScene = new NowRect(booleanCard.x + 14f, booleanCard.y + 50f, booleanCard.width - 28f, 146f);
+            NowSdf.Scene(booleanScene, "visual-sdf-image-boolean")
+                .SetFeather(0.5f)
+                .SetContours(7f, 1.2f, new Color(1f, 1f, 1f, 0.35f), 0f, 3)
+                .Image(imageRect, sprite)
+                .SmoothUnion(8f)
+                .Image(new NowRect(imageRect.x - 18f, imageRect.yMax - 58f, 56f, 56f), ring)
+                .Subtract()
+                .Circle(new Vector2(imageRect.xMax - 24f, imageRect.y + 28f), 22f)
+                .Draw();
         }
 
         static void DrawSdfRadialPrimitives(NowRect rect)

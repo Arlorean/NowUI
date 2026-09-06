@@ -28,6 +28,17 @@ provide the licensed editor and platform modules required by these tests. The
 externally provisioned automation. Do not pass `-quit` to Unity test runs; the
 Unity Test Framework exits batchmode after writing results.
 
+## Feature Benchmarks
+
+Run `pwsh -File Tools/NowUI-Harness.ps1 -Mode Benchmark -BenchmarkRuns 3`
+to measure all performance-category EditMode and PlayMode cases and generate
+`overview.md`, `overview.json`, and `environment.json` under the artifacts path.
+Use `-Category NowUI.Overview` for the expanded feature matrix alone.
+This requires Python 3 (standard library only) and a graphics device.
+The [benchmark guide](Benchmarks.md) covers workload units, CPU/GPU boundaries,
+cache pressure, physical project paths, and interpretation. The older `-Mode Perf`
+smoke timer includes capture/PNG/disk costs and is not an isolated render benchmark.
+
 ## Visual Validation
 
 Run the editor visual harness locally as a separate rendering gate:
@@ -35,10 +46,24 @@ Run the editor visual harness locally as a separate rendering gate:
 - `Tools/NowUI-Harness.ps1 -Mode Visual` produces PNG captures and a
   `manifest.json` under `artifacts/local/visual`.
 - `Tools/NowUI-Harness.ps1 -Mode Animation` advances an explicit deterministic
-  frame clock, writes numbered PNG sequences, and encodes looping GIFs under
-  `artifacts/local/animation`. Animation capture is intentionally separate
-  from `All` and golden comparison. It requires `ffmpeg` on `PATH`; pass
-  `-Ffmpeg`, or set `FFMPEG`/`FFMPEG_PATH`, for a nonstandard install.
+  frame clock, writes numbered PNG sequences, and encodes looping animated
+  WebP files under `artifacts/local/animation`. WebP is what the README
+  embeds: full-colour, about a sixth of the size of the equivalent GIFs, and
+  it still autoplays in a plain `<img>`. `-WebpQuality` (default 60, the
+  lowest setting with no visible loss on the README loops) and `-WebpMethod`
+  (libwebp effort, default 6) trade size against fidelity and encode time.
+  Add `-Gif` or `-Mp4` to also emit those containers. Animation capture is
+  intentionally separate from `All` and golden comparison.
+- WebP encoding runs through `Tools/NowUI-EncodeWebp.py`, which needs Python 3
+  with Pillow (`python -m pip install pillow`); pass `-Python`, or set
+  `PYTHON`/`PYTHON_PATH`, for a nonstandard install. The script's docstring
+  records why Pillow beats ffmpeg's WebP encoder here and why the captures'
+  partial alpha is flattened. `-Gif` and `-Mp4` still need `ffmpeg` on
+  `PATH`; pass `-Ffmpeg`, or set `FFMPEG`/`FFMPEG_PATH`, for a nonstandard
+  install.
+- `Tools/NowUI-Harness.ps1 -Mode Encode` re-encodes the most recent animation
+  capture from its PNG frames without launching Unity, so encoder settings can
+  be iterated in seconds.
 - `-ScenarioFilter` applies to both `Visual` and `Animation` modes, so a single
   README scene can be iterated without recapturing the full catalogue.
 - `Tools/NowUI-Harness.ps1 -Mode Visual -ScenarioFilter theme-review-`
@@ -92,7 +117,23 @@ Provision all listed Unity `6000.4.0f1` modules before relying on the result.
 
 ## Allocation Bar
 
-Normal frame paths must allocate no managed memory after explicit warmup:
+Normal frame paths must allocate no managed memory after explicit warmup.
+
+Allocation gates must first verify their counter against a deliberately retained
+allocation. Some Unity Mono builds return zero from the byte API even when code
+allocates. Repository tests use `NowBenchmarkAllocations`: zero-allocation gates
+can fall back to verified current-thread profiler allocation calls; byte budgets
+require verified bytes and are explicitly skipped when unavailable. Unsupported
+instrumentation must never turn into a passing zero. Performance output labels
+fallback events `GC.Alloc.Calls`, separate from `GC.Alloc` bytes.
+
+The capture-based performance smoke runner independently probes its byte counter
+without a test-assembly dependency. Its JSON includes `allocationBytesAvailable`
+and writes `allocatedBytes: null` when the counter is unavailable. Its timings
+still include capture, encoding, and temporary-file work; they are not isolated
+frame-render timings.
+
+Prepare representative state before sampling:
 
 - Use `NowDrawList.Warmup(...)` or `NowRenderer.Warmup(...)` with a
   representative frame before measuring steady state.

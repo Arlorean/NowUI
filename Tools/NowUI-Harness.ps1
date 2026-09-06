@@ -2,11 +2,22 @@
 
 param(
     [Parameter(Mandatory = $false)]
-    [ValidateSet("EditMode", "PlayMode", "Visual", "Golden", "Perf", "Animation", "All")]
+    [ValidateSet("EditMode", "PlayMode", "Visual", "Golden", "Perf", "Benchmark", "Animation", "Encode", "All")]
     [string] $Mode = "All",
 
     [Parameter(Mandatory = $false)]
     [string] $Filter,
+
+    [Parameter(Mandatory = $false)]
+    [string] $Category,
+
+    [Parameter(Mandatory = $false)]
+    [ValidateRange(1, 10)]
+    [int] $BenchmarkRuns = 1,
+
+    [Parameter(Mandatory = $false)]
+    [ValidateSet("Both", "EditMode", "PlayMode")]
+    [string] $BenchmarkPlatform = "Both",
 
     [Parameter(Mandatory = $false)]
     [string] $ScenarioFilter,
@@ -25,6 +36,23 @@ param(
 
     [Parameter(Mandatory = $false)]
     [string] $Ffmpeg,
+
+    [Parameter(Mandatory = $false)]
+    [string] $Python,
+
+    [Parameter(Mandatory = $false)]
+    [ValidateRange(0, 100)]
+    [int] $WebpQuality = 60,
+
+    [Parameter(Mandatory = $false)]
+    [ValidateRange(0, 6)]
+    [int] $WebpMethod = 6,
+
+    [Parameter(Mandatory = $false)]
+    [switch] $Gif,
+
+    [Parameter(Mandatory = $false)]
+    [switch] $Mp4,
 
     [Parameter(Mandatory = $false)]
     [switch] $CleanScriptAssemblies
@@ -109,15 +137,22 @@ function Resolve-UnityEditor {
     throw "Unity $expectedVersion was not found. Checked '$searched'. Pass -UnityEditor or set UNITY_EDITOR."
 }
 
-function Resolve-Ffmpeg {
-    param([string] $RequestedPath)
+function Resolve-Tool {
+    param(
+        [string] $Name,
+        [string] $RequestedPath,
+        [string[]] $EnvironmentVariables,
+        [string] $Hint
+    )
 
     $requested = $RequestedPath
     if ([string]::IsNullOrWhiteSpace($requested)) {
-        if (![string]::IsNullOrWhiteSpace($env:FFMPEG)) {
-            $requested = $env:FFMPEG
-        } elseif (![string]::IsNullOrWhiteSpace($env:FFMPEG_PATH)) {
-            $requested = $env:FFMPEG_PATH
+        foreach ($variable in $EnvironmentVariables) {
+            $value = [System.Environment]::GetEnvironmentVariable($variable)
+            if (![string]::IsNullOrWhiteSpace($value)) {
+                $requested = $value
+                break
+            }
         }
     }
 
@@ -130,7 +165,7 @@ function Resolve-Ffmpeg {
             $requested.Contains([System.IO.Path]::DirectorySeparatorChar) -or
             $requested.Contains([System.IO.Path]::AltDirectorySeparatorChar)
         if ($looksLikePath) {
-            throw "The requested ffmpeg executable was not found at '$requested'."
+            throw "The requested $Name executable was not found at '$requested'."
         }
 
         $requestedCommand = Get-Command -Name $requested -CommandType Application -ErrorAction SilentlyContinue |
@@ -139,16 +174,39 @@ function Resolve-Ffmpeg {
             return $requestedCommand.Source
         }
 
-        throw "The requested ffmpeg command '$requested' was not found on PATH."
+        throw "The requested $Name command '$requested' was not found on PATH."
     }
 
-    $pathCommand = Get-Command -Name "ffmpeg" -CommandType Application -ErrorAction SilentlyContinue |
+    $pathCommand = Get-Command -Name $Name -CommandType Application -ErrorAction SilentlyContinue |
         Select-Object -First 1
     if ($null -ne $pathCommand) {
         return $pathCommand.Source
     }
 
-    throw "ffmpeg is required for Animation mode. Pass -Ffmpeg, set FFMPEG or FFMPEG_PATH, or add ffmpeg to PATH."
+    throw $Hint
+}
+
+function Resolve-Ffmpeg {
+    param([string] $RequestedPath)
+
+    return Resolve-Tool -Name "ffmpeg" -RequestedPath $RequestedPath `
+        -EnvironmentVariables @("FFMPEG", "FFMPEG_PATH") `
+        -Hint "ffmpeg is required for -Gif and -Mp4 output. Pass -Ffmpeg, set FFMPEG or FFMPEG_PATH, or add ffmpeg to PATH."
+}
+
+function Resolve-Python {
+    param([string] $RequestedPath)
+
+    $pythonPath = Resolve-Tool -Name "python" -RequestedPath $RequestedPath `
+        -EnvironmentVariables @("PYTHON", "PYTHON_PATH") `
+        -Hint "Python 3 with Pillow is required to encode animated WebP. Pass -Python, set PYTHON or PYTHON_PATH, or add python to PATH."
+
+    & $pythonPath -c "import PIL.Image" 2>$null | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        throw "Python at '$pythonPath' cannot import Pillow, which encodes the animated WebP files. Install it with: `"$pythonPath`" -m pip install pillow"
+    }
+
+    return $pythonPath
 }
 
 function Clear-ScriptAssemblies {
@@ -210,14 +268,15 @@ function Invoke-Unity {
     }
 }
 
-function Invoke-Ffmpeg {
+function Invoke-Encoder {
     param(
         [string] $Executable,
         [string[]] $Arguments,
         [string] $Description
     )
 
-    Write-Host "Running ffmpeg for $Description."
+    $toolName = [System.IO.Path]::GetFileNameWithoutExtension($Executable)
+    Write-Host "Running $toolName for $Description."
     $processInfo = [System.Diagnostics.ProcessStartInfo]::new()
     $processInfo.FileName = $Executable
     $processInfo.UseShellExecute = $false
@@ -233,7 +292,7 @@ function Invoke-Ffmpeg {
 
     try {
         if (!$process.Start()) {
-            throw "ffmpeg did not start."
+            throw "$toolName did not start."
         }
 
         $standardOutput = $process.StandardOutput.ReadToEndAsync()
@@ -251,7 +310,7 @@ function Invoke-Ffmpeg {
                 Write-Host $errorOutput.Trim()
             }
 
-            throw "ffmpeg exited with code $($process.ExitCode) while encoding $Description."
+            throw "$toolName exited with code $($process.ExitCode) while encoding $Description."
         }
     } finally {
         $process.Dispose()
@@ -342,9 +401,13 @@ function Read-UnityTestResults {
 }
 
 function Invoke-TestRun {
-    param([string] $TestPlatform)
+    param(
+        [string] $TestPlatform,
+        [string] $TestCategory = $Category,
+        [string] $RunArtifactsPath = $ArtifactsPath
+    )
 
-    $platformArtifacts = Join-Path $ArtifactsPath $TestPlatform
+    $platformArtifacts = Join-Path $RunArtifactsPath $TestPlatform
     New-Item -ItemType Directory -Force -Path $platformArtifacts | Out-Null
 
     $resultPath = Join-Path $platformArtifacts "NowUI-$TestPlatform-results.xml"
@@ -363,6 +426,10 @@ function Invoke-TestRun {
         $args += @("-testFilter", $Filter)
     }
 
+    if (![string]::IsNullOrWhiteSpace($TestCategory)) {
+        $args += @("-testCategory", $TestCategory)
+    }
+
     Invoke-Unity -UnityArgs $args -LogPath $logPath
 
     try {
@@ -375,6 +442,58 @@ function Invoke-TestRun {
         }
 
         throw
+    }
+}
+
+function Invoke-Benchmarks {
+    # This is separate from -Mode Perf, whose timer includes capture/PNG/I/O.
+    $pythonPath = Resolve-Tool -Name "python" -RequestedPath $Python `
+        -EnvironmentVariables @("PYTHON", "PYTHON_PATH") `
+        -Hint "Python 3 is required for benchmark reports. Pass -Python or set PYTHON."
+    $reportScript = Join-Path $PSScriptRoot "perf/benchmark_report.py"
+    $resultPaths = [System.Collections.Generic.List[string]]::new()
+    $platforms = if ($BenchmarkPlatform -eq "Both") { @("EditMode", "PlayMode") } else { @($BenchmarkPlatform) }
+    $benchmarkCategory = if ([string]::IsNullOrWhiteSpace($Category)) { "Performance" } else { $Category }
+
+    $metadata = [ordered] @{
+        StartedUtc = [DateTime]::UtcNow.ToString("o")
+        ProjectPath = $ProjectPath
+        UnityVersion = Get-ProjectUnityVersion $ProjectPath
+        Execution = "Unity Editor batchmode (PlayMode is not a standalone player)"
+        OS = [System.Runtime.InteropServices.RuntimeInformation]::OSDescription
+        Architecture = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()
+        LogicalProcessors = [Environment]::ProcessorCount
+        Category = $benchmarkCategory
+        Filter = $Filter
+        RunsPerPlatform = $BenchmarkRuns
+        Platforms = $platforms
+    }
+    if (Get-Command git -ErrorAction SilentlyContinue) {
+        $metadata.Commit = (& git -C $ProjectPath rev-parse HEAD 2>$null | Out-String).Trim()
+        $metadata.WorktreeChanges = @(& git -C $ProjectPath status --porcelain 2>$null)
+    }
+    if ($IsWindows -and (Get-Command Get-CimInstance -ErrorAction SilentlyContinue)) {
+        try {
+            $metadata.CPU = @(Get-CimInstance Win32_Processor | Select-Object Name, NumberOfCores, NumberOfLogicalProcessors)
+            $metadata.GPU = @(Get-CimInstance Win32_VideoController | Select-Object Name, DriverVersion)
+        } catch {
+            Write-Warning "Hardware metadata unavailable: $($_.Exception.Message)"
+        }
+    }
+    $metadataPath = Join-Path $ArtifactsPath "environment.json"
+    $metadata | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $metadataPath -Encoding utf8
+
+    for ($run = 1; $run -le $BenchmarkRuns; ++$run) {
+        $runPath = Join-Path $ArtifactsPath "run$run"
+        foreach ($platform in $platforms) {
+            Invoke-TestRun -TestPlatform $platform -TestCategory $benchmarkCategory -RunArtifactsPath $runPath
+            $resultPaths.Add((Join-Path $runPath "$platform/NowUI-$platform-results.xml"))
+        }
+    }
+
+    & $pythonPath $reportScript --output (Join-Path $ArtifactsPath "overview") --metadata $metadataPath @resultPaths
+    if ($LASTEXITCODE -ne 0) {
+        throw "Benchmark report generation failed with exit code $LASTEXITCODE."
     }
 }
 
@@ -404,33 +523,35 @@ function Invoke-ExecuteMethod {
     Invoke-Unity -UnityArgs $args -LogPath (Join-Path $methodArtifacts "NowUI-$Name.log")
 }
 
-function Invoke-AnimationCapture {
-    $animationArtifacts = Join-Path $ArtifactsPath "animation"
-    $manifestPath = Join-Path $animationArtifacts "manifest.json"
-    Remove-Item -LiteralPath $manifestPath -Force -ErrorAction SilentlyContinue
-
-    Invoke-ExecuteMethod "NowUI.Editor.NowVisualHarnessRunner.CaptureAnimations" "animation"
-
-    if (!(Test-Path -LiteralPath $manifestPath -PathType Leaf)) {
-        throw "Unity did not write an animation manifest to '$manifestPath'."
-    }
+function Invoke-AnimationEncode {
+    param(
+        [string] $ManifestPath,
+        [string] $AnimationRoot
+    )
 
     try {
-        $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+        $manifest = Get-Content -LiteralPath $ManifestPath -Raw | ConvertFrom-Json
     } catch {
-        throw "Unity wrote an invalid animation manifest to '$manifestPath': $($_.Exception.Message)"
+        throw "Animation manifest '$ManifestPath' is invalid: $($_.Exception.Message)"
     }
 
     $captures = @($manifest.captures)
     if ($captures.Count -eq 0) {
-        Write-Host "Unity animation harness has no registered scenarios. No GIFs were encoded."
+        Write-Host "Animation manifest '$ManifestPath' lists no captures. Nothing was encoded."
         return
     }
 
-    $ffmpegPath = Resolve-Ffmpeg -RequestedPath $Ffmpeg
-    Write-Host "Using ffmpeg from '$ffmpegPath'."
+    $pythonPath = Resolve-Python -RequestedPath $Python
+    Write-Host "Using python from '$pythonPath'."
+    $webpEncoder = Join-Path $PSScriptRoot "NowUI-EncodeWebp.py"
 
-    $animationRoot = [System.IO.Path]::GetFullPath($animationArtifacts)
+    $ffmpegPath = $null
+    if ($Gif -or $Mp4) {
+        $ffmpegPath = Resolve-Ffmpeg -RequestedPath $Ffmpeg
+        Write-Host "Using ffmpeg from '$ffmpegPath'."
+    }
+
+    $animationRoot = [System.IO.Path]::GetFullPath($AnimationRoot)
     $rootPrefix = $animationRoot.TrimEnd('\', '/') + [System.IO.Path]::DirectorySeparatorChar
     $pathComparison = if ($IsWindows) {
         [System.StringComparison]::OrdinalIgnoreCase
@@ -440,7 +561,7 @@ function Invoke-AnimationCapture {
 
     foreach ($capture in $captures) {
         if ($null -eq $capture) {
-            throw "Animation manifest '$manifestPath' contains an empty capture."
+            throw "Animation manifest '$ManifestPath' contains an empty capture."
         }
 
         $name = [string] $capture.name
@@ -448,11 +569,11 @@ function Invoke-AnimationCapture {
         [double] $frameRate = $capture.framesPerSecond
         $frameDirectory = [System.IO.Path]::GetFullPath([string] $capture.frameDirectory)
         $framePattern = [string] $capture.framePattern
-        $gifPath = [System.IO.Path]::GetFullPath([string] $capture.gifPath)
+        $outputStem = [System.IO.Path]::GetFullPath([string] $capture.outputStem)
 
         if ([string]::IsNullOrWhiteSpace($name) -or $frameCount -le 0 -or
             $frameRate -le 0 -or [double]::IsNaN($frameRate) -or [double]::IsInfinity($frameRate)) {
-            throw "Animation manifest '$manifestPath' contains invalid timing metadata for '$name'."
+            throw "Animation manifest '$ManifestPath' contains invalid timing metadata for '$name'."
         }
 
         if ($framePattern -ne "frame-%04d.png") {
@@ -460,7 +581,7 @@ function Invoke-AnimationCapture {
         }
 
         if (!$frameDirectory.StartsWith($rootPrefix, $pathComparison) -or
-            !$gifPath.StartsWith($rootPrefix, $pathComparison)) {
+            !$outputStem.StartsWith($rootPrefix, $pathComparison)) {
             throw "Animation '$name' resolves outside '$animationRoot'."
         }
 
@@ -476,27 +597,91 @@ function Invoke-AnimationCapture {
             "{0:0.###}",
             $frameRate)
         $frameInput = Join-Path $frameDirectory $framePattern
-        # Ordered dithering stays stable between frames, preserving gradients
-        # without the large temporal-noise penalty of error diffusion in GIFs.
-        $filter = "[0:v]split[palette_source][frames];[palette_source]palettegen=max_colors=256:stats_mode=diff[palette];[frames][palette]paletteuse=dither=bayer:bayer_scale=3:diff_mode=rectangle"
-
-        Remove-Item -LiteralPath $gifPath -Force -ErrorAction SilentlyContinue
-        Invoke-Ffmpeg -Executable $ffmpegPath -Description "animation '$name'" -Arguments @(
+        $inputArguments = @(
             "-hide_banner",
             "-loglevel", "warning",
             "-y",
             "-framerate", $frameRateText,
             "-start_number", "0",
             "-i", $frameInput,
-            "-frames:v", [string] $frameCount,
-            "-filter_complex", $filter,
-            "-loop", "0",
-            "-gifflags", "+transdiff",
-            $gifPath
+            "-frames:v", [string] $frameCount
         )
 
-        Write-Host "Encoded '$gifPath'."
+        # Animated WebP is the README format: full 24-bit colour, no palette
+        # dithering, about a sixth of the GIF size, and it still autoplays
+        # inside a plain <img> tag on GitHub. NowUI-EncodeWebp.py explains why
+        # it goes through Pillow rather than ffmpeg and why alpha is dropped.
+        $webpPath = "$outputStem.webp"
+        Remove-Item -LiteralPath $webpPath -Force -ErrorAction SilentlyContinue
+        Invoke-Encoder -Executable $pythonPath -Description "animation '$name' (webp)" -Arguments @(
+            $webpEncoder,
+            "--frames", $frameDirectory,
+            "--pattern", $framePattern,
+            "--count", [string] $frameCount,
+            "--fps", $frameRateText,
+            "--quality", [string] $WebpQuality,
+            "--method", [string] $WebpMethod,
+            "--output", $webpPath
+        )
+        Write-Host "Encoded '$webpPath'."
+
+        if ($Gif) {
+            # Ordered dithering stays stable between frames, preserving gradients
+            # without the large temporal-noise penalty of error diffusion in GIFs.
+            $filter = "[0:v]split[palette_source][frames];[palette_source]palettegen=max_colors=256:stats_mode=diff[palette];[frames][palette]paletteuse=dither=bayer:bayer_scale=3:diff_mode=rectangle"
+            $gifPath = "$outputStem.gif"
+            Remove-Item -LiteralPath $gifPath -Force -ErrorAction SilentlyContinue
+            Invoke-Encoder -Executable $ffmpegPath -Description "animation '$name' (gif)" -Arguments ($inputArguments + @(
+                "-filter_complex", $filter,
+                "-loop", "0",
+                "-gifflags", "+transdiff",
+                $gifPath
+            ))
+            Write-Host "Encoded '$gifPath'."
+        }
+
+        if ($Mp4) {
+            # H.264 needs even dimensions; the scale filter only rounds down
+            # odd sizes and is a no-op for the 960x540 README captures.
+            $mp4Path = "$outputStem.mp4"
+            Remove-Item -LiteralPath $mp4Path -Force -ErrorAction SilentlyContinue
+            Invoke-Encoder -Executable $ffmpegPath -Description "animation '$name' (mp4)" -Arguments ($inputArguments + @(
+                "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2",
+                "-c:v", "libx264",
+                "-preset", "veryslow",
+                "-crf", "18",
+                "-pix_fmt", "yuv420p",
+                "-movflags", "+faststart",
+                $mp4Path
+            ))
+            Write-Host "Encoded '$mp4Path'."
+        }
     }
+}
+
+function Invoke-AnimationCapture {
+    $animationArtifacts = Join-Path $ArtifactsPath "animation"
+    $manifestPath = Join-Path $animationArtifacts "manifest.json"
+    Remove-Item -LiteralPath $manifestPath -Force -ErrorAction SilentlyContinue
+
+    Invoke-ExecuteMethod "NowUI.Editor.NowVisualHarnessRunner.CaptureAnimations" "animation"
+
+    if (!(Test-Path -LiteralPath $manifestPath -PathType Leaf)) {
+        throw "Unity did not write an animation manifest to '$manifestPath'."
+    }
+
+    Invoke-AnimationEncode -ManifestPath $manifestPath -AnimationRoot $animationArtifacts
+}
+
+function Invoke-AnimationReencode {
+    $animationArtifacts = Join-Path $ArtifactsPath "animation"
+    $manifestPath = Join-Path $animationArtifacts "manifest.json"
+
+    if (!(Test-Path -LiteralPath $manifestPath -PathType Leaf)) {
+        throw "No animation manifest was found at '$manifestPath'. Run '-Mode Animation' first."
+    }
+
+    Invoke-AnimationEncode -ManifestPath $manifestPath -AnimationRoot $animationArtifacts
 }
 
 New-Item -ItemType Directory -Force -Path $ArtifactsPath | Out-Null
@@ -511,7 +696,9 @@ switch ($Mode) {
     "Visual" { Invoke-ExecuteMethod "NowUI.Editor.NowVisualHarnessRunner.Capture" "visual" }
     "Golden" { Invoke-ExecuteMethod "NowUI.Editor.NowVisualHarnessRunner.CompareGoldens" "golden" }
     "Perf" { Invoke-ExecuteMethod "NowUI.Editor.NowPerfSmokeRunner.Run" "perf" }
+    "Benchmark" { Invoke-Benchmarks }
     "Animation" { Invoke-AnimationCapture }
+    "Encode" { Invoke-AnimationReencode }
     "All" {
         Invoke-TestRun "EditMode"
         Invoke-TestRun "PlayMode"

@@ -26,7 +26,8 @@ namespace NowUI.Sdf
         Arc = 6,
         Pie = 7,
         ChamferedBox = 8,
-        Triangle = 9
+        Triangle = 9,
+        Image = 10
     }
 
     enum NowSdfLayerKind
@@ -47,6 +48,16 @@ namespace NowUI.Sdf
         public Vector2 rotation;
         public bool useTexture;
         public NowRect bounds;
+        public NowSdfImageField field;
+    }
+
+    struct NowSdfImageSource
+    {
+        public int nodeIndex;
+        public Texture texture;
+        public RectInt texelRect;
+        public float threshold;
+        public NowSdfImageField field;
     }
 
     struct NowSdfGlyphSource
@@ -99,6 +110,7 @@ namespace NowUI.Sdf
 
         readonly List<NowSdfNode> _nodes = new List<NowSdfNode>(8);
         readonly List<NowSdfGlyphSource> _glyphSources = new List<NowSdfGlyphSource>(8);
+        readonly List<NowSdfImageSource> _imageSources = new List<NowSdfImageSource>(2);
         readonly List<NowSdfResolvedGlyph> _resolvedGlyphs = new List<NowSdfResolvedGlyph>(8);
         readonly List<NowFont.PreparedShapedRun> _shapedRunScratch = new List<NowFont.PreparedShapedRun>(4);
         readonly List<float> _rotationStack = new List<float>(4);
@@ -119,6 +131,7 @@ namespace NowUI.Sdf
         int _contentRevision;
         int _requiredMaterialAbi = 1;
         float _onion;
+        float _preparedImageBudget = -1f;
         NowRect _bounds;
         bool _hasBounds;
 
@@ -132,6 +145,8 @@ namespace NowUI.Sdf
 
         internal bool hasText => _glyphSources.Count > 0;
 
+        internal bool hasImages => _imageSources.Count > 0;
+
         internal int contentRevision => _contentRevision;
 
         internal int requiredMaterialAbi => _requiredMaterialAbi;
@@ -143,6 +158,8 @@ namespace NowUI.Sdf
             AdvanceContentRevision();
             _nodes.Clear();
             _glyphSources.Clear();
+            _imageSources.Clear();
+            _preparedImageBudget = -1f;
             _resolvedGlyphs.Clear();
             _shapedRunScratch.Clear();
 
@@ -654,6 +671,165 @@ namespace NowUI.Sdf
             return Text(rect.position, value, font, fontSize, fontStyle, tabSpaces);
         }
 
+        /// <summary>
+        /// Adds a texture as a shape whose silhouette is the alpha channel at
+        /// <paramref name="threshold"/>. Outlines, shadows, glows, emboss, and
+        /// boolean operations follow that silhouette; the fill samples the image
+        /// tinted by the current color. A scene exposes one texture, so the
+        /// image must share the graph's texture when one is already bound.
+        /// </summary>
+        public NowSdfGraph Image(NowRect rect, Texture texture, float threshold = 0.5f)
+        {
+            return Image(rect, texture, new Vector4(0f, 0f, 1f, 1f), threshold);
+        }
+
+        /// <summary>
+        /// Adds the <paramref name="uvRect"/> region of a texture as an image
+        /// shape. The rect is normalized (x, y, width, height) with y up.
+        /// </summary>
+        public NowSdfGraph Image(NowRect rect, Texture texture, Vector4 uvRect, float threshold = 0.5f)
+        {
+            if (texture == null)
+                throw new ArgumentNullException(nameof(texture));
+
+            if (Mathf.Approximately(uvRect.z, 0f) && Mathf.Approximately(uvRect.w, 0f))
+                uvRect = new Vector4(0f, 0f, 1f, 1f);
+
+            ValidateFinite(uvRect.x, nameof(uvRect));
+            ValidateFinite(uvRect.y, nameof(uvRect));
+            ValidateFinite(uvRect.z, nameof(uvRect));
+            ValidateFinite(uvRect.w, nameof(uvRect));
+            int width = Mathf.Max(1, texture.width);
+            int height = Mathf.Max(1, texture.height);
+            var texelRect = new RectInt(
+                Mathf.RoundToInt(uvRect.x * width),
+                Mathf.RoundToInt(uvRect.y * height),
+                Mathf.Max(1, Mathf.RoundToInt(uvRect.z * width)),
+                Mathf.Max(1, Mathf.RoundToInt(uvRect.w * height)));
+            AddImage(rect, texture, texelRect, threshold);
+            return this;
+        }
+
+        /// <summary>Adds a sprite as an image shape using its texture rect.</summary>
+        public NowSdfGraph Sprite(NowRect rect, Sprite sprite, float threshold = 0.5f)
+        {
+            if (sprite == null)
+                throw new ArgumentNullException(nameof(sprite));
+
+            if (sprite.texture == null)
+                throw new ArgumentException("The sprite has no texture.", nameof(sprite));
+
+            Rect textureRect = sprite.textureRect;
+            var texelRect = new RectInt(
+                Mathf.RoundToInt(textureRect.x),
+                Mathf.RoundToInt(textureRect.y),
+                Mathf.Max(1, Mathf.RoundToInt(textureRect.width)),
+                Mathf.Max(1, Mathf.RoundToInt(textureRect.height)));
+            AddImage(rect, sprite.texture, texelRect, threshold);
+            return this;
+        }
+
+        void AddImage(NowRect rect, Texture texture, RectInt texelRect, float threshold)
+        {
+            ValidateFinite(rect.x, nameof(rect));
+            ValidateFinite(rect.y, nameof(rect));
+            ValidateFinite(rect.width, nameof(rect));
+            ValidateFinite(rect.height, nameof(rect));
+
+            if (float.IsNaN(threshold))
+                throw new ArgumentException("The alpha threshold must be a number.", nameof(threshold));
+
+            threshold = Mathf.Clamp(threshold, 0.0001f, 0.9999f);
+            rect.width = Mathf.Max(0f, rect.width);
+            rect.height = Mathf.Max(0f, rect.height);
+
+            // Image pixels come from the scene's color atlas, so the node does
+            // not bind _MainTex and never conflicts with text or texture fills.
+            // The upload replaces this uv with the node's color-atlas texel rect.
+            var uv = new Vector4(texelRect.x, texelRect.y, texelRect.width, texelRect.height);
+
+            // data2.xy: scene units per source texel. data2.z receives the field
+            // padding once the scene's effect reach is known at the terminal.
+            var data2 = new Vector4(
+                rect.width / texelRect.width,
+                rect.height / texelRect.height,
+                0f,
+                threshold);
+
+            int nodeIndex = _nodes.Count;
+            Add(NowSdfShapeType.Image, RectData(rect), data2, rect, uv, false, _operation, _smoothing, true);
+            _imageSources.Add(new NowSdfImageSource
+            {
+                nodeIndex = nodeIndex,
+                texture = texture,
+                texelRect = texelRect,
+                threshold = threshold
+            });
+            _preparedImageBudget = -1f;
+        }
+
+        static int RequiredImagePadding(in NowSdfNode node, float effectBudget)
+        {
+            float sceneUnitsPerTexel = Mathf.Min(node.data2.x, node.data2.y);
+            float reachTexels = sceneUnitsPerTexel > 0f ? effectBudget / sceneUnitsPerTexel : 0f;
+            return NowSdfImageFields.PaddingForReach(reachTexels);
+        }
+
+        /// <summary>
+        /// Bakes or reuses the distance field of every image shape for the
+        /// scene's effect reach and stores the padding in the node payload.
+        /// </summary>
+        internal void PrepareImageFields(float effectBudget)
+        {
+            effectBudget = SanitizeEffectBudget(effectBudget);
+
+            for (int i = 0; i < _imageSources.Count; ++i)
+            {
+                NowSdfImageSource source = _imageSources[i];
+                NowSdfNode node = _nodes[source.nodeIndex];
+                int padding = RequiredImagePadding(node, effectBudget);
+                source.field = NowSdfImageFields.Acquire(
+                    source.texture,
+                    source.texelRect,
+                    padding,
+                    source.threshold);
+                node.data2.z = padding;
+                node.field = source.field;
+                _nodes[source.nodeIndex] = node;
+                _imageSources[i] = source;
+            }
+
+            _preparedImageBudget = effectBudget;
+        }
+
+        internal void RequestImageFields(NowSdfImageAtlas atlas)
+        {
+            for (int i = 0; i < _imageSources.Count; ++i)
+                atlas.Request(_imageSources[i].field);
+        }
+
+        internal bool ImageFieldsAreCurrent(float effectBudget)
+        {
+            if (_imageSources.Count == 0)
+                return true;
+
+            if (_preparedImageBudget != SanitizeEffectBudget(effectBudget))
+                return false;
+
+            for (int i = 0; i < _imageSources.Count; ++i)
+            {
+                NowSdfImageSource source = _imageSources[i];
+
+                if (!NowSdfImageFields.IsCurrent(source.field) ||
+                    !ReferenceEquals(_nodes[source.nodeIndex].field, source.field))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
         internal void CopyStyleFrom(NowSdfGraph source)
         {
             _color = source._color;
@@ -669,6 +845,9 @@ namespace NowUI.Sdf
             _nodes.AddRange(source._nodes);
             _glyphSources.Clear();
             _glyphSources.AddRange(source._glyphSources);
+            _imageSources.Clear();
+            _imageSources.AddRange(source._imageSources);
+            _preparedImageBudget = source._preparedImageBudget;
             _resolvedGlyphs.Clear();
             _rotationStack.Clear();
             _rotationStack.AddRange(source._rotationStack);
@@ -1589,6 +1768,7 @@ namespace NowUI.Sdf
 
             if (type == NowSdfShapeType.ChamferedBox ||
                 type == NowSdfShapeType.Triangle ||
+                type == NowSdfShapeType.Image ||
                 rotation != Vector2.zero)
             {
                 _requiredMaterialAbi = 2;
@@ -2341,6 +2521,7 @@ namespace NowUI.Sdf
 
             _caches.Clear();
             _maskRasterizationCount = 0;
+            NowSdfImageFields.Reset();
         }
 
         internal static void RecordMaskRasterization()
@@ -2962,6 +3143,36 @@ namespace NowUI.Sdf
             return Text(rect.position, value, font, fontSize, fontStyle, tabSpaces);
         }
 
+        /// <summary>
+        /// Adds a texture as a shape whose silhouette is its alpha channel at
+        /// <paramref name="threshold"/>. Scene effects and boolean operations
+        /// follow that silhouette; the fill samples the image tinted by the
+        /// current color. The distance field is baked on the GPU, so the texture
+        /// does not need read/write access.
+        /// </summary>
+        public NowSdfBuilder Image(NowRect rect, Texture texture, float threshold = 0.5f)
+        {
+            _cache.Image(rect, texture, new Vector4(0f, 0f, 1f, 1f), threshold);
+            return this;
+        }
+
+        /// <summary>
+        /// Adds the <paramref name="uvRect"/> region of a texture as an image
+        /// shape. The rect is normalized (x, y, width, height) with y up.
+        /// </summary>
+        public NowSdfBuilder Image(NowRect rect, Texture texture, Vector4 uvRect, float threshold = 0.5f)
+        {
+            _cache.Image(rect, texture, uvRect, threshold);
+            return this;
+        }
+
+        /// <summary>Adds a sprite as an image shape using its texture rect.</summary>
+        public NowSdfBuilder Sprite(NowRect rect, Sprite sprite, float threshold = 0.5f)
+        {
+            _cache.Sprite(rect, sprite, threshold);
+            return this;
+        }
+
         public Vector2 Measure()
         {
             _cache.ThrowIfReleased();
@@ -3071,6 +3282,8 @@ namespace NowUI.Sdf
             readonly ulong _sceneHash;
             readonly Texture _sourceTexture;
             readonly uint _sourceTextureUpdateCount;
+            readonly NowSdfImageAtlas _imageAtlas;
+            readonly int _imageAtlasVersion;
             readonly Material _materialTemplate;
             readonly Vector4 _effectiveTint;
             readonly Vector2 _localSize;
@@ -3082,6 +3295,7 @@ namespace NowUI.Sdf
                 ulong sceneHash,
                 Texture sourceTexture,
                 uint sourceTextureUpdateCount,
+                NowSdfImageAtlas imageAtlas,
                 Material materialTemplate,
                 Vector4 effectiveTint,
                 Vector2 localSize,
@@ -3092,6 +3306,8 @@ namespace NowUI.Sdf
                 _sceneHash = sceneHash;
                 _sourceTexture = sourceTexture;
                 _sourceTextureUpdateCount = sourceTextureUpdateCount;
+                _imageAtlas = imageAtlas;
+                _imageAtlasVersion = imageAtlas != null ? imageAtlas.version : 0;
                 _materialTemplate = materialTemplate;
                 _effectiveTint = effectiveTint;
                 _localSize = localSize;
@@ -3105,6 +3321,8 @@ namespace NowUI.Sdf
                 return _sceneHash == other._sceneHash &&
                     ReferenceEquals(_sourceTexture, other._sourceTexture) &&
                     _sourceTextureUpdateCount == other._sourceTextureUpdateCount &&
+                    ReferenceEquals(_imageAtlas, other._imageAtlas) &&
+                    _imageAtlasVersion == other._imageAtlasVersion &&
                     ReferenceEquals(_materialTemplate, other._materialTemplate) &&
                     _effectiveTint.Equals(other._effectiveTint) &&
                     _localSize.Equals(other._localSize) &&
@@ -3127,6 +3345,10 @@ namespace NowUI.Sdf
                         ? RuntimeHelpers.GetHashCode(_sourceTexture)
                         : 0);
                     hash = hash * 397 ^ _sourceTextureUpdateCount.GetHashCode();
+                    hash = hash * 397 ^ (!ReferenceEquals(_imageAtlas, null)
+                        ? RuntimeHelpers.GetHashCode(_imageAtlas)
+                        : 0);
+                    hash = hash * 397 ^ _imageAtlasVersion;
                     hash = hash * 397 ^ (!ReferenceEquals(_materialTemplate, null)
                         ? RuntimeHelpers.GetHashCode(_materialTemplate)
                         : 0);
@@ -3141,6 +3363,10 @@ namespace NowUI.Sdf
         }
 
         static readonly int _mainTexProp = Shader.PropertyToID("_MainTex");
+        static readonly int _imageFieldProp = Shader.PropertyToID("_SdfImageField");
+        static readonly int _imageColorProp = Shader.PropertyToID("_SdfImageColor");
+        static readonly int _imageAtlasSizeProp = Shader.PropertyToID("_SdfImageAtlasSize");
+        static readonly int _imageUvsProp = Shader.PropertyToID("_SdfImageUvs");
         static readonly int _materialAbiProp = Shader.PropertyToID(NowSdf.MaterialAbiProperty);
         static readonly int _shapeCountProp = Shader.PropertyToID("_SdfShapeCount");
         static readonly int _layerCountProp = Shader.PropertyToID("_SdfLayerCount");
@@ -3179,6 +3405,7 @@ namespace NowUI.Sdf
         readonly Vector4[] _shapeMeta = new Vector4[NowSdf.MaxShapes];
         readonly Vector4[] _colors = new Vector4[NowSdf.MaxShapes];
         readonly Vector4[] _uvs = new Vector4[NowSdf.MaxShapes];
+        readonly Vector4[] _imageUvs = new Vector4[NowSdf.MaxShapes];
         readonly Vector4[] _layerData0 = new Vector4[NowSdf.MaxLayers];
         readonly Vector4[] _layerData1 = new Vector4[NowSdf.MaxLayers];
 
@@ -3233,6 +3460,7 @@ namespace NowUI.Sdf
         Texture _texture;
         NowSdfGraph _textureSourceGraph;
         bool _texturePinned;
+        NowSdfImageAtlas _imageAtlas;
         NowRect _bounds;
         bool _hasBounds;
         bool _terminalPrepared;
@@ -3337,6 +3565,8 @@ namespace NowUI.Sdf
             _activeGraph = null;
             _texture = null;
             _textureSourceGraph = null;
+            _imageAtlas?.Release();
+            _imageAtlas = null;
         }
 
         internal void ThrowIfReleased()
@@ -3578,12 +3808,11 @@ namespace NowUI.Sdf
 
             graph.ThrowIfRotationScopesOpen("Graph");
 
-            // Captured before the flush: FlushActiveGraph adds a layer of its own, and AddLayer resets
-            // the pending modifiers, so reading the operation after it returns the reset Union rather
-            // than the one the caller asked for — SetOperation(Subtract).Graph(g) combined as a union.
+            // Flushing the inline primitives into their own layer resets the
+            // pending modifiers, so capture the operation this layer was given
+            // before the flush; it applies whenever an earlier layer exists.
             NowSdfOperation pendingOperation = _pendingOperation;
             float pendingSmoothing = _pendingSmoothing;
-
             FlushActiveGraph();
             AddLayer(new NowSdfLayer
             {
@@ -3605,10 +3834,8 @@ namespace NowUI.Sdf
             from.ThrowIfRotationScopesOpen("Morph");
             to.ThrowIfRotationScopesOpen("Morph");
 
-            // Captured before the flush, for the same reason as in Graph above.
             NowSdfOperation pendingOperation = _pendingOperation;
             float pendingSmoothing = _pendingSmoothing;
-
             FlushActiveGraph();
             AddLayer(new NowSdfLayer
             {
@@ -3728,6 +3955,28 @@ namespace NowUI.Sdf
             Encapsulate(_activeGraph.measureSize);
         }
 
+        public void Image(NowRect rect, Texture texture, Vector4 uvRect, float threshold)
+        {
+            PrepareActivePrimitive();
+            _activeGraph
+                .SetOperation(_pendingOperation, _pendingSmoothing)
+                .SetNextRotationDegrees(EffectiveRotationDegrees())
+                .Image(rect, texture, uvRect, threshold);
+            ResetPendingPrimitiveModifiers();
+            Encapsulate(_activeGraph.measureSize);
+        }
+
+        public void Sprite(NowRect rect, Sprite sprite, float threshold)
+        {
+            PrepareActivePrimitive();
+            _activeGraph
+                .SetOperation(_pendingOperation, _pendingSmoothing)
+                .SetNextRotationDegrees(EffectiveRotationDegrees())
+                .Sprite(rect, sprite, threshold);
+            ResetPendingPrimitiveModifiers();
+            Encapsulate(_activeGraph.measureSize);
+        }
+
         public void Draw(NowRect rect, NowRect mask, Vector4 tint)
         {
             ThrowIfReleased();
@@ -3792,6 +4041,7 @@ namespace NowUI.Sdf
                 sceneHash,
                 sourceTexture,
                 sourceTextureUpdateCount,
+                _imageAtlas,
                 _materialTemplate != null ? _materialTemplate : null,
                 Now.ApplyCurrentColorMultiplier(tint),
                 localRect.size,
@@ -3976,17 +4226,20 @@ namespace NowUI.Sdf
 
         internal void PrepareForTerminal()
         {
+            float budget = GetTextEffectBudget();
+
             if (_terminalPrepared)
             {
-                if (PreparedTextGraphsAreCurrent())
+                if (PreparedTextGraphsAreCurrent(budget))
                     return;
 
                 InvalidateTerminalPreparation();
             }
 
             PrepareTextGraphCopies();
+            PrepareImageFields(budget);
+            BuildImageAtlas();
 
-            float budget = GetTextEffectBudget();
             NowFont textOwner = GetSceneTextOwner();
             int pixelRange = RequiredTextPixelRange(_activeGraph, textOwner, budget);
 
@@ -4045,18 +4298,77 @@ namespace NowUI.Sdf
             _terminalPrepared = true;
         }
 
-        bool PreparedTextGraphsAreCurrent()
+        bool PreparedTextGraphsAreCurrent(float effectBudget)
         {
+            if (_imageAtlas != null && !_imageAtlas.isValid)
+                return false;
+
             foreach (var pair in _preparedTextGraphs)
             {
                 if (pair.Key.contentRevision != pair.Value.contentRevision ||
-                    !pair.Value.TextAtlasIsCurrent())
+                    !pair.Value.TextAtlasIsCurrent() ||
+                    !pair.Value.ImageFieldsAreCurrent(effectBudget))
                 {
                     return false;
                 }
             }
 
             return true;
+        }
+
+        void PrepareImageFields(float effectBudget)
+        {
+            for (int i = 0; i < _layers.Count; ++i)
+            {
+                NowSdfLayer layer = _layers[i];
+
+                if (layer.graph != null && layer.graph.hasImages)
+                    layer.graph.PrepareImageFields(effectBudget);
+
+                if (layer.targetGraph != null && layer.targetGraph.hasImages)
+                    layer.targetGraph.PrepareImageFields(effectBudget);
+            }
+
+            if (_activeGraph != null && _activeGraph.hasImages)
+                _activeGraph.PrepareImageFields(effectBudget);
+        }
+
+        /// <summary>
+        /// Packs every prepared image field of the scene into the scene's
+        /// field and color atlases. Scenes without images keep no atlas.
+        /// </summary>
+        void BuildImageAtlas()
+        {
+            bool hasImages = _activeGraph != null && _activeGraph.hasImages;
+
+            for (int i = 0; i < _layers.Count && !hasImages; ++i)
+            {
+                hasImages = (_layers[i].graph != null && _layers[i].graph.hasImages) ||
+                    (_layers[i].targetGraph != null && _layers[i].targetGraph.hasImages);
+            }
+
+            if (!hasImages)
+            {
+                if (_imageAtlas != null)
+                {
+                    _imageAtlas.Release();
+                    _imageAtlas = null;
+                }
+
+                return;
+            }
+
+            _imageAtlas ??= new NowSdfImageAtlas();
+            _imageAtlas.Begin();
+
+            for (int i = 0; i < _layers.Count; ++i)
+            {
+                _layers[i].graph?.RequestImageFields(_imageAtlas);
+                _layers[i].targetGraph?.RequestImageFields(_imageAtlas);
+            }
+
+            _activeGraph?.RequestImageFields(_imageAtlas);
+            _imageAtlas.Build();
         }
 
         static int PreviousTextPixelRange(int current, int baseRange)
@@ -4101,7 +4413,7 @@ namespace NowUI.Sdf
 
         NowSdfGraph PrepareTextGraph(NowSdfGraph graph)
         {
-            if (graph == null || !graph.hasText)
+            if (graph == null || !(graph.hasText || graph.hasImages))
                 return graph;
 
             if (_preparedTextGraphs.TryGetValue(graph, out var prepared))
@@ -4668,6 +4980,12 @@ namespace NowUI.Sdf
             material.SetFloat(_textEffectLimitProp, textEffectLimit);
             material.SetFloat(_canvasLayoutProp, 0f);
             material.SetTexture(_mainTexProp, _texture != null ? _texture : Texture2D.whiteTexture);
+            Texture fieldAtlas = _imageAtlas != null ? _imageAtlas.fieldTexture : null;
+            Texture colorAtlas = _imageAtlas != null ? _imageAtlas.colorTexture : null;
+            material.SetTexture(_imageFieldProp, fieldAtlas != null ? fieldAtlas : Texture2D.blackTexture);
+            material.SetTexture(_imageColorProp, colorAtlas != null ? colorAtlas : Texture2D.blackTexture);
+            material.SetVector(_imageAtlasSizeProp, _imageAtlas != null ? _imageAtlas.atlasSize : Vector4.one);
+            material.SetVectorArray(_imageUvsProp, _imageUvs);
             material.SetVectorArray(_data0Prop, _data0);
             material.SetVectorArray(_data1Prop, _data1);
             material.SetVectorArray(_data2Prop, _data2);
@@ -4710,6 +5028,17 @@ namespace NowUI.Sdf
                         limit,
                         NowFont.GetSafeSdfEffectReach(_data2[i].x));
                 }
+                else if (_data0[i].x == (float)NowSdfShapeType.Image)
+                {
+                    // The field is exact through its padding; beyond it the
+                    // shader continues with a box distance that overestimates
+                    // near corners, so exterior effects fade there like glyphs.
+                    limit = Mathf.Min(
+                        limit,
+                        NowSdfImageFields.SafeEffectReach(
+                            Mathf.RoundToInt(_data2[i].z),
+                            Mathf.Min(_data2[i].x, _data2[i].y)));
+                }
             }
 
             return limit;
@@ -4741,6 +5070,12 @@ namespace NowUI.Sdf
             hash = HashValue(hash, _feather);
             hash = HashValue(hash, textEffectLimit);
             hash = HashValue(hash, _texture != null ? _texture.GetEntityId().GetHashCode() : 0);
+            hash = HashValue(hash, _imageAtlas != null ? _imageAtlas.version : 0);
+            hash = HashValue(
+                hash,
+                _imageAtlas != null && _imageAtlas.fieldTexture != null
+                    ? _imageAtlas.fieldTexture.GetEntityId().GetHashCode()
+                    : 0);
 
             for (int i = 0; i < shapeCount; ++i)
             {
@@ -4750,6 +5085,7 @@ namespace NowUI.Sdf
                 hash = HashValue(hash, _shapeMeta[i]);
                 hash = HashValue(hash, _colors[i]);
                 hash = HashValue(hash, _uvs[i]);
+                hash = HashValue(hash, _imageUvs[i]);
             }
 
             for (int i = 0; i < layerCount; ++i)
@@ -4836,6 +5172,21 @@ namespace NowUI.Sdf
                     continue;
                 }
 
+                // Images sample the scene's atlases. A node whose field could
+                // not be baked or packed is skipped rather than drawn from the
+                // wrong atlas region.
+                Vector4 nodeUv = node.uv;
+                Vector4 imageUv = default;
+
+                if (node.type == NowSdfShapeType.Image)
+                {
+                    if (_imageAtlas == null || !_imageAtlas.TryGetEntry(node.field, out var entry))
+                        continue;
+
+                    nodeUv = entry.colorRect;
+                    imageUv = entry.fieldRect;
+                }
+
                 _data0[shapeCount] = new Vector4((float)node.type, (float)node.operation, node.smoothing, 0f);
                 _data1[shapeCount] = node.data1;
                 _data2[shapeCount] = node.data2;
@@ -4845,7 +5196,8 @@ namespace NowUI.Sdf
                     node.rotation.x,
                     node.rotation.y);
                 _colors[shapeCount] = node.color;
-                _uvs[shapeCount] = node.uv;
+                _uvs[shapeCount] = nodeUv;
+                _imageUvs[shapeCount] = imageUv;
                 ++shapeCount;
             }
         }

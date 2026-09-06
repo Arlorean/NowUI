@@ -21,9 +21,10 @@ itself. The repository's deterministic visual harness renders still scenes
 into an offscreen `RenderTexture` (`Tools/NowUI-Harness.ps1 -Mode Visual`),
 while its animation mode steps an explicit caller-owned clock and encodes the
 resulting frame sequence (`-Mode Animation`). No editor screenshots or
-hand-composited UI layers.
+hand-composited UI layers; the only imported artwork is the PurrNet logo used
+as input for the image-effects loop below.
 
-![macOS-inspired native desktop application shell rendered and animated entirely with NowUI](Docs/media/readme/desktop-fidelity.gif)
+![macOS-inspired native desktop application shell rendered and animated entirely with NowUI](Docs/media/readme/desktop-fidelity.webp)
 
 *A native desktop-style application shell made from NowUI primitives: animated
 procedural wallpaper, frosted menu/window/dock surfaces, window chrome,
@@ -31,19 +32,46 @@ cursor-responsive content, a live control panel, dock magnification, and a
 texture-backed custom vertex modifier that bends the entire window into its
 Dock icon and restores it. No OS screenshots or platform artwork.*
 
-![Animated SDF metamorphosis cycling between organic, ticket, and prism forms with contours and lighting](Docs/media/readme/sdf-metamorphosis.gif)
+![A now-playing card: transparent album art with a silhouette-hugging glow that morphs into the next track's art on skip, a spinning vinyl with the art rotating on its label, a smooth-unioned equalizer whose bar colors blend, a play button whose icon morphs between triangle and bars, and a heart that fills with a glow burst](Docs/media/readme/music-player.webp)
+
+*A music player card where the SDF image shapes carry the design. The album
+art is a transparent sprite whose shadow and accent glow follow its
+silhouette and morph into the next track's art on skip; a vinyl spins behind
+it with the same art rotating on its label; the equalizer is one
+smooth-unioned field whose bar colors blend; the play icon morphs between a
+triangle and two bars; the heart fills with a glow burst. A cursor drives every
+interaction. [SDF Shapes](Assets/NowUI/Documentation~/SDF.md#images-and-sprites).*
+
+![Animated SDF metamorphosis cycling between organic, ticket, and prism forms with contours and lighting](Docs/media/readme/sdf-metamorphosis.webp)
 
 *Three unrelated SDF graphs transition through real distance-field morphs —
 not crossfades — with boolean cutouts, animated contour reveal, warp, emboss,
 shadow, outline, and glow. The animated field itself is one quad.*
 
-![A feathered x-ray lens moving over one SDF graph, revealing topographic contours beneath paper-cutout shading](Docs/media/readme/sdf-shader-xray.gif)
+![A feathered x-ray lens moving over one SDF graph, revealing topographic contours beneath paper-cutout shading](Docs/media/readme/sdf-shader-xray.webp)
 
 *One reusable SDF graph, two custom final-shading materials: a relit paper
 cutout on the surface and topographic contours beneath a moving feathered
 analytic mask. Both passes share the identical field; only the final shader
 and mask coverage differ. [SDF Shapes](Assets/NowUI/Documentation~/SDF.md),
 [Masks](Assets/NowUI/Documentation~/Masks.md).*
+
+![The PurrNet cat logo, a transparent PNG, drawn as an SDF image shape that morphs into an analytic paw print and back while an orbiting drop shadow, pulsing glow, outline, emboss lighting, contour spotlight, and a subtracted circle follow the blended silhouette](Docs/media/readme/sdf-image-effects.webp)
+
+*An ordinary transparent PNG (the [PurrNet](https://github.com/BlenMiner/PurrNet)
+logo, the one external image in this README) used as an SDF shape. Its alpha
+silhouette becomes a GPU-baked distance field, so it morphs into an analytic
+paw print like any other graph, and shadow, glow, outline, emboss, contours,
+rotation, and a boolean cut all hug the blended edge. The source texture has
+no read/write access. [SDF Shapes](Assets/NowUI/Documentation~/SDF.md#images-and-sprites).*
+
+![Three unrelated textures and an analytic blob merging in one SDF field: a satellite morphs between two sprites while orbiting the PurrNet logo, smooth unions bridge the silhouettes, and fill colors blend across each fillet](Docs/media/readme/sdf-image-blend.webp)
+
+*Three textures and a shape in one field. The satellite morphs between two
+sprites while it orbits the logo, smooth unions bridge every silhouette, and
+the fills crossfade exactly where the geometry does: outside its pixels each
+image contributes the color of its nearest edge, so fillets and morph bridges
+never go transparent. Shadow, glow, outline, and emboss shade the merged field.*
 
 ![In-app documentation browser rendered with NowUI, including live 3D model previews and syntax-highlighted code](Docs/media/readme/docs-model-preview-demo.png)
 

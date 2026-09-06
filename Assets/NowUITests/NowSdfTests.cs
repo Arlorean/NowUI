@@ -800,16 +800,9 @@ public class NowSdfTests
                 .PopRotation();
         }
 
-        long before;
-        try
-        {
-            before = System.GC.GetAllocatedBytesForCurrentThread();
-        }
-        catch (System.MissingMethodException)
-        {
-            Assert.Ignore("Per-thread allocation tracking unavailable on this runtime.");
-            return;
-        }
+        using var allocations = new NowBenchmarkAllocations(reportAvailability: false);
+        allocations.RequireAvailable();
+        allocations.Begin();
 
         for (int i = 0; i < 128; ++i)
         {
@@ -822,8 +815,8 @@ public class NowSdfTests
                 .PopRotation();
         }
 
-        long allocated = System.GC.GetAllocatedBytesForCurrentThread() - before;
-        Assert.AreEqual(0, allocated,
+        long allocated = allocations.End();
+        allocations.AssertZero(allocated,
             "A warmed SDF rotation stack must not allocate managed memory.");
 
         var sceneId = new NowId(0x5DF20);
@@ -840,7 +833,7 @@ public class NowSdfTests
                 .Measure();
         }
 
-        before = System.GC.GetAllocatedBytesForCurrentThread();
+        allocations.Begin();
         for (int i = 0; i < 128; ++i)
         {
             measured = NowSdf.Scene(sceneId)
@@ -853,9 +846,9 @@ public class NowSdfTests
                 .Measure();
         }
 
-        allocated = System.GC.GetAllocatedBytesForCurrentThread() - before;
+        allocated = allocations.End();
         Assert.Greater(measured.x, 0f);
-        Assert.AreEqual(0, allocated,
+        allocations.AssertZero(allocated,
             "A warmed cached-scene rotation stack must not allocate managed memory.");
     }
 
@@ -880,16 +873,9 @@ public class NowSdfTests
             measured = graph.measureSize;
         }
 
-        long before;
-        try
-        {
-            before = System.GC.GetAllocatedBytesForCurrentThread();
-        }
-        catch (System.MissingMethodException)
-        {
-            Assert.Ignore("Per-thread allocation tracking unavailable on this runtime.");
-            return;
-        }
+        using var allocations = new NowBenchmarkAllocations(reportAvailability: false);
+        allocations.RequireAvailable();
+        allocations.Begin();
 
         for (int i = 0; i < 128; ++i)
         {
@@ -901,10 +887,10 @@ public class NowSdfTests
             measured = graph.measureSize;
         }
 
-        long allocated = System.GC.GetAllocatedBytesForCurrentThread() - before;
+        long allocated = allocations.End();
         Assert.Greater(measured.x, 0f);
         Assert.Greater(measured.y, 0f);
-        Assert.AreEqual(0, allocated,
+        allocations.AssertZero(allocated,
             "Rebuilding a warmed rotated text graph must not allocate managed memory.");
 
         var sceneId = new NowId(0x5DF21);
@@ -918,7 +904,7 @@ public class NowSdfTests
                 .Measure();
         }
 
-        before = System.GC.GetAllocatedBytesForCurrentThread();
+        allocations.Begin();
         for (int i = 0; i < 128; ++i)
         {
             measured = NowSdf.Scene(sceneId)
@@ -929,10 +915,10 @@ public class NowSdfTests
                 .Measure();
         }
 
-        allocated = System.GC.GetAllocatedBytesForCurrentThread() - before;
+        allocated = allocations.End();
         Assert.Greater(measured.x, 0f);
         Assert.Greater(measured.y, 0f);
-        Assert.AreEqual(0, allocated,
+        allocations.AssertZero(allocated,
             "Rebuilding a warmed cached scene with rotated text must not allocate managed memory.");
     }
 
@@ -3553,5 +3539,379 @@ public class NowSdfTests
             @"o\.tint\s*=\s*lerp\(\s*NowUIColorToWorkingSpace\(\s*v\.data3\s*\)\s*,\s*v\.canvasColor\s*,",
             code,
             $"{shaderFile}: the non-canvas SetTint color must convert, and the canvas color must not.");
+    }
+
+    [Test]
+    public void SdfImageBakesSilhouetteFieldAndUploadsShapeData()
+    {
+        RequireGraphicsDevice();
+        var texture = CreateQuadrantTexture(32);
+
+        try
+        {
+            void DrawScene()
+            {
+                using (_drawList.Begin(new Vector2(160, 160)))
+                {
+                    NowSdf.Scene(new NowRect(0, 0, 160, 160))
+                        .SetShadow(new Vector2(4f, 4f), 6f, Color.black, 2f)
+                        .Image(new NowRect(40, 40, 64, 64), texture)
+                        .Draw();
+                }
+            }
+
+            DrawScene();
+
+            var material = _drawList.batches[0].material;
+            // Image pixels live in the scene's color atlas, so _MainTex stays free.
+            Assert.AreSame(Texture2D.whiteTexture, material.mainTexture);
+            var fieldAtlas = material.GetTexture("_SdfImageField") as RenderTexture;
+            var colorAtlas = material.GetTexture("_SdfImageColor") as RenderTexture;
+            Assert.NotNull(fieldAtlas, "The scene must bind a field atlas.");
+            Assert.NotNull(colorAtlas, "The scene must bind a color atlas.");
+            Assert.AreEqual(1, NowSdfImageFields.bakeCount);
+
+            var data0 = material.GetVectorArray("_SdfData0");
+            var data1 = material.GetVectorArray("_SdfData1");
+            var data2 = material.GetVectorArray("_SdfData2");
+            var shapeMeta = material.GetVectorArray("_SdfShapeMeta");
+            var uvs = material.GetVectorArray("_SdfUvs");
+            var imageUvs = material.GetVectorArray("_SdfImageUvs");
+            Assert.AreEqual((float)NowSdfShapeType.Image, data0[0].x);
+            Assert.AreEqual(new Vector4(72f, 72f, 64f, 64f), data1[0]);
+            Assert.AreEqual(2f, data2[0].x, 0.0001f);
+            Assert.AreEqual(2f, data2[0].y, 0.0001f);
+            // Shadow reach is softness + spread = 8 scene units = 4 texels, plus
+            // one guard texel, quantized up to the padding step.
+            int padding = NowSdfImageFields.PaddingStep;
+            Assert.AreEqual(padding, (int)data2[0].z);
+            Assert.AreEqual(0.5f, data2[0].w, 0.0001f);
+            Assert.AreEqual(0f, shapeMeta[0].y);
+            // The padded 48x48 field sits behind the atlas gutter; the sprite's
+            // 32x32 pixels sit at the same origin plus the padding.
+            int gutter = NowSdfImageAtlas.Gutter;
+            int fieldSize = 32 + padding * 2;
+            Assert.AreEqual(new Vector4(gutter, gutter, fieldSize, fieldSize), imageUvs[0]);
+            Assert.AreEqual(new Vector4(gutter + padding, gutter + padding, 32f, 32f), uvs[0]);
+            Assert.AreEqual(Mathf.NextPowerOfTwo(fieldSize + gutter * 2), fieldAtlas.width);
+            Assert.AreEqual(fieldAtlas.width, fieldAtlas.height);
+            Assert.AreEqual(fieldAtlas.width, colorAtlas.width);
+            Assert.AreEqual(
+                new Vector4(fieldAtlas.width, fieldAtlas.height, colorAtlas.width, colorAtlas.height),
+                material.GetVector("_SdfImageAtlasSize"));
+
+            float effectLimit = material.GetFloat("_SdfTextEffectLimit");
+            Assert.GreaterOrEqual(effectLimit, 8f);
+            Assert.Less(effectLimit, 100000f);
+
+            // An unchanged source reuses the field; an edited one rebakes it.
+            DrawScene();
+            Assert.AreEqual(1, NowSdfImageFields.bakeCount);
+            texture.SetPixel(0, 0, Color.clear);
+            texture.Apply();
+            DrawScene();
+            Assert.AreEqual(2, NowSdfImageFields.bakeCount);
+            Assert.AreEqual(1, NowSdfImageFields.fieldCount);
+        }
+        finally
+        {
+            Object.DestroyImmediate(texture);
+        }
+    }
+
+    [Test]
+    public void SdfImageFieldStoresSignedTexelDistancesInSourceOrientation()
+    {
+        RequireGraphicsDevice();
+        var texture = CreateQuadrantTexture(32);
+        Texture2D readback = null;
+
+        try
+        {
+            using (_drawList.Begin(new Vector2(64, 64)))
+            {
+                NowSdf.Scene(new NowRect(0, 0, 64, 64))
+                    .Image(new NowRect(16, 16, 32, 32), texture)
+                    .Draw();
+            }
+
+            var material = _drawList.batches[0].material;
+            var field = material.GetTexture("_SdfImageField") as RenderTexture;
+            Assert.NotNull(field);
+            int padding = (int)material.GetVectorArray("_SdfData2")[0].z;
+            Vector4 entry = material.GetVectorArray("_SdfImageUvs")[0];
+            int originX = (int)entry.x + padding;
+            int originY = (int)entry.y + padding;
+
+            readback = new Texture2D(field.width, field.height, TextureFormat.RGBAFloat, false);
+            var previous = RenderTexture.active;
+            RenderTexture.active = field;
+            readback.ReadPixels(new Rect(0, 0, field.width, field.height), 0, 0);
+            RenderTexture.active = previous;
+            Color[] pixels = readback.GetPixels();
+
+            float At(int sourceX, int sourceY)
+            {
+                return pixels[(sourceY + originY) * field.width + sourceX + originX].r;
+            }
+
+            // The gutter outside the entry keeps the clear value, not distance.
+            Assert.Greater(pixels[0].r, 1000f);
+
+            // Opaque bottom-left quadrant: the contour runs halfway between the
+            // last opaque texel center and the first transparent one, so the
+            // silhouette occupies [0, 16] in texel-center coordinates.
+            Assert.AreEqual(-4.5f, At(4, 4), 0.1f);
+            // The boundary pair straddles zero.
+            Assert.AreEqual(-0.5f, At(15, 4), 0.1f);
+            Assert.AreEqual(0.5f, At(16, 4), 0.1f);
+            // The transparent quadrants keep the source's y-up orientation.
+            Assert.Greater(At(4, 28), 5f);
+            Assert.Greater(At(28, 4), 5f);
+            // Marching squares chamfers the sharp corner (16, 16) with a segment
+            // from (16, 15.5) to (15.5, 16), so diagonal distances measure to
+            // the line x + y = 31.5 rather than to the corner point.
+            Assert.AreEqual((57f - 31.5f) / Mathf.Sqrt(2f), At(28, 28), 0.15f);
+            // Padding is transparent and measures back to the chamfered corner
+            // at the origin: the cell whose only inside corner is (0.5, 0.5)
+            // yields the segment from (0, 0.5) to (0.5, 0), the line x + y = 0.5.
+            Assert.AreEqual((2f * (padding - 0.5f) + 0.5f) / Mathf.Sqrt(2f), At(-padding, -padding), 0.15f);
+        }
+        finally
+        {
+            Object.DestroyImmediate(texture);
+            if (readback != null)
+                Object.DestroyImmediate(readback);
+        }
+    }
+
+    [Test]
+    public void SdfSpriteUsesTextureRectAndCoexistsWithSceneTexture()
+    {
+        RequireGraphicsDevice();
+        var texture = CreateQuadrantTexture(32);
+        var other = new Texture2D(4, 4, TextureFormat.RGBA32, false);
+        Sprite sprite = null;
+
+        try
+        {
+            sprite = Sprite.Create(texture, new Rect(16f, 0f, 16f, 16f), new Vector2(0.5f, 0.5f));
+
+            using (_drawList.Begin(new Vector2(96, 96)))
+            {
+                NowSdf.Scene(new NowRect(0, 0, 96, 96))
+                    .SetTexture(other)
+                    .Sprite(new NowRect(8, 8, 48, 24), sprite)
+                    .Draw();
+            }
+
+            var material = _drawList.batches[0].material;
+            var data2 = material.GetVectorArray("_SdfData2");
+            var uvs = material.GetVectorArray("_SdfUvs");
+            var imageUvs = material.GetVectorArray("_SdfImageUvs");
+            var fieldAtlas = material.GetTexture("_SdfImageField") as RenderTexture;
+            int padding = (int)data2[0].z;
+            int gutter = NowSdfImageAtlas.Gutter;
+            // The scene texture is untouched by the sprite, which lives in the atlases.
+            Assert.AreSame(other, material.mainTexture);
+            Assert.AreEqual(1f, material.GetFloat("_SdfShapeCount"));
+            Assert.AreEqual(3f, data2[0].x, 0.0001f);
+            Assert.AreEqual(1.5f, data2[0].y, 0.0001f);
+            Assert.NotNull(fieldAtlas);
+            Assert.AreEqual(new Vector4(gutter, gutter, 16 + padding * 2, 16 + padding * 2), imageUvs[0]);
+            Assert.AreEqual(new Vector4(gutter + padding, gutter + padding, 16f, 16f), uvs[0]);
+        }
+        finally
+        {
+            if (sprite != null)
+                Object.DestroyImmediate(sprite);
+
+            Object.DestroyImmediate(other);
+            Object.DestroyImmediate(texture);
+        }
+    }
+
+    [Test]
+    public void SdfScenePacksImagesFromDifferentTexturesIntoOneAtlas()
+    {
+        RequireGraphicsDevice();
+        var first = CreateQuadrantTexture(32);
+        var second = CreateQuadrantTexture(16);
+        Texture2D readback = null;
+
+        try
+        {
+            using (_drawList.Begin(new Vector2(160, 96)))
+            {
+                NowSdf.Scene(new NowRect(0, 0, 160, 96))
+                    .Image(new NowRect(8, 8, 64, 64), first)
+                    .SmoothUnion(6f)
+                    .Image(new NowRect(88, 8, 32, 32), second)
+                    .Draw();
+            }
+
+            var material = _drawList.batches[0].material;
+            var uvs = material.GetVectorArray("_SdfUvs");
+            var imageUvs = material.GetVectorArray("_SdfImageUvs");
+            var colorAtlas = material.GetTexture("_SdfImageColor") as RenderTexture;
+            Assert.AreEqual(2f, material.GetFloat("_SdfShapeCount"));
+            Assert.AreEqual(2, NowSdfImageFields.bakeCount);
+            Assert.NotNull(colorAtlas);
+            Assert.AreNotEqual(imageUvs[0], imageUvs[1]);
+            Assert.AreEqual(32f, uvs[0].z);
+            Assert.AreEqual(16f, uvs[1].z);
+            // Entries never overlap: the second starts after the first plus a gutter.
+            Assert.GreaterOrEqual(
+                imageUvs[1].x,
+                imageUvs[0].x + imageUvs[0].z + NowSdfImageAtlas.Gutter);
+
+            // The color atlas holds each sprite's own pixels in source orientation.
+            readback = new Texture2D(colorAtlas.width, colorAtlas.height, TextureFormat.RGBA32, false);
+            var previous = RenderTexture.active;
+            RenderTexture.active = colorAtlas;
+            readback.ReadPixels(new Rect(0, 0, colorAtlas.width, colorAtlas.height), 0, 0);
+            RenderTexture.active = previous;
+            Color32[] pixels = readback.GetPixels32();
+
+            Color32 At(Vector4 rect, int x, int y)
+            {
+                return pixels[((int)rect.y + y) * colorAtlas.width + (int)rect.x + x];
+            }
+
+            // Inside the silhouette the sprite's own pixels are copied. Outside
+            // it, the bake dilates the nearest edge color at full alpha so
+            // fillets and morph bridges stay colored; the gutter stays clear.
+            Assert.AreEqual(255, At(uvs[0], 4, 4).a);
+            Assert.AreEqual(255, At(uvs[0], 28, 28).a);
+            Assert.AreEqual(255, At(uvs[0], 28, 28).r);
+            Assert.AreEqual(255, At(uvs[0], 4, 28).a);
+            Assert.AreEqual(255, At(uvs[1], 2, 2).a);
+            Assert.AreEqual(255, At(uvs[1], 12, 12).a);
+            Assert.AreEqual(0, At(imageUvs[0], 0, 0).a);
+        }
+        finally
+        {
+            if (readback != null)
+                Object.DestroyImmediate(readback);
+
+            Object.DestroyImmediate(second);
+            Object.DestroyImmediate(first);
+        }
+    }
+
+    [Test]
+    public void SdfImageFieldAtlasBorderColumnsAreContinuousForLargePadding()
+    {
+        RequireGraphicsDevice();
+        var texture = CreateQuadrantTexture(512);
+        Texture2D readback = null;
+
+        try
+        {
+            using (_drawList.Begin(new Vector2(160, 160)))
+            {
+                NowSdf.Scene(new NowRect(0, 0, 160, 160))
+                    .SetShadow(new Vector2(0f, 12f), 22f, Color.black, 2f)
+                    .Image(new NowRect(30, 30, 100, 100), texture)
+                    .Draw();
+            }
+
+            var material = _drawList.batches[0].material;
+            var field = material.GetTexture("_SdfImageField") as RenderTexture;
+            Vector4 entry = material.GetVectorArray("_SdfImageUvs")[0];
+            int padding = (int)material.GetVectorArray("_SdfData2")[0].z;
+            Assert.AreEqual(128, padding);
+            readback = new Texture2D(field.width, field.height, TextureFormat.RGBAFloat, false);
+            var previous = RenderTexture.active;
+            RenderTexture.active = field;
+            readback.ReadPixels(new Rect(0, 0, field.width, field.height), 0, 0);
+            RenderTexture.active = previous;
+            Color[] pixels = readback.GetPixels();
+
+            float At(int x, int y) => pixels[((int)entry.y + y) * field.width + (int)entry.x + x].r;
+
+            var report = new System.Text.StringBuilder();
+            int size = (int)entry.z;
+            for (int y = 0; y < size; y += 64)
+            {
+                report.AppendLine(
+                    $"row {y}: c0={At(0, y):F2} c1={At(1, y):F2} c2={At(2, y):F2} ... " +
+                    $"c{size - 3}={At(size - 3, y):F2} c{size - 2}={At(size - 2, y):F2} c{size - 1}={At(size - 1, y):F2}");
+            }
+
+            for (int y = 0; y < size; ++y)
+            {
+                Assert.Less(Mathf.Abs(At(0, y) - At(1, y)), 2f, "left border row " + y + "\n" + report);
+                Assert.Less(Mathf.Abs(At(size - 1, y) - At(size - 2, y)), 2f, "right border row " + y + "\n" + report);
+            }
+
+            for (int x = 0; x < size; ++x)
+            {
+                Assert.Less(Mathf.Abs(At(x, 0) - At(x, 1)), 2f, "bottom border column " + x + "\n" + report);
+                Assert.Less(Mathf.Abs(At(x, size - 1) - At(x, size - 2)), 2f, "top border column " + x + "\n" + report);
+            }
+        }
+        finally
+        {
+            Object.DestroyImmediate(texture);
+            if (readback != null)
+                Object.DestroyImmediate(readback);
+        }
+    }
+
+    [Test]
+    public void SdfMorphLayerHonorsPendingHardOperation()
+    {
+        var play = NowSdf.Graph().Triangle(new Vector2(40f, 35f), new Vector2(62f, 48f), new Vector2(40f, 61f));
+        var pause = NowSdf.Graph().RoundedBox(new NowRect(36f, 35f, 9f, 26f), 2f).Union().RoundedBox(new NowRect(51f, 35f, 9f, 26f), 2f);
+
+        using (_drawList.Begin(new Vector2(96, 96)))
+        {
+            NowSdf.Scene(new NowRect(0, 0, 96, 96))
+                .SetColor(Color.white).UseColor()
+                .Circle(new Vector2(48f, 48f), 30f)
+                .Subtract()
+                .Morph(play, pause, 1f)
+                .Draw();
+        }
+
+        var material = _drawList.batches[0].material;
+        var layerData0 = material.GetVectorArray("_SdfLayerData0");
+        var layerData1 = material.GetVectorArray("_SdfLayerData1");
+        string dump = $"layer0 {layerData0[0]} / {layerData1[0]}; layer1 {layerData0[1]} / {layerData1[1]}; shapes {material.GetFloat("_SdfShapeCount")}";
+        Assert.AreEqual(2f, material.GetFloat("_SdfLayerCount"), dump);
+        Assert.AreEqual((float)NowSdfLayerKind.Morph, layerData0[1].w, dump);
+        Assert.AreEqual((float)NowSdfOperation.Subtract, layerData0[1].y, dump);
+        Assert.AreEqual(1f, layerData1[1].y, dump);
+        Assert.AreEqual(4f, material.GetFloat("_SdfShapeCount"), dump);
+    }
+
+    static void RequireGraphicsDevice()
+    {
+        if (SystemInfo.graphicsDeviceType == UnityEngine.Rendering.GraphicsDeviceType.Null)
+            Assert.Ignore("Image fields need a graphics device.");
+    }
+
+    /// <summary>Opaque in the bottom-left quadrant (texel y up), transparent elsewhere.</summary>
+    static Texture2D CreateQuadrantTexture(int size)
+    {
+        var texture = new Texture2D(size, size, TextureFormat.RGBA32, false);
+        var pixels = new Color32[size * size];
+        int half = size / 2;
+
+        for (int y = 0; y < size; ++y)
+        {
+            for (int x = 0; x < size; ++x)
+            {
+                bool opaque = x < half && y < half;
+                pixels[y * size + x] = opaque
+                    ? new Color32(255, 255, 255, 255)
+                    : new Color32(0, 0, 0, 0);
+            }
+        }
+
+        texture.SetPixels32(pixels);
+        texture.Apply();
+        return texture;
     }
 }

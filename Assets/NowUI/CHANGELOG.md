@@ -1,3 +1,52 @@
+## [1.11.6](https://github.com/BlenMiner/NowUI/compare/nowui-v1.11.5...nowui-v1.11.6) (2026-09-06)
+
+
+### Bug Fixes
+
+* simplify AI guidance and prevent ambiguous skill installs ([09323d9](https://github.com/BlenMiner/NowUI/commit/09323d97640ee968efee3cd61be7b0f0b20bbae4))
+
+## [1.11.5](https://github.com/BlenMiner/NowUI/compare/nowui-v1.11.4...nowui-v1.11.5) (2026-09-06)
+
+
+### Performance Improvements
+
+* graph evaluation improvements; improved GC regression tests ([9c1e48b](https://github.com/BlenMiner/NowUI/commit/9c1e48b12833a2b8f289e94fba7ac2e3471f445f))
+
+## [1.11.4](https://github.com/BlenMiner/NowUI/compare/nowui-v1.11.3...nowui-v1.11.4) (2026-09-06)
+
+
+### Performance Improvements
+
+* peformance pass ([76629a4](https://github.com/BlenMiner/NowUI/commit/76629a4eca49b6226ac9777ff767418f3a25936a))
+
+## [1.11.3](https://github.com/BlenMiner/NowUI/compare/nowui-v1.11.2...nowui-v1.11.3) (2026-09-03)
+
+
+### Bug Fixes
+
+* Graph() and Morph() placed after inline primitives lost their pending operation ([bd3a4ec](https://github.com/BlenMiner/NowUI/commit/bd3a4ec6e37430609d6a737ba8f9eb89ed6c2950))
+
+## [1.11.2](https://github.com/BlenMiner/NowUI/compare/nowui-v1.11.1...nowui-v1.11.2) (2026-09-03)
+
+
+### Bug Fixes
+
+* sdf image blending ([8402e62](https://github.com/BlenMiner/NowUI/commit/8402e62f331892800821f74cec046a926e7066b2))
+
+## [1.11.1](https://github.com/BlenMiner/NowUI/compare/nowui-v1.11.0...nowui-v1.11.1) (2026-09-03)
+
+
+### Bug Fixes
+
+* allow N textures for the SDF image drawer ([431664b](https://github.com/BlenMiner/NowUI/commit/431664bf2ee1ec1d853eab56801236bf4a9c2438))
+
+# [1.11.0](https://github.com/BlenMiner/NowUI/compare/nowui-v1.10.6...nowui-v1.11.0) (2026-09-03)
+
+
+### Features
+
+* bake SDF from image ([7d0b5a8](https://github.com/BlenMiner/NowUI/commit/7d0b5a8683f3b1efd66aade748431c7b52db659b))
+
 ## [1.10.6](https://github.com/BlenMiner/NowUI/compare/nowui-v1.10.5...nowui-v1.10.6) (2026-08-31)
 
 
