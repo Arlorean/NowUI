@@ -156,7 +156,8 @@ namespace NowUI
             bool inheritContext,
             NowGlassBlurQuality glassBlurQuality,
             bool flushOverlays = true,
-            bool canvasVertexColorAlwaysGammaSpace = false)
+            bool canvasVertexColorAlwaysGammaSpace = false,
+            Matrix4x4 canvasNormalRestore = default)
         {
             ThrowIfDisposed();
 
@@ -191,6 +192,7 @@ namespace NowUI
                     overlayCheckpoint,
                     flushOverlays,
                     canvasVertexColorAlwaysGammaSpace,
+                    canvasNormalRestore,
                     controlIdScope,
                     ownsControlIdScope,
                     _scopes.Enter());
@@ -287,6 +289,7 @@ namespace NowUI
             NowOverlay.Checkpoint overlayCheckpoint,
             bool flushOverlays,
             bool canvasVertexColorAlwaysGammaSpace,
+            Matrix4x4 canvasNormalRestore,
             int token)
         {
             try
@@ -311,7 +314,8 @@ namespace NowUI
                             Now.EndCanvasMeshCapture(
                                 this,
                                 positionOffset,
-                                canvasVertexColorAlwaysGammaSpace);
+                                canvasVertexColorAlwaysGammaSpace,
+                                canvasNormalRestore);
                         else
                             Now.EndMeshCapture(mesh, batches, positionOffset, _layout);
                     }
@@ -486,6 +490,7 @@ namespace NowUI
 
         readonly bool _canvasVertexColorAlwaysGammaSpace;
 
+        readonly Matrix4x4 _canvasNormalRestore;
         ControlIdScope _controlIdScope;
 
         bool _ownsControlIdScope;
@@ -500,6 +505,7 @@ namespace NowUI
             NowOverlay.Checkpoint overlayCheckpoint,
             bool flushOverlays,
             bool canvasVertexColorAlwaysGammaSpace,
+            Matrix4x4 canvasNormalRestore,
             ControlIdScope controlIdScope,
             bool ownsControlIdScope,
             int token)
@@ -511,6 +517,7 @@ namespace NowUI
             _overlayCheckpoint = overlayCheckpoint;
             _flushOverlays = flushOverlays;
             _canvasVertexColorAlwaysGammaSpace = canvasVertexColorAlwaysGammaSpace;
+            _canvasNormalRestore = canvasNormalRestore;
             _controlIdScope = controlIdScope;
             _ownsControlIdScope = ownsControlIdScope;
             _token = token;
@@ -546,6 +553,7 @@ namespace NowUI
                     _overlayCheckpoint,
                     _flushOverlays,
                     _canvasVertexColorAlwaysGammaSpace,
+                    _canvasNormalRestore,
                     _token);
             }
             finally

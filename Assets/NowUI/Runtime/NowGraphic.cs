@@ -491,7 +491,8 @@ namespace NowUI
                     false,
                     _glassBlurQuality,
                     canvasVertexColorAlwaysGammaSpace:
-                        targetCanvas != null && targetCanvas.vertexColorAlwaysGammaSpace);
+                        targetCanvas != null && targetCanvas.vertexColorAlwaysGammaSpace,
+                    canvasNormalRestore: GetCanvasNormalRestore(targetCanvas));
 
                 Now.BeginColorMultiplier(color);
                 colorMultiplierActive = true;
@@ -1170,6 +1171,50 @@ namespace NowUI
 
             float scale = targetCanvas.scaleFactor;
             return scale > 0f && !float.IsNaN(scale) && !float.IsInfinity(scale) ? scale : 1f;
+        }
+
+        /// <summary>
+        /// The matrix that has to go onto a vertex normal for the Canvas bake to
+        /// leave it alone — the inverse of this graphic's local-to-canvas
+        /// transform, with the translation dropped because a normal never
+        /// carries one.
+        ///
+        /// The rectangle shaders keep three of the four corner radii in the
+        /// normal, and <c>CanvasRenderer.SetMesh</c> runs the normal through the
+        /// same matrix as the positions, so without this a graphic scaled to 1.4
+        /// draws its two right-hand corners at 1.4 times the radius it asked for.
+        /// Returns identity for the ordinary unscaled, unrotated case, which
+        /// skips the pass entirely.
+        ///
+        /// The space is the <b>root</b> canvas, not the nearest one. A nested
+        /// canvas does not reset the batch's coordinate space, so its own
+        /// transform is part of what the bake applies — which is how a sample
+        /// adopted into the Demo grid, where a nested Canvas carries the
+        /// thumbnail scale, kept the fault after the host's own scale was
+        /// accounted for.
+        /// </summary>
+        Matrix4x4 GetCanvasNormalRestore(Canvas targetCanvas)
+        {
+            if (targetCanvas == null)
+                return Matrix4x4.identity;
+
+            var host = rectTransform;
+            var bakeSpace = targetCanvas.rootCanvas != null
+                ? targetCanvas.rootCanvas.transform
+                : targetCanvas.transform;
+
+            if (host == null || host == bakeSpace)
+                return Matrix4x4.identity;
+
+            var toCanvas = bakeSpace.worldToLocalMatrix * host.localToWorldMatrix;
+            toCanvas.SetColumn(3, new Vector4(0f, 0f, 0f, 1f));
+
+            if (toCanvas.isIdentity)
+                return Matrix4x4.identity;
+
+            // A collapsed axis inverts to garbage; nothing is visible at that
+            // scale anyway, so leave the normals as they are.
+            return Mathf.Abs(toCanvas.determinant) > 1e-6f ? toCanvas.inverse : Matrix4x4.identity;
         }
 
         void ApplyCanvasPages()

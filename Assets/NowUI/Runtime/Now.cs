@@ -1680,7 +1680,8 @@ namespace NowUI
         internal static void EndCanvasMeshCapture(
             NowDrawList drawList,
             Vector2 positionOffset,
-            bool canvasVertexColorAlwaysGammaSpace)
+            bool canvasVertexColorAlwaysGammaSpace,
+            Matrix4x4 canvasNormalRestore)
         {
             if (drawList == null)
             {
@@ -1744,7 +1745,8 @@ namespace NowUI
                         NowMeshLayout.Canvas,
                         pageIndex < _pageStarts.Count ? _pageStarts[pageIndex] : 0,
                         pageIndex < _pageCounts.Count ? _pageCounts[pageIndex] : 0,
-                        canvasVertexColorAlwaysGammaSpace);
+                        canvasVertexColorAlwaysGammaSpace,
+                        canvasNormalRestore);
                 }
 
                 if (hasGlass)
@@ -1768,6 +1770,33 @@ namespace NowUI
             }
         }
 
+        /// <summary>
+        /// Pre-applies <paramref name="restore"/> to every canvas vertex normal.
+        ///
+        /// The rectangle shaders read three of the four corner radii out of the
+        /// vertex normal (the fourth rides in uv0.z). <c>CanvasRenderer.SetMesh</c>
+        /// bakes the mesh into canvas space and puts the normal through the
+        /// graphic's local-to-canvas matrix along with the positions, so a scaled
+        /// or rotated <c>NowGraphic</c> hands the shader radii that were scaled
+        /// with it — the two right-hand corners stop matching the left-hand pair,
+        /// which is the only visible symptom because the fourth radius travels in
+        /// a texcoord and is left alone. Applying the inverse first makes the bake
+        /// land on the radii that were asked for.
+        ///
+        /// <paramref name="restore"/> is the zero matrix when the host has no
+        /// canvas to correct for, and identity when the transform cannot corrupt
+        /// anything; both skip the pass.
+        /// </summary>
+        static void RestoreCanvasNormals(NowCanvasVertex[] vertices, int count, Matrix4x4 restore)
+        {
+            // An affine inverse keeps m33 at 1; the zero matrix (default) does not.
+            if (restore.m33 == 0f || restore.isIdentity)
+                return;
+
+            for (int i = 0; i < count; ++i)
+                vertices[i].normal = restore.MultiplyVector(vertices[i].normal);
+        }
+
         static void UploadCapturedMeshes(
             Mesh target,
             List<NowMeshBatch> batches,
@@ -1775,7 +1804,8 @@ namespace NowUI
             NowMeshLayout layout,
             int activeStart,
             int activeLimit,
-            bool canvasVertexColorAlwaysGammaSpace = false)
+            bool canvasVertexColorAlwaysGammaSpace = false,
+            Matrix4x4 canvasNormalRestore = default)
         {
             if (target == null || batches == null)
                 return;
@@ -1883,6 +1913,7 @@ namespace NowUI
 
             if (layout == NowMeshLayout.Canvas)
             {
+                RestoreCanvasNormals(_canvasVertices.array, vertexCount, canvasNormalRestore);
                 target.SetVertexBufferParams(vertexCount, NowMesh.CanvasVertexLayout);
                 target.SetVertexBufferData(_canvasVertices.array, 0, 0, vertexCount, 0, MeshUpdateFlags.DontRecalculateBounds);
             }
