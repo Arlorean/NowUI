@@ -65,10 +65,6 @@ float4 _SdfShadowColor;
 float4 _SdfInnerShadow;
 float4 _SdfInnerShadowColor;
 float4 _SdfEmboss;
-
-// The dome's own terms: x ambient, y light elevation, z rim strength, w rim falloff. An ambient of
-// 0 keeps the rim-bevel emboss; above 0 lights the shape as a dome — see the emboss block in frag.
-float4 _SdfEmbossDome;
 float4 _SdfContour;
 float4 _SdfContourColor;
 float4 _SdfContourMask;
@@ -740,6 +736,10 @@ float2 shapeUv(int index, float type, float4 data1, float4 data2, float2 scenePo
 
 float4 shapeFill(int index, float type, float4 data1, float4 data2, float2 scenePos, float4 tint)
 {
+    // Shape fills ride _SdfColors, a SetVectorArray upload Unity leaves alone, so they are
+    // the one colour this shader has to convert. Outline, glow, shadow, inner shadow and
+    // contour arrive through Color-typed material properties, which Unity has already
+    // converted -- converting those again puts a gamma between a fill and its own outline.
     float4 color = NowUIColorToWorkingSpace(_SdfColors[index]) * tint;
 
     // Image nodes sample their own pixels from the scene's color atlas, so
@@ -934,41 +934,6 @@ void combineDistance(
     }
 }
 
-// `join` rounds hard unions over that radius, and is what the dome shades from — see the emboss
-// block in frag. Only the union takes it: min() is the union's own distance outside the shape but
-// only a bound inside it, where it collapses to whichever operand the fragment is deepest in, so the
-// medial line between two unioned shapes carries a crease the combined surface does not have.
-// Intersection and subtraction need no such correction and must not get one: every boundary point of
-// an intersection is a boundary point of the result, so max() already is the exact interior
-// distance, and rounding it would erase an edge the shape really has.
-void combineDistanceJoined(
-    inout float dist,
-    inout float codeStep,
-    float shapeDist,
-    float shapeCodeStep,
-    float operation,
-    float smoothing,
-    float join)
-{
-    if (join > 0.0 && operation < 0.5)
-    {
-        operation = 3.0;
-        smoothing = join;
-    }
-
-    combineDistance(dist, codeStep, shapeDist, shapeCodeStep, operation, smoothing);
-}
-
-// Hollows a combined field into a shell of half-thickness `onion`. Applied once the whole graph has
-// been combined rather than per node, so the internal boundaries where two unioned shapes overlap
-// survive — stroking each node separately erases them. Carried in _SdfLayerData0.x / _SdfLayerData1.x,
-// which held graph ids the shader never read.
-void applyOnion(inout float dist, float onion)
-{
-    if (onion > 0.0)
-        dist = abs(dist) - onion;
-}
-
 void decodeGraphRange(float packedRange, out int start, out int count)
 {
     int total = min(max((int)_SdfShapeCount, 0), NOW_SDF_MAX_SHAPES);
@@ -980,7 +945,6 @@ void decodeGraphRange(float packedRange, out int start, out int count)
 
 void evalGraphFields(
     float packedRange,
-    float onion,
     float2 scenePos,
     float4 tint,
     bool useDistinctEffectField,
@@ -1047,21 +1011,13 @@ void evalGraphFields(
         }
     }
 
-    applyOnion(dist, onion);
-
     if (!useDistinctEffectField)
     {
         effectDist = dist;
         effectCodeStep = codeStep;
     }
-    else
-    {
-        applyOnion(effectDist, onion);
-    }
 }
 
-// Kept at the original signature for custom material includes. The shell lives on the layer, so
-// evalLayerFields is what carries it; a graph evaluated on its own has none.
 void evalGraph(
     float packedRange,
     float2 scenePos,
@@ -1074,7 +1030,6 @@ void evalGraph(
     float effectCodeStep;
     evalGraphFields(
         packedRange,
-        0.0,
         scenePos,
         tint,
         false,
@@ -1111,7 +1066,6 @@ void evalLayerFields(
     {
         evalGraphFields(
             layer1.z,
-            layer0.x,
             scenePos,
             tint,
             useDistinctEffectField,
@@ -1135,7 +1089,6 @@ void evalLayerFields(
     float bEffectCodeStep = 0;
     evalGraphFields(
         layer1.z,
-        layer0.x,
         scenePos,
         tint,
         useDistinctEffectField,
@@ -1146,7 +1099,6 @@ void evalLayerFields(
         aEffectCodeStep);
     evalGraphFields(
         layer1.w,
-        layer1.x,
         scenePos,
         tint,
         useDistinctEffectField,
@@ -1195,8 +1147,6 @@ void evalLayer(
 
 void evalGraphDistanceField(
     float packedRange,
-    float onion,
-    float join,
     float2 scenePos,
     float effectField,
     out float dist,
@@ -1210,11 +1160,6 @@ void evalGraphDistanceField(
 
     if (count <= 0)
         return;
-
-    // An onion has no joins to round. Its surface is the shell at |d| = thickness, so a union's
-    // medial ridge lies deeper than the shell and outside it, while deepening the interior moves the
-    // shell's own inner wall — which parts the shading from the coverage and blackens the crossings.
-    float graphJoin = onion > 0.0 ? 0.0 : join;
 
     int first = start;
     float4 data0 = _SdfData0[first];
@@ -1234,35 +1179,30 @@ void evalGraphDistanceField(
         float2 shapeFieldDistances = shapeDistances(index, data0.x, _SdfData1[index], data2, scenePos);
         float shapeDist = lerp(shapeFieldDistances.x, shapeFieldDistances.y, effectField);
         float shapeCodeStep = NowSdfTransformedShapeCodeStepV2(index, data0.x, data2);
-        combineDistanceJoined(dist, codeStep, shapeDist, shapeCodeStep, data0.y, data0.z, graphJoin);
+        combineDistance(dist, codeStep, shapeDist, shapeCodeStep, data0.y, data0.z);
     }
-
-    applyOnion(dist, onion);
 }
 
 void evalGraphDistance(
     float packedRange,
-    float onion,
     float2 scenePos,
     out float dist,
     out float codeStep)
 {
-    evalGraphDistanceField(packedRange, onion, 0.0, scenePos, 0.0, dist, codeStep);
+    evalGraphDistanceField(packedRange, scenePos, 0.0, dist, codeStep);
 }
 
 void evalGraphEffectDistance(
     float packedRange,
-    float onion,
     float2 scenePos,
     out float dist,
     out float codeStep)
 {
-    evalGraphDistanceField(packedRange, onion, 0.0, scenePos, 1.0, dist, codeStep);
+    evalGraphDistanceField(packedRange, scenePos, 1.0, dist, codeStep);
 }
 
 void evalLayerDistanceField(
     int index,
-    float join,
     float2 scenePos,
     float effectField,
     out float dist,
@@ -1275,7 +1215,7 @@ void evalLayerDistanceField(
 
     if (layer0.w < 0.5)
     {
-        evalGraphDistanceField(layer1.z, layer0.x, join, scenePos, effectField, dist, codeStep);
+        evalGraphDistanceField(layer1.z, scenePos, effectField, dist, codeStep);
         return;
     }
 
@@ -1283,8 +1223,8 @@ void evalLayerDistanceField(
     float bDist = 100000.0;
     float aCodeStep = 0.0;
     float bCodeStep = 0.0;
-    evalGraphDistanceField(layer1.z, layer0.x, join, scenePos, effectField, aDist, aCodeStep);
-    evalGraphDistanceField(layer1.w, layer1.x, join, scenePos, effectField, bDist, bCodeStep);
+    evalGraphDistanceField(layer1.z, scenePos, effectField, aDist, aCodeStep);
+    evalGraphDistanceField(layer1.w, scenePos, effectField, bDist, bCodeStep);
     float t = saturate(layer1.y);
     dist = lerp(aDist, bDist, t);
     codeStep = lerp(aCodeStep, bCodeStep, t);
@@ -1292,12 +1232,12 @@ void evalLayerDistanceField(
 
 void evalLayerDistance(int index, float2 scenePos, out float dist, out float codeStep)
 {
-    evalLayerDistanceField(index, 0.0, scenePos, 0.0, dist, codeStep);
+    evalLayerDistanceField(index, scenePos, 0.0, dist, codeStep);
 }
 
 void evalLayerEffectDistance(int index, float2 scenePos, out float dist, out float codeStep)
 {
-    evalLayerDistanceField(index, 0.0, scenePos, 1.0, dist, codeStep);
+    evalLayerDistanceField(index, scenePos, 1.0, dist, codeStep);
 }
 
 void evalSceneFields(
@@ -1400,12 +1340,9 @@ void evalScene(
         effectCodeStep);
 }
 
-// `join` rounds every hard union in the scene, at graph and at layer level both. Pass 0 for the
-// scene's own field — coverage, outline, glow, shadow and contour all read the exact one.
 void evalSceneDistanceAndCodeStepField(
     float2 scenePos,
     float effectField,
-    float join,
     out float dist,
     out float codeStep)
 {
@@ -1421,7 +1358,7 @@ void evalSceneDistanceAndCodeStepField(
 
         float layerDist;
         float layerCodeStep;
-        evalLayerDistanceField(layer, join, scenePos, effectField, layerDist, layerCodeStep);
+        evalLayerDistanceField(layer, scenePos, effectField, layerDist, layerCodeStep);
 
         if (!found)
         {
@@ -1431,26 +1368,25 @@ void evalSceneDistanceAndCodeStepField(
         }
         else
         {
-            combineDistanceJoined(
+            combineDistance(
                 dist,
                 codeStep,
                 layerDist,
                 layerCodeStep,
                 _SdfLayerData0[layer].y,
-                _SdfLayerData0[layer].z,
-                join);
+                _SdfLayerData0[layer].z);
         }
     }
 }
 
 void evalSceneDistanceAndCodeStep(float2 scenePos, out float dist, out float codeStep)
 {
-    evalSceneDistanceAndCodeStepField(scenePos, 0.0, 0.0, dist, codeStep);
+    evalSceneDistanceAndCodeStepField(scenePos, 0.0, dist, codeStep);
 }
 
 void evalSceneEffectDistanceAndCodeStep(float2 scenePos, out float dist, out float codeStep)
 {
-    evalSceneDistanceAndCodeStepField(scenePos, 1.0, 0.0, dist, codeStep);
+    evalSceneDistanceAndCodeStepField(scenePos, 1.0, dist, codeStep);
 }
 
 // Keep the original helper signature available to custom material includes.
@@ -1458,13 +1394,6 @@ void evalSceneDistance(float2 scenePos, out float dist)
 {
     float codeStep;
     evalSceneDistanceAndCodeStep(scenePos, dist, codeStep);
-}
-
-// The same field with hard unions rounded over `join`, which only the dome reads.
-void evalSceneDistanceJoined(float2 scenePos, float join, out float dist)
-{
-    float codeStep;
-    evalSceneDistanceAndCodeStepField(scenePos, 0.0, join, dist, codeStep);
 }
 
 float hash21(float2 p)
@@ -1709,81 +1638,12 @@ fixed4 frag(v2f i) : SV_Target
 
     if (_SdfEmboss.w > 0.0)
     {
-        float2 light = normalize(_SdfEmboss.xy + 0.0001);
-
-        // The dome shades the scene as one surface, so it cannot read the scene's own field: a hard
-        // union is min(), which inside the shape collapses to whichever operand the fragment is
-        // deepest in, and each of them then domes from its own boundary with a crease along the
-        // medial line between them. Re-evaluate with the unions rounded over the dome's own depth —
-        // past that depth the surface is flat-on to the viewer already, so the rounding cannot show —
-        // and leave the exact field to coverage, outline, glow, shadow and contour.
-        float shadeDist = dist;
-
-        if (_SdfEmbossDome.x > 0.0)
-            evalSceneDistanceJoined(scenePos, _SdfEmboss.z, shadeDist);
-
-        float2 grad = float2(ddx(shadeDist), ddy(shadeDist));
+        float2 grad = float2(ddx(dist), ddy(dist));
         float2 normal2 = normalize(grad + 0.0001);
-
-        if (_SdfEmbossDome.x > 0.0)
-        {
-            float shadePixelWidth = max(length(grad), 0.0001);
-
-            // Light the interior as a dome _SdfEmboss.z deep rather than as a bevelled rim. The
-            // surface tilts from vertical at the edge to flat-on at full depth, so the terminator
-            // sweeps across the body; shading by the 2D gradient alone splits a shape into two flat
-            // regions with a hard seam between them, because that gradient only carries direction
-            // and never tilts towards the viewer.
-            //
-            // _SdfEmboss.z therefore has to reach the deepest point of the shape. Short of that the
-            // surface never turns to face the viewer and the shape shades like a cone seen from
-            // above, with a visible point where the gradient flips through the middle.
-            float depth = saturate(-shadeDist / max(_SdfEmboss.z, shadePixelWidth));
-
-            // Depth alone is not the whole slope. The dome's height is a function of the field,
-            // h = H(d), so its 2D slope is H'(d) * grad(d) — the field's own gradient is a factor and
-            // this code used to assume it was 1. It is 1 wherever the field is a true distance, and 0
-            // at the point a rounded or a smooth union leaves in the interior, where the two operands
-            // reach the same depth and the field stops moving. That point is where normalize() has
-            // nothing to normalise, so the tilt it returned was arbitrary and every direction met
-            // there: `a + b` and `a.Union(b, 100)` each drew a dark cone point through the join.
-            // Carrying the factor flattens the surface to face the viewer exactly where the field
-            // flattens, which is what a blended blob does, and changes nothing on a lone circle.
-            //
-            // grad is per pixel, so it is measured against the scene units one pixel covers.
-            float2 dSceneX = float2(ddx(scenePosBase.x), ddy(scenePosBase.x));
-            float2 dSceneY = float2(ddx(scenePosBase.y), ddy(scenePosBase.y));
-            float unitsPerPixel = max(sqrt(abs(dSceneX.x * dSceneY.y - dSceneX.y * dSceneY.x)), 1e-6);
-            float fieldSlope = saturate(shadePixelWidth / unitsPerPixel);
-
-            float slope = (1.0 - depth) * fieldSlope;
-            float facing = sqrt(saturate(1.0 - slope * slope));
-            float3 surface = float3(normal2 * slope, facing);
-            float3 toLight = normalize(float3(light, _SdfEmbossDome.y));
-
-            // Ambient plus directional, with the two carried separately. A lambert wrapped to sit at
-            // full brightness under a grazing light pins the terminator to the unlit colour, and the
-            // reference this was measured against is a third of that at its terminator and keeps
-            // falling to near black behind it.
-            float lit = _SdfEmbossDome.x + _SdfEmboss.w * dot(surface, toLight);
-
-            // Scaling the fill keeps its hue; adding light to it washes a saturated colour out to
-            // white, which in a linear project happens almost immediately.
-            fillColor.rgb *= max(lit, 0.0);
-
-            // The lit rim reads as white rather than as a brighter fill, and only over the last
-            // tenth of the radius, so it is a grazing-angle term on `slope` and not a specular lobe
-            // — a specular would peak where the surface faces the viewer, which is the body.
-            fillColor.rgb += _SdfEmbossDome.z *
-                pow(slope, max(_SdfEmbossDome.w, 0.0001)) *
-                saturate(dot(normal2, light));
-        }
-        else
-        {
-            float band = 1.0 - smoothstep(0.0, max(_SdfEmboss.z, pixelWidth), abs(dist));
-            float shade = dot(normal2, light) * _SdfEmboss.w * band;
-            fillColor.rgb = saturate(fillColor.rgb + shade);
-        }
+        float2 light = normalize(_SdfEmboss.xy + 0.0001);
+        float band = 1.0 - smoothstep(0.0, max(_SdfEmboss.z, pixelWidth), abs(dist));
+        float shade = dot(normal2, light) * _SdfEmboss.w * band;
+        fillColor.rgb = saturate(fillColor.rgb + shade);
     }
 
     fillColor.a *= coverage;

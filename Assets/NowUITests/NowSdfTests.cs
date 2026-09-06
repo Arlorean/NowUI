@@ -2017,12 +2017,9 @@ public class NowSdfTests
 
         var layer0 = material.GetVectorArray("_SdfLayerData0");
         var layer1 = material.GetVectorArray("_SdfLayerData1");
-        // The x slots used to carry graph ids, which neither shader ever read; they now
-        // carry each graph's onion thickness. Identity and reuse are still covered, by the
-        // packed ranges below - a repeated graph proves its reuse by packing the same range.
-        Assert.AreEqual(0f, layer0[0].x, "No onion was set on the first graph.");
-        Assert.AreEqual(0f, layer0[1].x, "No onion was set on the second graph.");
-        Assert.AreEqual(0f, layer0[2].x, "No onion was set on the repeated graph.");
+        Assert.AreEqual(0f, layer0[0].x, "The first graph keeps graph id zero.");
+        Assert.AreEqual(1f, layer0[1].x, "The second graph keeps graph id one.");
+        Assert.AreEqual(0f, layer0[2].x, "A repeated graph reuses its original id.");
         Assert.AreEqual(2f, layer1[0].z, "Graph A packs start 0 and count 2.");
         Assert.AreEqual(259f, layer1[1].z, "Graph B packs start 2 and count 3.");
         Assert.AreEqual(2f, layer1[2].z, "The repeated graph reuses its original range.");
@@ -2033,33 +2030,6 @@ public class NowSdfTests
         Assert.AreEqual(1f, shapeMeta[2].x);
         Assert.AreEqual(1f, shapeMeta[3].x);
         Assert.AreEqual(1f, shapeMeta[4].x);
-    }
-
-    [Test]
-    public void SdfSceneUploadsGraphOnionThicknessInLayerDataXSlots()
-    {
-        var shell = NowSdf.Graph()
-            .Circle(new Vector2(24f, 24f), 16f)
-            .SetOnion(3f);
-        var solid = NowSdf.Graph()
-            .Box(new NowRect(48f, 8f, 24f, 32f));
-
-        using (_drawList.Begin(new Vector2(110f, 56f)))
-        {
-            NowSdf.Scene(new NowRect(0f, 0f, 110f, 56f))
-                .Graph(shell)
-                .Union()
-                .Graph(solid)
-                .Draw();
-        }
-
-        var material = _drawList.batches[0].material;
-        var layer0 = material.GetVectorArray("_SdfLayerData0");
-        var layer1 = material.GetVectorArray("_SdfLayerData1");
-
-        Assert.AreEqual(3f, layer0[0].x, "The shell graph uploads its onion half-thickness.");
-        Assert.AreEqual(0f, layer0[1].x, "A graph with no shell uploads zero.");
-        Assert.AreEqual(0f, layer1[0].x, "Only a morph target fills the second slot.");
     }
 
     [Test]
