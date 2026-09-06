@@ -218,20 +218,6 @@ namespace NowUI.Editor
             return EditorWindow.mouseOverWindow ?? EditorWindow.focusedWindow;
         }
 
-        static object ResolveHostContext(out EditorWindow window)
-        {
-            object context = ResolveCurrentGUIView();
-            window = ResolveEditorWindowFromGUIView(context);
-
-            if (!window)
-                window = ResolveFallbackWindow();
-
-            // A docked HostView is reused when switching tabs. The actual
-            // EditorWindow is therefore the stable state/capture identity;
-            // fall back to the native GUIView only for non-window hosts.
-            return window ? (object)window : context;
-        }
-
         static void TrackHost(object context, EditorWindow window)
         {
             if (context == null || !window)
@@ -453,12 +439,16 @@ namespace NowUI.Editor
 
         public static NowGUIScope Auto(Rect rect, Color clearColor)
         {
-            return Auto(rect, clearColor, EditorGUIUtility.pixelsPerPoint);
-        }
+            object context = ResolveCurrentGUIView();
+            EditorWindow window = ResolveEditorWindowFromGUIView(context);
 
-        public static NowGUIScope Auto(Rect rect, Color clearColor, float pixelsPerPoint)
-        {
-            object context = ResolveHostContext(out EditorWindow window);
+            if (!window)
+                window = ResolveFallbackWindow();
+
+            // A docked HostView is reused when switching tabs. The actual
+            // EditorWindow is therefore the stable state/capture identity;
+            // fall back to the native GUIView only for non-window hosts.
+            context = window ? (object)window : context;
 
             TrackHost(context, window);
             bool hostFocused = window
@@ -470,7 +460,7 @@ namespace NowUI.Editor
                 context,
                 rect,
                 clearColor,
-                pixelsPerPoint,
+                EditorGUIUtility.pixelsPerPoint,
                 hostFocused);
         }
 
@@ -492,13 +482,6 @@ namespace NowUI.Editor
         public static NowGUIScope Auto(Vector2 size, Color clearColor, params GUILayoutOption[] options)
         {
             return NowEditorGUILayout.Auto(size, clearColor, options);
-        }
-
-        // Releases panels of the current host that stopped drawing, for callers that
-        // keep running IMGUI while their own NowUI panel is hidden.
-        internal static void CleanupIdlePanels()
-        {
-            NowGUI.CleanupUnusedEntriesForIdleContext(ResolveHostContext(out _));
         }
 
         public static void DisposeAll()

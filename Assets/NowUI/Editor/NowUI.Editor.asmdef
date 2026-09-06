@@ -2,8 +2,7 @@
   "name": "NowUI.Editor",
   "rootNamespace": "NowUI.Editor",
   "references": [
-    "GUID:f8d53a32dbb72f34987c15dba8a48aea",
-    "UnityEngine.UI"
+    "GUID:f8d53a32dbb72f34987c15dba8a48aea"
   ],
   "includePlatforms": [
     "Editor"
@@ -14,12 +13,6 @@
   "precompiledReferences": [],
   "autoReferenced": true,
   "defineConstraints": [],
-  "versionDefines": [
-    {
-      "name": "com.unity.ugui",
-      "expression": "0.0.0",
-      "define": "NOWUI_UGUI"
-    }
-  ],
+  "versionDefines": [],
   "noEngineReferences": false
 }

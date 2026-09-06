@@ -473,23 +473,6 @@ namespace NowUI
             CleanupUnusedEntriesCore(activeContext, true);
         }
 
-        // A host that keeps drawing IMGUI while its own panel is hidden still counts
-        // as context activity, so idle siblings are reclaimed on the same terms as
-        // for a drawing panel.
-        internal static void CleanupUnusedEntriesForIdleContext(object activeContext)
-        {
-            foreach (var pair in _entries)
-            {
-                if (pair.Key.MatchesContext(activeContext))
-                {
-                    pair.Value.contextActivity.MarkUsed(NowTime.realtimeSinceStartup);
-                    break;
-                }
-            }
-
-            CleanupUnusedEntriesForActiveContext(activeContext);
-        }
-
         static void CleanupUnusedEntriesCore(
             object activeContext,
             bool hasActiveContext)
@@ -562,14 +545,6 @@ namespace NowUI
             public double lastUsedTime = double.NegativeInfinity;
 
             public double cleanupEligibleTime = double.NegativeInfinity;
-
-            public void MarkUsed(double now)
-            {
-                if (now - lastUsedTime > CacheLifetimeSeconds)
-                    cleanupEligibleTime = now + CacheCleanupIntervalSeconds;
-
-                lastUsedTime = now;
-            }
         }
 
         internal sealed class CacheEntry : IDisposable
@@ -601,7 +576,13 @@ namespace NowUI
 
             public void MarkUsed(double now)
             {
-                contextActivity.MarkUsed(now);
+                if (now - contextActivity.lastUsedTime > CacheLifetimeSeconds)
+                {
+                    contextActivity.cleanupEligibleTime =
+                        now + CacheCleanupIntervalSeconds;
+                }
+
+                contextActivity.lastUsedTime = now;
                 lastUsedTime = now;
             }
 
