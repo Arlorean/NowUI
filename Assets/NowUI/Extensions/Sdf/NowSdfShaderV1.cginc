@@ -8,6 +8,7 @@
 #include "UnityCG.cginc"
 #include "UnityUI.cginc"
 #include "../../Assets/Shaders/NowUIMask.cginc"
+#include "../../Assets/Shaders/NowUIColorSpace.cginc"
 
 #define NOW_SDF_MAX_SHAPES 64
 #define NOW_SDF_MAX_LAYERS 16
@@ -292,9 +293,20 @@ float2 shapeUv(float type, float4 data1, float4 data2, float2 scenePos)
     return float2(uv.x, 1.0 - uv.y);
 }
 
+// Outline, glow, shadow, inner-shadow and contour colours reach the shader through
+// Color-typed material properties, so Unity has already converted them out of the
+// authored space. Shape colours do not: they ride _SdfColors, a SetVectorArray
+// upload Unity leaves alone, and are the only ones this shader has to convert.
+// Converting both put one gamma between them — measured in a single frame, a 0.5
+// grey outline presented at 0x36 beside a 0.5 grey fill at 0x80.
+float4 effectColor(float4 color, float4 tint)
+{
+    return color * tint;
+}
+
 float4 shapeFill(int index, float type, float4 data1, float4 data2, float2 scenePos, float4 tint)
 {
-    float4 color = _SdfColors[index] * tint;
+    float4 color = NowUIColorToWorkingSpace(_SdfColors[index]) * tint;
 
     if ((type > 4.5 && type < 5.5) || _SdfShapeMeta[index].y < 0.5)
         return color;
@@ -957,11 +969,6 @@ float2 warpScenePos(float2 scenePos)
     return scenePos + n * _SdfWarp.x;
 }
 
-float4 effectColor(float4 color, float4 tint)
-{
-    return color * tint;
-}
-
 float exteriorEffectValidity(float distance, float codeStep, float edge)
 {
     // Analytic distances have no finite glyph field. Glyph distances fade out
@@ -1025,7 +1032,9 @@ v2f vert(appdata v)
     o.rawUV = lerp(v.data7.xy, v.uv.xy, isCanvas);
     o.rect = v.rect;
     o.mask = lerp(v.data6, v.data2, isCanvas);
-    o.tint = lerp(v.data3, v.canvasColor, isCanvas);
+    // The canvas hands COLOR to the shader already in working space; TEXCOORD3 carries
+    // the authored value untouched. UIRectangle and its UGUI twin split the same way.
+    o.tint = lerp(NowUIColorToWorkingSpace(v.data3), v.canvasColor, isCanvas);
     // Immediate meshes carry SDF scene mapping in UV5. Canvas meshes repack the
     // same source data into UV3 because UGUI exposes fewer vertex channels.
     o.sceneMapping = lerp(v.data5, v.data3, isCanvas);

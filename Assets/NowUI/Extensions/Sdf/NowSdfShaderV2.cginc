@@ -8,6 +8,7 @@
 #include "UnityCG.cginc"
 #include "UnityUI.cginc"
 #include "../../Assets/Shaders/NowUIMask.cginc"
+#include "../../Assets/Shaders/NowUIColorSpace.cginc"
 
 #define NOW_SDF_MAX_SHAPES 64
 #define NOW_SDF_MAX_LAYERS 16
@@ -735,7 +736,11 @@ float2 shapeUv(int index, float type, float4 data1, float4 data2, float2 scenePo
 
 float4 shapeFill(int index, float type, float4 data1, float4 data2, float2 scenePos, float4 tint)
 {
-    float4 color = _SdfColors[index] * tint;
+    // Shape fills ride _SdfColors, a SetVectorArray upload Unity leaves alone, so they are
+    // the one colour this shader has to convert. Outline, glow, shadow, inner shadow and
+    // contour arrive through Color-typed material properties, which Unity has already
+    // converted -- converting those again puts a gamma between a fill and its own outline.
+    float4 color = NowUIColorToWorkingSpace(_SdfColors[index]) * tint;
 
     // Image nodes sample their own pixels from the scene's color atlas, so
     // they never compete with text or SetTexture fills for _MainTex.
@@ -1491,7 +1496,9 @@ v2f vert(appdata v)
     o.rawUV = lerp(v.data7.xy, v.uv.xy, isCanvas);
     o.rect = v.rect;
     o.mask = lerp(v.data6, v.data2, isCanvas);
-    o.tint = lerp(v.data3, v.canvasColor, isCanvas);
+    // The canvas hands COLOR to the shader already in working space; TEXCOORD3 carries
+    // the authored value untouched. UIRectangle and its UGUI twin split the same way.
+    o.tint = lerp(NowUIColorToWorkingSpace(v.data3), v.canvasColor, isCanvas);
     // Immediate meshes carry SDF scene mapping in UV5. Canvas meshes repack the
     // same source data into UV3 because UGUI exposes fewer vertex channels.
     o.sceneMapping = lerp(v.data5, v.data3, isCanvas);
