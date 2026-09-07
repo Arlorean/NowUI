@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using NUnit.Framework;
 using NowUI.Editor;
 
@@ -41,35 +42,41 @@ public class NowHarnessAnimationTests
     }
 
     [Test]
-    public void ReadmeShowcasesHaveTheirDeclaredCaptureDurations()
+    public void ReadmeShowcasesShareOneCaptureFormat()
     {
+        // Every README loop is embedded at the same size and rate, so the media read as one set rather than as a
+        // collection of differently shaped clips. That is the invariant worth defending here.
+        //
+        // This deliberately does NOT check the roster of scenarios or their individual frame counts. An earlier version
+        // did, by hard-coding the six names and durations that existed at the time, and it failed the moment two more
+        // loops were added -- which is a change the project wanted, not a regression. A test that restates the data it
+        // is checking has no oracle of its own: it can only report that the data changed, which git already does.
+        // Frame counts in particular are partly computed in the harness, so hard-coding them duplicated that logic too.
+        //
+        // The per-frame timing maths that used to be repeated here for each scenario is covered, independently of any
+        // scenario, by FrameTimeIsDerivedOnlyFromFrameIndexAndRate and LoopTimingDoesNotDuplicateTheFirstFrameAtTheEnd.
         var scenarios = NowHarnessAnimationScenarios.All();
-        var expected = new (string name, int frameCount)[]
+
+        Assert.Greater(scenarios.Count, 0, "the README showcase harness declares no scenarios");
+
+        var names = new HashSet<string>();
+
+        foreach (var scenario in scenarios)
         {
-            ("sdf-metamorphosis", 96),
-            ("sdf-image-effects", 96),
-            ("sdf-image-blend", 96),
-            ("music-player", 120),
-            ("desktop-fidelity", 96),
-            ("sdf-shader-xray", 96)
-        };
+            Assert.IsFalse(string.IsNullOrWhiteSpace(scenario.name), "a scenario has no name");
+            Assert.IsTrue(names.Add(scenario.name), $"duplicate scenario name '{scenario.name}'");
 
-        Assert.AreEqual(expected.Length, scenarios.Count);
+            Assert.AreEqual(960, scenario.width, scenario.name);
+            Assert.AreEqual(540, scenario.height, scenario.name);
+            Assert.AreEqual(24f, scenario.framesPerSecond, scenario.name);
 
-        for (int i = 0; i < scenarios.Count; ++i)
-        {
-            Assert.AreEqual(expected[i].name, scenarios[i].name);
-            Assert.AreEqual(960, scenarios[i].width, scenarios[i].name);
-            Assert.AreEqual(540, scenarios[i].height, scenarios[i].name);
-            Assert.AreEqual(expected[i].frameCount, scenarios[i].frameCount, scenarios[i].name);
-            Assert.AreEqual(24f, scenarios[i].framesPerSecond, scenarios[i].name);
-            Assert.NotNull(scenarios[i].draw, scenarios[i].name);
+            // A zero- or one-frame loop would make normalizedTime degenerate, so require real motion.
+            Assert.Greater(scenario.frameCount, 1, scenario.name);
+            Assert.NotNull(scenario.draw, scenario.name);
 
-            var lastFrame = new NowHarnessAnimationFrame(
-                scenarios[i].frameCount - 1, scenarios[i].frameCount, scenarios[i].framesPerSecond);
-            Assert.AreEqual(expected[i].frameCount / 24f, lastFrame.durationSeconds, scenarios[i].name);
-            Assert.Less(lastFrame.normalizedTime, 1f, scenarios[i].name);
-            Assert.AreEqual(lastFrame.durationSeconds - 1f / 24f, lastFrame.timeSeconds, 0.000001f, scenarios[i].name);
+            // The declared scenarios must satisfy the same output-name rule that ScenarioValidationRejectsUnsafeOutputNames
+            // proves is enforced.
+            Assert.DoesNotThrow(() => scenario.Validate(), scenario.name);
         }
     }
 }
