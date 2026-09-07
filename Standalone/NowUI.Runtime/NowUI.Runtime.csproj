@@ -1,0 +1,45 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    The engine-free build of Assets/NowUI/Runtime. It compiles the SAME sources Unity compiles, against the
+    UnityEngine-compatible shim in NowUI.Engine, with the host-only files excluded. See Docs/Standalone/StandaloneCoreDesign.md
+    section 2.2; this file is the disposition table, so the exclude list is spelled out rather than globbed.
+  -->
+  <PropertyGroup>
+    <AssemblyName>NowUI.Runtime</AssemblyName>            <!-- keeps every InternalsVisibleTo in AssemblyInfo.cs valid -->
+    <RootNamespace>NowUI</RootNamespace>
+    <LangVersion>9.0</LangVersion>                        <!-- the Unity project's LangVersion -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>           <!-- matches the asmdef's allowUnsafeCode -->
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <DefineConstants>$(DefineConstants);NOWUI_STANDALONE;NOWUI_VG_DISABLE_NATIVE</DefineConstants>
+    <NoWarn>$(NoWarn);CS1591;CS0649;CS0169;CS0414</NoWarn>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)'=='Debug'">
+    <DefineConstants>$(DefineConstants);DEVELOPMENT_BUILD</DefineConstants>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../Assets/NowUI/Runtime/**/*.cs" LinkBase="Runtime" Exclude="
+      ../../Assets/NowUI/Runtime/URP/**;
+      ../../Assets/NowUI/Runtime/HDRP/**;
+      ../../Assets/NowUI/Runtime/**/*.Unity.cs;
+      ../../Assets/NowUI/Runtime/NowWorldGraphic.cs;
+      ../../Assets/NowUI/Runtime/NowWorldLayoutGraphic.cs;
+      ../../Assets/NowUI/Runtime/NowWorldGlassBackdrop.cs;
+      ../../Assets/NowUI/Runtime/NowGraphic.cs;
+      ../../Assets/NowUI/Runtime/NowLayoutGraphic.cs;
+      ../../Assets/NowUI/Runtime/NowPipelineGraphic.cs;
+      ../../Assets/NowUI/Runtime/NowPipelineLayoutGraphic.cs;
+      ../../Assets/NowUI/Runtime/NowVisualElement.cs;
+      ../../Assets/NowUI/Runtime/NowUGUINavigationProxy.cs;
+      ../../Assets/NowUI/Runtime/NowEditorRebuildQueue.cs;
+      ../../Assets/NowUI/Runtime/NowBootstrap.cs;
+      ../../Assets/NowUI/Runtime/NowModelPreview.cs;
+      ../../Assets/NowUI/Runtime/Input/NowWorldInputProvider.cs;
+      ../../Assets/NowUI/Runtime/Input/NowRectTransformInputProvider.cs;
+      ../../Assets/NowUI/Runtime/Input/NowKeyInput.cs;
+      ../../Assets/NowUI/Runtime/Controls/NowKeyBindingField.cs;
+      ../../Assets/NowUI/Runtime/Lottie/NowLottieGraphic.cs;
+      ../../Assets/NowUI/Runtime/Lottie/NowLottieBurstTessellator.cs" />
+    <ProjectReference Include="../NowUI.Engine/NowUI.Engine.csproj" />
+    <Analyzer Include="../../Assets/NowUI/Runtime/Analyzers/NowUI.Analyzers.dll" />
+  </ItemGroup>
+</Project>

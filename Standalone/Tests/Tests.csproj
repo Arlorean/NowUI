@@ -1,0 +1,159 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    NowUI's OWN Unity test suite, compiled engine-free against the NowUI.Engine shim.
+
+    The sources under Assets/NowUITests are the oracle for the standalone port (design section 12.1): they are compiled
+    here BY REFERENCE and are never edited. A test that cannot run standalone is left out of the include list below with
+    a reason, never modified into compliance. Everything the Unity test runner supplies and dotnet does not
+    (LogAssert, Unity.PerformanceTesting, UnityEngine.Profiling.Recorder, the host bootstrap) lives in Shims/ and
+    Support/ as new files of ours.
+
+    See Docs/Standalone/StandaloneCoreDesign.md section 2.4 (this project), section 7.2 (waves) and
+    Docs/Standalone/StandaloneTestPlan.md sections 3-5 (per-file dispositions, expected counts, NUnit mapping).
+  -->
+  <PropertyGroup>
+    <AssemblyName>Tests</AssemblyName>                    <!-- required: inherits every InternalsVisibleTo("Tests") grant -->
+    <RootNamespace>Tests</RootNamespace>
+    <LangVersion>9.0</LangVersion>                        <!-- the Unity project's LangVersion -->
+    <AllowUnsafeBlocks>false</AllowUnsafeBlocks>          <!-- matches the Unity Tests asmdef -->
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <DefineConstants>$(DefineConstants);NOWUI_STANDALONE</DefineConstants>
+    <SignAssembly>false</SignAssembly>                    <!-- InternalsVisibleTo("Tests") carries no public key -->
+    <NoWarn>$(NoWarn);CS1591;CS0649;CS0169;CS0414</NoWarn>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)'=='Debug'">
+    <!-- Several asserted diagnostics (NowMarkupTests.UnknownResultQueriesWarnOnce, the leaked-scope warnings) are
+         compiled under UNITY_EDITOR || DEVELOPMENT_BUILD; the gate runs in Debug so they exist (test plan R13). -->
+    <DefineConstants>$(DefineConstants);DEVELOPMENT_BUILD</DefineConstants>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
+    <!-- NUnit 3, NOT 4: the Unity tests use Assert.AreEqual/IsTrue/AreSame/..., which NUnit 4 moved to
+         NUnit.Framework.Legacy.ClassicAssert. Pinned to the last 3.x (test plan section 5). -->
+    <PackageReference Include="NUnit" Version="3.14.0" />
+    <PackageReference Include="NUnit3TestAdapter" Version="4.6.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../NowUI.Engine/NowUI.Engine.csproj" />
+    <ProjectReference Include="../NowUI.Runtime/NowUI.Runtime.csproj" />
+    <ProjectReference Include="../Extensions/NowUI.Extensions.Markdown/NowUI.Extensions.Markdown.csproj" />
+    <ProjectReference Include="../Extensions/NowUI.Extensions.Markup/NowUI.Extensions.Markup.csproj" />
+    <ProjectReference Include="../Extensions/NowUI.Extensions.Markdown.Markup/NowUI.Extensions.Markdown.Markup.csproj" />
+    <ProjectReference Include="../Extensions/NowUI.Extensions.CodeEditor/NowUI.Extensions.CodeEditor.csproj" />
+    <ProjectReference Include="../Extensions/NowUI.Extensions.Docking/NowUI.Extensions.Docking.csproj" />
+    <ProjectReference Include="../Extensions/NowUI.Extensions.NodeGraph/NowUI.Extensions.NodeGraph.csproj" />
+    <ProjectReference Include="../Extensions/NowUI.Extensions.Sdf/NowUI.Extensions.Sdf.csproj" />
+    <!-- Deliberately NO <Analyzer> reference. NowLayoutTests contains intentional NOWUI001/NOWUI002 opt-outs
+         (`_ = NowLayout.Label(...)`, `#pragma warning disable NOWUI002`); Unity's Tests asmdef never saw the analyzer
+         either, because it lives outside Assets/NowUI (test plan R15). -->
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Our own support layer: the Unity-test-runner surface dotnet does not have, plus the standalone host. -->
+    <Compile Include="Shims/**/*.cs" />
+    <Compile Include="Support/**/*.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Unity test-suite support sources, compiled unmodified. NowBenchmarkAllocations lives in its own Unity assembly
+         (NowUI.BenchmarkSupport) and is compiled straight into Tests here; its [assembly: InternalsVisibleTo("Tests")]
+         is harmless in this assembly (it grants Tests access to Tests). -->
+    <Compile Include="../../Assets/NowUITests/Support/NowInputReplay.cs" LinkBase="UnityTests/Support" />
+    <Compile Include="../../Assets/NowUITests/Support/NowPopupTestDriver.cs" LinkBase="UnityTests/Support" />
+    <Compile Include="../../Assets/NowUITests/BenchmarkSupport/NowBenchmarkAllocations.cs" LinkBase="UnityTests/Support" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      THE M1 GATE (design section 7.2, test plan section 3.1): the 36 Tier A + Tier B files, plus the Tier C
+      performance file, which the gate command excludes by category. Listed one Include per line on purpose: growing
+      this list is a deliberate, reviewable act, not a glob that silently picks up whatever lands in the folder. The
+      files are compiled unmodified; not one line under Assets/NowUITests is touched.
+
+      The first sixteen are the Wave 1 smoke set - the files that never resolve a font, so they ran before the NotoSans
+      fixture existed (test plan R1). Everything after NowNodeGraphIndexedEvaluationTests reaches Now.defaultFont and
+      needs Fixtures/NowUI (work units U24, U25); the last line is Tier C.
+
+      NowContextInputRoutingTests.cs is in the second group, measured rather than assumed. The test plan classifies it
+      Tier A and names it in the R1 font-free smoke set (section 2.1 row 29, section 7 R1), but one of its three cases
+      - DeferredMenuRestoresNestedInputContextAndIgnoresItsOpeningPress - builds a real menu
+      (NowContextMenu.Begin/Item/End) and NowContextMenu.End() measures it:
+          NowContextMenu.End -> MeasureMenu -> NowControls.Text -> NowThemeAsset.ResolveTextCached -> Now.font
+          -> Now.defaultFont -> Now.LoadRequiredResource<NowFontAsset>("NowUI/NotoSans")
+      which logs Debug.LogError with no fixture and fails the test under the parity log policy (test plan 4.4). The
+      other two cases only call NowContextMenu.Open/Close, which never measures - that is why the file reads as
+      font-free until it is run.
+
+      Measured case counts (dotnet test, Debug): 782 from these 36 files - 773 passed and the 9 expected Assert.Ignore
+      skips (6 NowTextShapingTests, 3 NowTextStylingTests: HarfBuzz is compiled out per D6) - plus 18 in the Tier C
+      file. The test plan predicts 783 for the gate; the one-case difference is NowControlsTests, where the plan's 84
+      counts the #if NOWUI_UGUI case that no standalone run can execute (83 here, 84 attributes in the file).
+
+      The deferred Tier D files (NowIMGUIKeyInputRoutingTests, NowIMGUITextInputRoutingTests, NowKeyBindingFieldTests,
+      NowContextMenuOwnerLifetimeTests) are never added in M1 - see the "excluded" note at the bottom of this file.
+    -->
+    <Compile Include="../../Assets/NowUITests/NowRectTests.cs" LinkBase="UnityTests" />
+    <Compile Include="../../Assets/NowUITests/NowResolvedIdTests.cs" LinkBase="UnityTests" />
+    <Compile Include="../../Assets/NowUITests/NowControlStateResolvedIdTests.cs" LinkBase="UnityTests" />
+    <Compile Include="../../Assets/NowUITests/NowFocusResolvedIdTests.cs" LinkBase="UnityTests" />
+    <Compile Include="../../Assets/NowUITests/NowOverlayResolvedIdTests.cs" LinkBase="UnityTests" />
+    <Compile Include="../../Assets/NowUITests/NowIdentityIntegrationTests.cs" LinkBase="UnityTests" />
+    <Compile Include="../../Assets/NowUITests/NowTextEditTests.cs" LinkBase="UnityTests" />
+    <Compile Include="../../Assets/NowUITests/NowNumericExpressionTests.cs" LinkBase="UnityTests" />
+    <Compile Include="../../Assets/NowUITests/NowFilePickerTests.cs" LinkBase="UnityTests" />
+    <Compile Include="../../Assets/NowUITests/NowFilePickerUserFoldersTests.cs" LinkBase="UnityTests" />
+    <Compile Include="../../Assets/NowUITests/NowInteractionRegionTests.cs" LinkBase="UnityTests" />
+    <Compile Include="../../Assets/NowUITests/NowInteractionRepaintTests.cs" LinkBase="UnityTests" />
+    <Compile Include="../../Assets/NowUITests/NowFocusHostRegistryTests.cs" LinkBase="UnityTests" />
+    <Compile Include="../../Assets/NowUITests/NowMaskShapeTests.cs" LinkBase="UnityTests" />
+    <Compile Include="../../Assets/NowUITests/NowCornerRadiusTests.cs" LinkBase="UnityTests" />
+    <Compile Include="../../Assets/NowUITests/NowNodeGraphIndexedEvaluationTests.cs" LinkBase="UnityTests" />
+    <Compile Include="../../Assets/NowUITests/NowTextWrapTests.cs" LinkBase="UnityTests" />
+    <Compile Include="../../Assets/NowUITests/NowFontStackTests.cs" LinkBase="UnityTests" />
+    <Compile Include="../../Assets/NowUITests/NowDockingTests.cs" LinkBase="UnityTests" />
+    <Compile Include="../../Assets/NowUITests/NowTextStylingTests.cs" LinkBase="UnityTests" />
+    <Compile Include="../../Assets/NowUITests/NowFontResolutionTests.cs" LinkBase="UnityTests" />
+    <Compile Include="../../Assets/NowUITests/Simple.cs" LinkBase="UnityTests" />
+    <Compile Include="../../Assets/NowUITests/NowContextInputRoutingTests.cs" LinkBase="UnityTests" />
+    <Compile Include="../../Assets/NowUITests/NowLayoutTests.cs" LinkBase="UnityTests" />
+    <Compile Include="../../Assets/NowUITests/NowTextAreaTests.cs" LinkBase="UnityTests" />
+    <Compile Include="../../Assets/NowUITests/NowTextSelectionTests.cs" LinkBase="UnityTests" />
+    <Compile Include="../../Assets/NowUITests/NowTextPreprocessorTests.cs" LinkBase="UnityTests" />
+    <Compile Include="../../Assets/NowUITests/NowMarkupTests.cs" LinkBase="UnityTests" />
+    <Compile Include="../../Assets/NowUITests/NowCodeEditorTests.cs" LinkBase="UnityTests" />
+    <Compile Include="../../Assets/NowUITests/NowViewStackTests.cs" LinkBase="UnityTests" />
+    <Compile Include="../../Assets/NowUITests/NowNewControlsTests.cs" LinkBase="UnityTests" />
+    <Compile Include="../../Assets/NowUITests/NowInspectorTests.cs" LinkBase="UnityTests" />
+    <Compile Include="../../Assets/NowUITests/NowDialogTests.cs" LinkBase="UnityTests" />
+    <Compile Include="../../Assets/NowUITests/NowNodeGraphTests.cs" LinkBase="UnityTests" />
+    <Compile Include="../../Assets/NowUITests/NowTextShapingTests.cs" LinkBase="UnityTests" />
+    <Compile Include="../../Assets/NowUITests/NowControlsTests.cs" LinkBase="UnityTests" />
+    <!-- Tier C: CPU-only, [Category("NowUI.Overview")], which the gate command's filter "Category!=NowUI.Overview"
+         excludes. It runs green without that filter (18 cases) as a sanity check on the PerformanceTesting stub. -->
+    <Compile Include="../../Assets/NowUITests/NowGraphEvaluationPerformanceTests.cs" LinkBase="UnityTests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Test data: the exported material/shader tables and the NotoSans family with its four source TTFs. Copied next
+         to the assembly so NowStandaloneTestResources can find it without knowing the source tree layout. -->
+    <None Include="Fixtures/**" CopyToOutputDirectory="PreserveNewest" LinkBase="Fixtures" />
+  </ItemGroup>
+
+  <!--
+    Excluded from M1 and why (test plan section 2.1 tier D / section 3.1 "explicitly excluded"). None of these is edited:
+
+      NowIMGUIKeyInputRoutingTests.cs   IMGUI Event/GUIUtility.hotControl + Input System Key + NowIMGUIInputProvider
+      NowIMGUITextInputRoutingTests.cs  IMGUI Event.current/GUI.changed + NowGUI, a Unity host adapter by definition
+      NowKeyBindingFieldTests.cs        UnityEngine.InputSystem Key/Keyboard (whole file is #if NOWUI_INPUT_SYSTEM)
+      NowContextMenuOwnerLifetimeTests.cs  GameObject/MonoBehaviour/Component + NowOverlay.Host(Component) (H.4)
+
+    plus every file the dependency inventory classifies as graphics-device or Unity-host bound (renderer, SDF, mask
+    texture, gradient, glass, screen, world graphic, model preview, Lottie asset/Burst, theme asset, markdown, editor
+    GUI host, UI Toolkit, visual harness, the performance suites other than the graph one, pointer arbiter, popup UX,
+    value controls, text field editing, composition cursor, input, input replay, and all of PlayMode/).
+  -->
+</Project>

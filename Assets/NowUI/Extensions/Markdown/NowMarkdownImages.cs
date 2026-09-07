@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using NowUI.Internal;
 using UnityEngine;
-using UnityEngine.Networking;
 
 namespace NowUI.Markdown
 {
@@ -19,9 +18,9 @@ namespace NowUI.Markdown
     /// Downloaded textures are owned by this cache; injected and Resources textures
     /// remain caller/Unity owned.
     /// </summary>
-    public static class NowMarkdownImages
+    public static partial class NowMarkdownImages
     {
-        sealed class Entry
+        sealed partial class Entry
         {
             public string url;
             public NowMarkdownImageState state;
@@ -34,18 +33,7 @@ namespace NowUI.Markdown
             public int redirects;
             public string forcedError;
             public Uri currentUri;
-            public UnityWebRequest request;
-            public NowBoundedDownloadHandler downloadHandler;
-            public UnityWebRequestAsyncOperation operation;
             public LinkedListNode<Entry> pendingNode;
-        }
-
-        sealed class Runner : MonoBehaviour
-        {
-            void Update()
-            {
-                Tick();
-            }
         }
 
         static readonly Dictionary<string, Entry> _entries = new Dictionary<string, Entry>(16);
@@ -53,8 +41,6 @@ namespace NowUI.Markdown
         static readonly LinkedList<Entry> _pending = new LinkedList<Entry>();
 
         static readonly List<Entry> _active = new List<Entry>(4);
-
-        static Runner _runner;
 
         static int _version;
 
@@ -197,15 +183,7 @@ namespace NowUI.Markdown
             _active.Clear();
             _accessClock = 0L;
 
-            if (_runner != null)
-            {
-                if (Application.isPlaying)
-                    UnityEngine.Object.Destroy(_runner.gameObject);
-                else
-                    UnityEngine.Object.DestroyImmediate(_runner.gameObject);
-
-                _runner = null;
-            }
+            DestroyRunner();
 
             ++_version;
         }
@@ -215,32 +193,6 @@ namespace NowUI.Markdown
             PollDownloads();
             TrimCache();
             PumpDownloads();
-        }
-
-        static void PollDownloads()
-        {
-            long byteLimit = EffectiveLimit(maxDownloadBytes);
-
-            for (int i = _active.Count - 1; i >= 0; --i)
-            {
-                var entry = _active[i];
-
-                if (entry.completed || entry.request == null)
-                    continue;
-
-                long remaining = Math.Max(0L, byteLimit - entry.downloadedBytes);
-
-                if ((entry.downloadHandler?.limitExceeded ?? false) ||
-                    RequestExceedsLimit(entry.request, remaining))
-                {
-                    entry.forcedError =
-                        $"Markdown image download from '{entry.url}' exceeds the configured limit of {byteLimit} bytes across redirects.";
-                    entry.request.Abort();
-                }
-
-                if (entry.operation != null && entry.operation.isDone)
-                    CompleteDownload(entry);
-            }
         }
 
         static void PumpDownloads()
@@ -265,88 +217,24 @@ namespace NowUI.Markdown
             }
         }
 
-        static void StartDownload(Entry entry)
+        /// <summary>
+        /// Applies the completion policy shared by both transports once a request has finished and its response has
+        /// been reduced to plain values: the redirect hop, the transport error, the decode, and the resulting cache
+        /// state. <paramref name="error"/> carries the error already decided before the redirect is considered (the
+        /// forced error and the byte-cap breach); <paramref name="requestError"/> carries the transport's own failure,
+        /// which is applied only after the redirect hop, exactly as it was when this ran inside CompleteDownload.
+        /// </summary>
+        static void FinishDownload(
+            Entry entry,
+            byte[] bytes,
+            long status,
+            string location,
+            string error,
+            string requestError)
         {
-            GetRunner();
-
-            try
-            {
-                long byteLimit = EffectiveLimit(maxDownloadBytes);
-                long remaining = Math.Max(0L, byteLimit - entry.downloadedBytes);
-                var request = new UnityWebRequest(
-                    entry.currentUri.AbsoluteUri,
-                    UnityWebRequest.kHttpVerbGET);
-                entry.request = request;
-                var downloadHandler = new NowBoundedDownloadHandler(remaining);
-                entry.downloadHandler = downloadHandler;
-                request.downloadHandler = downloadHandler;
-                request.disposeDownloadHandlerOnDispose = true;
-                request.timeout = Mathf.Max(1, requestTimeoutSeconds);
-                // Follow redirects ourselves so each target is checked by the URL policy.
-                request.redirectLimit = 0;
-                entry.active = true;
-                _active.Add(entry);
-                entry.operation = request.SendWebRequest();
-                entry.operation.completed += _ => CompleteDownload(entry);
-
-                if (entry.operation.isDone)
-                    CompleteDownload(entry);
-            }
-            catch (Exception exception)
-            {
-                entry.forcedError = $"Failed to start markdown image download from '{entry.url}': {exception.Message}";
-                CompleteDownload(entry);
-            }
-        }
-
-        static void CompleteDownload(Entry entry)
-        {
-            if (entry == null || entry.completed)
-                return;
-
-            entry.completed = true;
-            entry.active = false;
-            _active.Remove(entry);
-
-            var request = entry.request;
-            var downloadHandler = entry.downloadHandler;
-            entry.request = null;
-            entry.downloadHandler = null;
-            entry.operation = null;
-
-            bool current = _entries.TryGetValue(entry.url, out var cached) && ReferenceEquals(cached, entry);
-
-            if (!current)
-            {
-                if (request != null)
-                    request.Dispose();
-                else
-                    downloadHandler?.Dispose();
-
-                PumpDownloads();
-                return;
-            }
-
-            string error = entry.forcedError;
             Texture2D decoded = null;
-            long byteLimit = EffectiveLimit(maxDownloadBytes);
-            long remaining = Math.Max(0L, byteLimit - entry.downloadedBytes);
 
-            if (error == null && (downloadHandler?.limitExceeded ?? false))
-            {
-                error =
-                    $"The image response exceeds the configured limit of {byteLimit} bytes across redirects.";
-            }
-            else if (error == null && request != null && RequestExceedsLimit(request, remaining))
-            {
-                error =
-                    $"The image response exceeds the configured limit of {byteLimit} bytes across redirects.";
-            }
-
-            if (downloadHandler != null)
-                entry.downloadedBytes += downloadHandler.receivedByteCount;
-
-            if (error == null && request != null && IsRedirectStatus(request.responseCode))
+            if (error == null && IsRedirectStatus(status))
             {
                 int redirectLimit = Mathf.Max(0, maxRedirects);
 
@@ -356,7 +244,7 @@ namespace NowUI.Markdown
                 }
                 else if (!TryResolveRedirect(
                     entry.currentUri,
-                    request.GetResponseHeader("Location"),
+                    location,
                     out var redirectUri,
                     out error))
                 {
@@ -368,7 +256,6 @@ namespace NowUI.Markdown
                 }
                 else
                 {
-                    request.Dispose();
                     entry.currentUri = validatedUri;
                     ++entry.redirects;
                     entry.completed = false;
@@ -379,27 +266,20 @@ namespace NowUI.Markdown
                 }
             }
 
-            if (error == null && (request == null || request.result != UnityWebRequest.Result.Success))
-                error = request != null ? request.error : "The image request was not created.";
+            if (error == null && requestError != null)
+                error = requestError;
 
             if (error == null)
             {
-                byte[] data = downloadHandler?.GetBytes();
-
-                if (data == null)
+                if (bytes == null)
                 {
                     error = "The image response contained no data.";
                 }
-                else if (!TryDecodeDownloadedTexture(data, entry.url, out decoded, out error))
+                else if (!TryDecodeDownloadedTexture(bytes, entry.url, out decoded, out error))
                 {
                     decoded = null;
                 }
             }
-
-            if (request != null)
-                request.Dispose();
-            else
-                downloadHandler?.Dispose();
 
             if (decoded != null)
             {
@@ -626,15 +506,6 @@ namespace NowUI.Markdown
                 url.StartsWith("https://", StringComparison.OrdinalIgnoreCase);
         }
 
-        static bool RequestExceedsLimit(UnityWebRequest request, long limit)
-        {
-            if (request.downloadedBytes > (ulong)limit)
-                return true;
-
-            string contentLength = request.GetResponseHeader("Content-Length");
-            return long.TryParse(contentLength, out long declaredLength) && declaredLength > limit;
-        }
-
         static bool IsRedirectStatus(long responseCode)
         {
             return responseCode == 301L ||
@@ -730,41 +601,13 @@ namespace NowUI.Markdown
             entry.active = false;
             _active.Remove(entry);
 
-            var request = entry.request;
-            var downloadHandler = entry.downloadHandler;
-            entry.request = null;
-            entry.downloadHandler = null;
-            entry.operation = null;
-
-            if (request != null)
-            {
-                request.Abort();
-                request.Dispose();
-            }
-            else
-            {
-                downloadHandler?.Dispose();
-            }
+            AbortRequest(entry);
 
             if (entry.texture != null && entry.owned)
                 DestroyTexture(entry.texture);
 
             entry.texture = null;
             entry.owned = false;
-        }
-
-        static Runner GetRunner()
-        {
-            if (_runner != null)
-                return _runner;
-
-            var go = new GameObject("Now Markdown Image Cache")
-            {
-                hideFlags = HideFlags.HideAndDontSave
-            };
-            UnityEngine.Object.DontDestroyOnLoad(go);
-            _runner = go.AddComponent<Runner>();
-            return _runner;
         }
 
         static void Touch(Entry entry)

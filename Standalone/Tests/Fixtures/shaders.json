@@ -1,0 +1,3651 @@
+{
+  "schema": "nowui.standalone.shaders/1",
+  "unityVersion": "6000.4.0f1",
+  "shaders": [
+    {
+      "name": "Hidden/NowUI/GlassBlur",
+      "assetPath": "Assets/NowUI/Assets/Shaders/UIGlassBlur.shader",
+      "passCount": 4,
+      "passCountParsed": 4,
+      "renderQueue": 2000,
+      "isSupported": true,
+      "properties": [],
+      "keywords": [
+        "STEREO_CUBEMAP_RENDER_ON",
+        "STEREO_INSTANCING_ON",
+        "STEREO_MULTIVIEW_ON",
+        "UNITY_SINGLE_PASS_STEREO"
+      ]
+    },
+    {
+      "name": "Hidden/NowUI/Lottie Preview",
+      "assetPath": "Assets/NowUI/Assets/Shaders/LottiePreview.shader",
+      "passCount": 1,
+      "passCountParsed": 1,
+      "renderQueue": 3000,
+      "isSupported": true,
+      "properties": [],
+      "keywords": [
+        "STEREO_CUBEMAP_RENDER_ON",
+        "STEREO_INSTANCING_ON",
+        "STEREO_MULTIVIEW_ON",
+        "UNITY_SINGLE_PASS_STEREO"
+      ]
+    },
+    {
+      "name": "Hidden/NowUI/SDF Image Field",
+      "assetPath": "Assets/NowUI/Extensions/Sdf/NowSdfImageField.shader",
+      "passCount": 5,
+      "passCountParsed": 5,
+      "renderQueue": 2000,
+      "isSupported": true,
+      "properties": [
+        {
+          "name": "_FieldParams",
+          "type": "Vector",
+          "description": "Sprite Width, Sprite Height, Padding, Threshold",
+          "flags": [],
+          "attributes": [],
+          "defaultVector": [1, 1, 0, 0.5]
+        },
+        {
+          "name": "_FieldTexels",
+          "type": "Vector",
+          "description": "Field Width, Field Height, 1/W, 1/H",
+          "flags": [],
+          "attributes": [],
+          "defaultVector": [1, 1, 1, 1]
+        },
+        {
+          "name": "_MainTex",
+          "type": "Texture",
+          "description": "Flood Input",
+          "flags": [],
+          "attributes": [],
+          "defaultTexture": "black"
+        },
+        {
+          "name": "_SourceTex",
+          "type": "Texture",
+          "description": "Source Image",
+          "flags": [],
+          "attributes": [],
+          "defaultTexture": "white"
+        },
+        {
+          "name": "_SourceUv",
+          "type": "Vector",
+          "description": "Source UV Rect",
+          "flags": [],
+          "attributes": [],
+          "defaultVector": [0, 0, 1, 1]
+        },
+        {
+          "name": "_Step",
+          "type": "Float",
+          "description": "Jump Step",
+          "flags": [],
+          "attributes": [],
+          "defaultFloat": 1
+        }
+      ],
+      "keywords": [
+        "STEREO_CUBEMAP_RENDER_ON",
+        "STEREO_INSTANCING_ON",
+        "STEREO_MULTIVIEW_ON",
+        "UNITY_SINGLE_PASS_STEREO"
+      ]
+    },
+    {
+      "name": "NowUI/Color Picker",
+      "assetPath": "Assets/NowUI/Assets/Shaders/UIColorPicker.shader",
+      "passCount": 1,
+      "passCountParsed": 1,
+      "renderQueue": 3000,
+      "isSupported": true,
+      "properties": [
+        {
+          "name": "_Mode",
+          "type": "Float",
+          "description": "Mode",
+          "flags": [],
+          "attributes": [],
+          "defaultFloat": 0
+        },
+        {
+          "name": "_NowUIMaskCount",
+          "type": "Float",
+          "description": "Now UI Mask Count",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultFloat": 0
+        },
+        {
+          "name": "_NowUITextureMask0",
+          "type": "Texture",
+          "description": "Now UI Texture Mask 0",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultTexture": "black"
+        },
+        {
+          "name": "_NowUITextureMask1",
+          "type": "Texture",
+          "description": "Now UI Texture Mask 1",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultTexture": "black"
+        },
+        {
+          "name": "_NowUITextureMaskCount",
+          "type": "Float",
+          "description": "Now UI Texture Mask Count",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultFloat": 0
+        },
+        {
+          "name": "_ZTest",
+          "type": "Float",
+          "description": "ZTest",
+          "flags": [],
+          "attributes": [],
+          "defaultFloat": 8
+        }
+      ],
+      "keywords": [
+        "INSTANCING_ON",
+        "STEREO_CUBEMAP_RENDER_ON",
+        "STEREO_INSTANCING_ON",
+        "STEREO_MULTIVIEW_ON",
+        "UNITY_SINGLE_PASS_STEREO"
+      ]
+    },
+    {
+      "name": "NowUI/Color Picker UGUI",
+      "assetPath": "Assets/NowUI/Assets/Shaders/UIColorPickerUGUI.shader",
+      "passCount": 1,
+      "passCountParsed": 1,
+      "renderQueue": 3000,
+      "isSupported": true,
+      "properties": [
+        {
+          "name": "_ClipRect",
+          "type": "Vector",
+          "description": "Clip Rect",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultVector": [-32767, -32767, 32767, 32767]
+        },
+        {
+          "name": "_ColorMask",
+          "type": "Float",
+          "description": "Color Mask",
+          "flags": [],
+          "attributes": [],
+          "defaultFloat": 15
+        },
+        {
+          "name": "_MainTex",
+          "type": "Texture",
+          "description": "Texture",
+          "flags": [
+            "PerRendererData"
+          ],
+          "attributes": [],
+          "defaultTexture": "white"
+        },
+        {
+          "name": "_Mode",
+          "type": "Float",
+          "description": "Mode",
+          "flags": [],
+          "attributes": [],
+          "defaultFloat": 0
+        },
+        {
+          "name": "_NowUIMaskCount",
+          "type": "Float",
+          "description": "Now UI Mask Count",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultFloat": 0
+        },
+        {
+          "name": "_NowUITextureMask0",
+          "type": "Texture",
+          "description": "Now UI Texture Mask 0",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultTexture": "black"
+        },
+        {
+          "name": "_NowUITextureMask1",
+          "type": "Texture",
+          "description": "Now UI Texture Mask 1",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultTexture": "black"
+        },
+        {
+          "name": "_NowUITextureMaskCount",
+          "type": "Float",
+          "description": "Now UI Texture Mask Count",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultFloat": 0
+        },
+        {
+          "name": "_Stencil",
+          "type": "Float",
+          "description": "Stencil ID",
+          "flags": [],
+          "attributes": [],
+          "defaultFloat": 0
+        },
+        {
+          "name": "_StencilComp",
+          "type": "Float",
+          "description": "Stencil Comparison",
+          "flags": [],
+          "attributes": [],
+          "defaultFloat": 8
+        },
+        {
+          "name": "_StencilOp",
+          "type": "Float",
+          "description": "Stencil Operation",
+          "flags": [],
+          "attributes": [],
+          "defaultFloat": 0
+        },
+        {
+          "name": "_StencilReadMask",
+          "type": "Float",
+          "description": "Stencil Read Mask",
+          "flags": [],
+          "attributes": [],
+          "defaultFloat": 255
+        },
+        {
+          "name": "_StencilWriteMask",
+          "type": "Float",
+          "description": "Stencil Write Mask",
+          "flags": [],
+          "attributes": [],
+          "defaultFloat": 255
+        },
+        {
+          "name": "_UIMaskSoftnessX",
+          "type": "Float",
+          "description": "UI Mask Softness X",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultFloat": 1
+        },
+        {
+          "name": "_UIMaskSoftnessY",
+          "type": "Float",
+          "description": "UI Mask Softness Y",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultFloat": 1
+        },
+        {
+          "name": "_UseUIAlphaClip",
+          "type": "Float",
+          "description": "Use Alpha Clip",
+          "flags": [],
+          "attributes": [
+            "Toggle(UNITY_UI_ALPHACLIP)"
+          ],
+          "defaultFloat": 0
+        }
+      ],
+      "keywords": [
+        "INSTANCING_ON",
+        "STEREO_CUBEMAP_RENDER_ON",
+        "STEREO_INSTANCING_ON",
+        "STEREO_MULTIVIEW_ON",
+        "UNITY_SINGLE_PASS_STEREO",
+        "UNITY_UI_ALPHACLIP",
+        "UNITY_UI_CLIP_RECT"
+      ]
+    },
+    {
+      "name": "NowUI/Examples/Frost Rectangle UGUI",
+      "assetPath": "Assets/NowUI/Assets/Shaders/DocsFrostRectangleUGUI.shader",
+      "passCount": 1,
+      "passCountParsed": 1,
+      "renderQueue": 3000,
+      "isSupported": true,
+      "properties": [
+        {
+          "name": "_ClipRect",
+          "type": "Vector",
+          "description": "Clip Rect",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultVector": [-32767, -32767, 32767, 32767]
+        },
+        {
+          "name": "_ColorMask",
+          "type": "Float",
+          "description": "Color Mask",
+          "flags": [],
+          "attributes": [],
+          "defaultFloat": 15
+        },
+        {
+          "name": "_FrostAmount",
+          "type": "Range",
+          "description": "Frost Amount",
+          "flags": [],
+          "attributes": [],
+          "defaultFloat": 0.699999988,
+          "rangeMin": 0,
+          "rangeMax": 1
+        },
+        {
+          "name": "_FrostEdge",
+          "type": "Color",
+          "description": "Frost Edge",
+          "flags": [],
+          "attributes": [],
+          "defaultVector": [1, 1, 1, 0.949999988]
+        },
+        {
+          "name": "_FrostTint",
+          "type": "Color",
+          "description": "Frost Tint",
+          "flags": [],
+          "attributes": [],
+          "defaultVector": [0.779999971, 0.959999979, 1, 0.879999995]
+        },
+        {
+          "name": "_MainTex",
+          "type": "Texture",
+          "description": "Noise Texture",
+          "flags": [
+            "PerRendererData"
+          ],
+          "attributes": [],
+          "defaultTexture": "white"
+        },
+        {
+          "name": "_NoiseScale",
+          "type": "Float",
+          "description": "Noise Scale",
+          "flags": [],
+          "attributes": [],
+          "defaultFloat": 2.79999995
+        },
+        {
+          "name": "_NowUIMaskCount",
+          "type": "Float",
+          "description": "Now UI Mask Count",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultFloat": 0
+        },
+        {
+          "name": "_NowUITextureMask0",
+          "type": "Texture",
+          "description": "Now UI Texture Mask 0",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultTexture": "black"
+        },
+        {
+          "name": "_NowUITextureMask1",
+          "type": "Texture",
+          "description": "Now UI Texture Mask 1",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultTexture": "black"
+        },
+        {
+          "name": "_NowUITextureMaskCount",
+          "type": "Float",
+          "description": "Now UI Texture Mask Count",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultFloat": 0
+        },
+        {
+          "name": "_Stencil",
+          "type": "Float",
+          "description": "Stencil ID",
+          "flags": [],
+          "attributes": [],
+          "defaultFloat": 0
+        },
+        {
+          "name": "_StencilComp",
+          "type": "Float",
+          "description": "Stencil Comparison",
+          "flags": [],
+          "attributes": [],
+          "defaultFloat": 8
+        },
+        {
+          "name": "_StencilOp",
+          "type": "Float",
+          "description": "Stencil Operation",
+          "flags": [],
+          "attributes": [],
+          "defaultFloat": 0
+        },
+        {
+          "name": "_StencilReadMask",
+          "type": "Float",
+          "description": "Stencil Read Mask",
+          "flags": [],
+          "attributes": [],
+          "defaultFloat": 255
+        },
+        {
+          "name": "_StencilWriteMask",
+          "type": "Float",
+          "description": "Stencil Write Mask",
+          "flags": [],
+          "attributes": [],
+          "defaultFloat": 255
+        },
+        {
+          "name": "_TimeScale",
+          "type": "Float",
+          "description": "Time Scale",
+          "flags": [],
+          "attributes": [],
+          "defaultFloat": 1
+        },
+        {
+          "name": "_UIMaskSoftnessX",
+          "type": "Float",
+          "description": "UI Mask Softness X",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultFloat": 1
+        },
+        {
+          "name": "_UIMaskSoftnessY",
+          "type": "Float",
+          "description": "UI Mask Softness Y",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultFloat": 1
+        },
+        {
+          "name": "_UseUIAlphaClip",
+          "type": "Float",
+          "description": "Use Alpha Clip",
+          "flags": [],
+          "attributes": [
+            "Toggle(UNITY_UI_ALPHACLIP)"
+          ],
+          "defaultFloat": 0
+        }
+      ],
+      "keywords": [
+        "INSTANCING_ON",
+        "STEREO_CUBEMAP_RENDER_ON",
+        "STEREO_INSTANCING_ON",
+        "STEREO_MULTIVIEW_ON",
+        "UNITY_SINGLE_PASS_STEREO",
+        "UNITY_UI_ALPHACLIP",
+        "UNITY_UI_CLIP_RECT"
+      ]
+    },
+    {
+      "name": "NowUI/SDF Examples/Aurora",
+      "assetPath": "Assets/NowUI/Extensions/Sdf/Examples/NowSdfAurora.shader",
+      "passCount": 1,
+      "passCountParsed": 1,
+      "renderQueue": 3000,
+      "isSupported": true,
+      "properties": [
+        {
+          "name": "_AuroraColorA",
+          "type": "Color",
+          "description": "Aurora Color A",
+          "flags": [
+            "HDR"
+          ],
+          "attributes": [],
+          "defaultVector": [0.0399999991, 1.10000002, 1.5, 1]
+        },
+        {
+          "name": "_AuroraColorB",
+          "type": "Color",
+          "description": "Aurora Color B",
+          "flags": [
+            "HDR"
+          ],
+          "attributes": [],
+          "defaultVector": [1.39999998, 0.119999997, 0.899999976, 1]
+        },
+        {
+          "name": "_AuroraHaloColor",
+          "type": "Color",
+          "description": "Aurora Halo",
+          "flags": [
+            "HDR"
+          ],
+          "attributes": [],
+          "defaultVector": [0.100000001, 0.699999988, 1.79999995, 0.649999976]
+        },
+        {
+          "name": "_AuroraHaloRadius",
+          "type": "Float",
+          "description": "Halo Radius",
+          "flags": [],
+          "attributes": [],
+          "defaultFloat": 22
+        },
+        {
+          "name": "_AuroraScale",
+          "type": "Float",
+          "description": "Band Scale",
+          "flags": [],
+          "attributes": [],
+          "defaultFloat": 0.0549999997
+        },
+        {
+          "name": "_AuroraSpeed",
+          "type": "Float",
+          "description": "Band Speed",
+          "flags": [],
+          "attributes": [],
+          "defaultFloat": 1.20000005
+        },
+        {
+          "name": "_ClipRect",
+          "type": "Vector",
+          "description": "Clip Rect",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultVector": [-32767, -32767, 32767, 32767]
+        },
+        {
+          "name": "_ColorMask",
+          "type": "Float",
+          "description": "Color Mask",
+          "flags": [],
+          "attributes": [],
+          "defaultFloat": 15
+        },
+        {
+          "name": "_MainTex",
+          "type": "Texture",
+          "description": "Texture",
+          "flags": [
+            "PerRendererData"
+          ],
+          "attributes": [],
+          "defaultTexture": "white"
+        },
+        {
+          "name": "_NowCanvasLayout",
+          "type": "Float",
+          "description": "Now Canvas Layout",
+          "flags": [],
+          "attributes": [],
+          "defaultFloat": 0
+        },
+        {
+          "name": "_NowSdfAbiVersion",
+          "type": "Float",
+          "description": "Now SDF ABI Version",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultFloat": 2
+        },
+        {
+          "name": "_NowUIMaskCount",
+          "type": "Float",
+          "description": "Now UI Mask Count",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultFloat": 0
+        },
+        {
+          "name": "_NowUITextureMask0",
+          "type": "Texture",
+          "description": "Now UI Texture Mask 0",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultTexture": "black"
+        },
+        {
+          "name": "_NowUITextureMask1",
+          "type": "Texture",
+          "description": "Now UI Texture Mask 1",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultTexture": "black"
+        },
+        {
+          "name": "_NowUITextureMaskCount",
+          "type": "Float",
+          "description": "Now UI Texture Mask Count",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultFloat": 0
+        },
+        {
+          "name": "_SdfContour",
+          "type": "Vector",
+          "description": "Contour",
+          "flags": [],
+          "attributes": [],
+          "defaultVector": [1, 0, 0, 0]
+        },
+        {
+          "name": "_SdfContourColor",
+          "type": "Color",
+          "description": "Contour Color",
+          "flags": [],
+          "attributes": [],
+          "defaultVector": [0, 0, 0, 0]
+        },
+        {
+          "name": "_SdfContourMask",
+          "type": "Vector",
+          "description": "Contour Mask",
+          "flags": [],
+          "attributes": [],
+          "defaultVector": [0, 0, 0, 0]
+        },
+        {
+          "name": "_SdfEmboss",
+          "type": "Vector",
+          "description": "Emboss",
+          "flags": [],
+          "attributes": [],
+          "defaultVector": [0, 0, 1, 0]
+        },
+        {
+          "name": "_SdfFeather",
+          "type": "Float",
+          "description": "Feather",
+          "flags": [],
+          "attributes": [],
+          "defaultFloat": 0
+        },
+        {
+          "name": "_SdfGlow",
+          "type": "Vector",
+          "description": "Glow",
+          "flags": [],
+          "attributes": [],
+          "defaultVector": [0, 1, 0, 0]
+        },
+        {
+          "name": "_SdfGlowColor",
+          "type": "Color",
+          "description": "Glow Color",
+          "flags": [],
+          "attributes": [],
+          "defaultVector": [0, 0, 0, 0]
+        },
+        {
+          "name": "_SdfInnerShadow",
+          "type": "Vector",
+          "description": "Inner Shadow",
+          "flags": [],
+          "attributes": [],
+          "defaultVector": [0, 0, 0, 0]
+        },
+        {
+          "name": "_SdfInnerShadowColor",
+          "type": "Color",
+          "description": "Inner Shadow Color",
+          "flags": [],
+          "attributes": [],
+          "defaultVector": [0, 0, 0, 0]
+        },
+        {
+          "name": "_SdfLayerCount",
+          "type": "Float",
+          "description": "Layer Count",
+          "flags": [],
+          "attributes": [],
+          "defaultFloat": 0
+        },
+        {
+          "name": "_SdfMaskOutput",
+          "type": "Float",
+          "description": "SDF Mask Output",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultFloat": 0
+        },
+        {
+          "name": "_SdfOutline",
+          "type": "Vector",
+          "description": "Outline",
+          "flags": [],
+          "attributes": [],
+          "defaultVector": [0, 0, 0, 0]
+        },
+        {
+          "name": "_SdfOutlineColor",
+          "type": "Color",
+          "description": "Outline Color",
+          "flags": [],
+          "attributes": [],
+          "defaultVector": [0, 0, 0, 0]
+        },
+        {
+          "name": "_SdfShadow",
+          "type": "Vector",
+          "description": "Shadow",
+          "flags": [],
+          "attributes": [],
+          "defaultVector": [0, 0, 0, 0]
+        },
+        {
+          "name": "_SdfShadowColor",
+          "type": "Color",
+          "description": "Shadow Color",
+          "flags": [],
+          "attributes": [],
+          "defaultVector": [0, 0, 0, 0]
+        },
+        {
+          "name": "_SdfShapeCount",
+          "type": "Float",
+          "description": "Shape Count",
+          "flags": [],
+          "attributes": [],
+          "defaultFloat": 0
+        },
+        {
+          "name": "_SdfWarp",
+          "type": "Vector",
+          "description": "Warp",
+          "flags": [],
+          "attributes": [],
+          "defaultVector": [0, 1, 0, 0]
+        },
+        {
+          "name": "_Stencil",
+          "type": "Float",
+          "description": "Stencil ID",
+          "flags": [],
+          "attributes": [],
+          "defaultFloat": 0
+        },
+        {
+          "name": "_StencilComp",
+          "type": "Float",
+          "description": "Stencil Comparison",
+          "flags": [],
+          "attributes": [],
+          "defaultFloat": 8
+        },
+        {
+          "name": "_StencilOp",
+          "type": "Float",
+          "description": "Stencil Operation",
+          "flags": [],
+          "attributes": [],
+          "defaultFloat": 0
+        },
+        {
+          "name": "_StencilReadMask",
+          "type": "Float",
+          "description": "Stencil Read Mask",
+          "flags": [],
+          "attributes": [],
+          "defaultFloat": 255
+        },
+        {
+          "name": "_StencilWriteMask",
+          "type": "Float",
+          "description": "Stencil Write Mask",
+          "flags": [],
+          "attributes": [],
+          "defaultFloat": 255
+        },
+        {
+          "name": "_UIMaskSoftnessX",
+          "type": "Float",
+          "description": "UI Mask Softness X",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultFloat": 1
+        },
+        {
+          "name": "_UIMaskSoftnessY",
+          "type": "Float",
+          "description": "UI Mask Softness Y",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultFloat": 1
+        },
+        {
+          "name": "_UseUIAlphaClip",
+          "type": "Float",
+          "description": "Use Alpha Clip",
+          "flags": [],
+          "attributes": [
+            "Toggle(UNITY_UI_ALPHACLIP)"
+          ],
+          "defaultFloat": 0
+        }
+      ],
+      "keywords": [
+        "INSTANCING_ON",
+        "STEREO_CUBEMAP_RENDER_ON",
+        "STEREO_INSTANCING_ON",
+        "STEREO_MULTIVIEW_ON",
+        "UNITY_SINGLE_PASS_STEREO",
+        "UNITY_UI_ALPHACLIP",
+        "UNITY_UI_CLIP_RECT"
+      ]
+    },
+    {
+      "name": "NowUI/SDF Examples/Paper Cutout",
+      "assetPath": "Assets/NowUI/Extensions/Sdf/Examples/NowSdfPaperCutout.shader",
+      "passCount": 1,
+      "passCountParsed": 1,
+      "renderQueue": 3000,
+      "isSupported": true,
+      "properties": [
+        {
+          "name": "_ClipRect",
+          "type": "Vector",
+          "description": "Clip Rect",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultVector": [-32767, -32767, 32767, 32767]
+        },
+        {
+          "name": "_ColorMask",
+          "type": "Float",
+          "description": "Color Mask",
+          "flags": [],
+          "attributes": [],
+          "defaultFloat": 15
+        },
+        {
+          "name": "_MainTex",
+          "type": "Texture",
+          "description": "Texture",
+          "flags": [
+            "PerRendererData"
+          ],
+          "attributes": [],
+          "defaultTexture": "white"
+        },
+        {
+          "name": "_NowCanvasLayout",
+          "type": "Float",
+          "description": "Now Canvas Layout",
+          "flags": [],
+          "attributes": [],
+          "defaultFloat": 0
+        },
+        {
+          "name": "_NowSdfAbiVersion",
+          "type": "Float",
+          "description": "Now SDF ABI Version",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultFloat": 2
+        },
+        {
+          "name": "_NowUIMaskCount",
+          "type": "Float",
+          "description": "Now UI Mask Count",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultFloat": 0
+        },
+        {
+          "name": "_NowUITextureMask0",
+          "type": "Texture",
+          "description": "Now UI Texture Mask 0",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultTexture": "black"
+        },
+        {
+          "name": "_NowUITextureMask1",
+          "type": "Texture",
+          "description": "Now UI Texture Mask 1",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultTexture": "black"
+        },
+        {
+          "name": "_NowUITextureMaskCount",
+          "type": "Float",
+          "description": "Now UI Texture Mask Count",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultFloat": 0
+        },
+        {
+          "name": "_PaperBackColor",
+          "type": "Color",
+          "description": "Edge Shade",
+          "flags": [],
+          "attributes": [],
+          "defaultVector": [0.379999995, 0.119999997, 0.119999997, 1]
+        },
+        {
+          "name": "_PaperBevel",
+          "type": "Float",
+          "description": "Bevel Width",
+          "flags": [],
+          "attributes": [],
+          "defaultFloat": 10
+        },
+        {
+          "name": "_PaperColor",
+          "type": "Color",
+          "description": "Paper",
+          "flags": [],
+          "attributes": [],
+          "defaultVector": [0.949999988, 0.800000012, 0.479999989, 1]
+        },
+        {
+          "name": "_PaperHighlightColor",
+          "type": "Color",
+          "description": "Edge Highlight",
+          "flags": [
+            "HDR"
+          ],
+          "attributes": [],
+          "defaultVector": [1.29999995, 0.899999976, 0.519999981, 0.800000012]
+        },
+        {
+          "name": "_PaperLightDirection",
+          "type": "Vector",
+          "description": "Light Direction",
+          "flags": [],
+          "attributes": [],
+          "defaultVector": [-0.649999976, -0.75, 0, 0]
+        },
+        {
+          "name": "_PaperShadowColor",
+          "type": "Color",
+          "description": "Custom Shadow",
+          "flags": [],
+          "attributes": [],
+          "defaultVector": [0.0199999996, 0.00999999978, 0.0399999991, 0.720000029]
+        },
+        {
+          "name": "_PaperShadowOffset",
+          "type": "Vector",
+          "description": "Shadow Offset",
+          "flags": [],
+          "attributes": [],
+          "defaultVector": [10, 12, 0, 0]
+        },
+        {
+          "name": "_PaperShadowSoftness",
+          "type": "Float",
+          "description": "Shadow Softness",
+          "flags": [],
+          "attributes": [],
+          "defaultFloat": 10
+        },
+        {
+          "name": "_PaperShadowSpread",
+          "type": "Float",
+          "description": "Shadow Spread",
+          "flags": [],
+          "attributes": [],
+          "defaultFloat": 1
+        },
+        {
+          "name": "_SdfContour",
+          "type": "Vector",
+          "description": "Contour",
+          "flags": [],
+          "attributes": [],
+          "defaultVector": [1, 0, 0, 0]
+        },
+        {
+          "name": "_SdfContourColor",
+          "type": "Color",
+          "description": "Contour Color",
+          "flags": [],
+          "attributes": [],
+          "defaultVector": [0, 0, 0, 0]
+        },
+        {
+          "name": "_SdfContourMask",
+          "type": "Vector",
+          "description": "Contour Mask",
+          "flags": [],
+          "attributes": [],
+          "defaultVector": [0, 0, 0, 0]
+        },
+        {
+          "name": "_SdfEmboss",
+          "type": "Vector",
+          "description": "Emboss",
+          "flags": [],
+          "attributes": [],
+          "defaultVector": [0, 0, 1, 0]
+        },
+        {
+          "name": "_SdfFeather",
+          "type": "Float",
+          "description": "Feather",
+          "flags": [],
+          "attributes": [],
+          "defaultFloat": 0
+        },
+        {
+          "name": "_SdfGlow",
+          "type": "Vector",
+          "description": "Glow",
+          "flags": [],
+          "attributes": [],
+          "defaultVector": [0, 1, 0, 0]
+        },
+        {
+          "name": "_SdfGlowColor",
+          "type": "Color",
+          "description": "Glow Color",
+          "flags": [],
+          "attributes": [],
+          "defaultVector": [0, 0, 0, 0]
+        },
+        {
+          "name": "_SdfInnerShadow",
+          "type": "Vector",
+          "description": "Inner Shadow",
+          "flags": [],
+          "attributes": [],
+          "defaultVector": [0, 0, 0, 0]
+        },
+        {
+          "name": "_SdfInnerShadowColor",
+          "type": "Color",
+          "description": "Inner Shadow Color",
+          "flags": [],
+          "attributes": [],
+          "defaultVector": [0, 0, 0, 0]
+        },
+        {
+          "name": "_SdfLayerCount",
+          "type": "Float",
+          "description": "Layer Count",
+          "flags": [],
+          "attributes": [],
+          "defaultFloat": 0
+        },
+        {
+          "name": "_SdfMaskOutput",
+          "type": "Float",
+          "description": "SDF Mask Output",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultFloat": 0
+        },
+        {
+          "name": "_SdfOutline",
+          "type": "Vector",
+          "description": "Outline",
+          "flags": [],
+          "attributes": [],
+          "defaultVector": [0, 0, 0, 0]
+        },
+        {
+          "name": "_SdfOutlineColor",
+          "type": "Color",
+          "description": "Outline Color",
+          "flags": [],
+          "attributes": [],
+          "defaultVector": [0, 0, 0, 0]
+        },
+        {
+          "name": "_SdfShadow",
+          "type": "Vector",
+          "description": "Shadow",
+          "flags": [],
+          "attributes": [],
+          "defaultVector": [0, 0, 0, 0]
+        },
+        {
+          "name": "_SdfShadowColor",
+          "type": "Color",
+          "description": "Shadow Color",
+          "flags": [],
+          "attributes": [],
+          "defaultVector": [0, 0, 0, 0]
+        },
+        {
+          "name": "_SdfShapeCount",
+          "type": "Float",
+          "description": "Shape Count",
+          "flags": [],
+          "attributes": [],
+          "defaultFloat": 0
+        },
+        {
+          "name": "_SdfWarp",
+          "type": "Vector",
+          "description": "Warp",
+          "flags": [],
+          "attributes": [],
+          "defaultVector": [0, 1, 0, 0]
+        },
+        {
+          "name": "_Stencil",
+          "type": "Float",
+          "description": "Stencil ID",
+          "flags": [],
+          "attributes": [],
+          "defaultFloat": 0
+        },
+        {
+          "name": "_StencilComp",
+          "type": "Float",
+          "description": "Stencil Comparison",
+          "flags": [],
+          "attributes": [],
+          "defaultFloat": 8
+        },
+        {
+          "name": "_StencilOp",
+          "type": "Float",
+          "description": "Stencil Operation",
+          "flags": [],
+          "attributes": [],
+          "defaultFloat": 0
+        },
+        {
+          "name": "_StencilReadMask",
+          "type": "Float",
+          "description": "Stencil Read Mask",
+          "flags": [],
+          "attributes": [],
+          "defaultFloat": 255
+        },
+        {
+          "name": "_StencilWriteMask",
+          "type": "Float",
+          "description": "Stencil Write Mask",
+          "flags": [],
+          "attributes": [],
+          "defaultFloat": 255
+        },
+        {
+          "name": "_UIMaskSoftnessX",
+          "type": "Float",
+          "description": "UI Mask Softness X",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultFloat": 1
+        },
+        {
+          "name": "_UIMaskSoftnessY",
+          "type": "Float",
+          "description": "UI Mask Softness Y",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultFloat": 1
+        },
+        {
+          "name": "_UseUIAlphaClip",
+          "type": "Float",
+          "description": "Use Alpha Clip",
+          "flags": [],
+          "attributes": [
+            "Toggle(UNITY_UI_ALPHACLIP)"
+          ],
+          "defaultFloat": 0
+        }
+      ],
+      "keywords": [
+        "INSTANCING_ON",
+        "STEREO_CUBEMAP_RENDER_ON",
+        "STEREO_INSTANCING_ON",
+        "STEREO_MULTIVIEW_ON",
+        "UNITY_SINGLE_PASS_STEREO",
+        "UNITY_UI_ALPHACLIP",
+        "UNITY_UI_CLIP_RECT"
+      ]
+    },
+    {
+      "name": "NowUI/SDF Examples/Topographic",
+      "assetPath": "Assets/NowUI/Extensions/Sdf/Examples/NowSdfTopographic.shader",
+      "passCount": 1,
+      "passCountParsed": 1,
+      "renderQueue": 3000,
+      "isSupported": true,
+      "properties": [
+        {
+          "name": "_ClipRect",
+          "type": "Vector",
+          "description": "Clip Rect",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultVector": [-32767, -32767, 32767, 32767]
+        },
+        {
+          "name": "_ColorMask",
+          "type": "Float",
+          "description": "Color Mask",
+          "flags": [],
+          "attributes": [],
+          "defaultFloat": 15
+        },
+        {
+          "name": "_MainTex",
+          "type": "Texture",
+          "description": "Texture",
+          "flags": [
+            "PerRendererData"
+          ],
+          "attributes": [],
+          "defaultTexture": "white"
+        },
+        {
+          "name": "_NowCanvasLayout",
+          "type": "Float",
+          "description": "Now Canvas Layout",
+          "flags": [],
+          "attributes": [],
+          "defaultFloat": 0
+        },
+        {
+          "name": "_NowSdfAbiVersion",
+          "type": "Float",
+          "description": "Now SDF ABI Version",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultFloat": 2
+        },
+        {
+          "name": "_NowUIMaskCount",
+          "type": "Float",
+          "description": "Now UI Mask Count",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultFloat": 0
+        },
+        {
+          "name": "_NowUITextureMask0",
+          "type": "Texture",
+          "description": "Now UI Texture Mask 0",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultTexture": "black"
+        },
+        {
+          "name": "_NowUITextureMask1",
+          "type": "Texture",
+          "description": "Now UI Texture Mask 1",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultTexture": "black"
+        },
+        {
+          "name": "_NowUITextureMaskCount",
+          "type": "Float",
+          "description": "Now UI Texture Mask Count",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultFloat": 0
+        },
+        {
+          "name": "_SdfContour",
+          "type": "Vector",
+          "description": "Contour",
+          "flags": [],
+          "attributes": [],
+          "defaultVector": [1, 0, 0, 0]
+        },
+        {
+          "name": "_SdfContourColor",
+          "type": "Color",
+          "description": "Contour Color",
+          "flags": [],
+          "attributes": [],
+          "defaultVector": [0, 0, 0, 0]
+        },
+        {
+          "name": "_SdfContourMask",
+          "type": "Vector",
+          "description": "Contour Mask",
+          "flags": [],
+          "attributes": [],
+          "defaultVector": [0, 0, 0, 0]
+        },
+        {
+          "name": "_SdfEmboss",
+          "type": "Vector",
+          "description": "Emboss",
+          "flags": [],
+          "attributes": [],
+          "defaultVector": [0, 0, 1, 0]
+        },
+        {
+          "name": "_SdfFeather",
+          "type": "Float",
+          "description": "Feather",
+          "flags": [],
+          "attributes": [],
+          "defaultFloat": 0
+        },
+        {
+          "name": "_SdfGlow",
+          "type": "Vector",
+          "description": "Glow",
+          "flags": [],
+          "attributes": [],
+          "defaultVector": [0, 1, 0, 0]
+        },
+        {
+          "name": "_SdfGlowColor",
+          "type": "Color",
+          "description": "Glow Color",
+          "flags": [],
+          "attributes": [],
+          "defaultVector": [0, 0, 0, 0]
+        },
+        {
+          "name": "_SdfInnerShadow",
+          "type": "Vector",
+          "description": "Inner Shadow",
+          "flags": [],
+          "attributes": [],
+          "defaultVector": [0, 0, 0, 0]
+        },
+        {
+          "name": "_SdfInnerShadowColor",
+          "type": "Color",
+          "description": "Inner Shadow Color",
+          "flags": [],
+          "attributes": [],
+          "defaultVector": [0, 0, 0, 0]
+        },
+        {
+          "name": "_SdfLayerCount",
+          "type": "Float",
+          "description": "Layer Count",
+          "flags": [],
+          "attributes": [],
+          "defaultFloat": 0
+        },
+        {
+          "name": "_SdfMaskOutput",
+          "type": "Float",
+          "description": "SDF Mask Output",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultFloat": 0
+        },
+        {
+          "name": "_SdfOutline",
+          "type": "Vector",
+          "description": "Outline",
+          "flags": [],
+          "attributes": [],
+          "defaultVector": [0, 0, 0, 0]
+        },
+        {
+          "name": "_SdfOutlineColor",
+          "type": "Color",
+          "description": "Outline Color",
+          "flags": [],
+          "attributes": [],
+          "defaultVector": [0, 0, 0, 0]
+        },
+        {
+          "name": "_SdfShadow",
+          "type": "Vector",
+          "description": "Shadow",
+          "flags": [],
+          "attributes": [],
+          "defaultVector": [0, 0, 0, 0]
+        },
+        {
+          "name": "_SdfShadowColor",
+          "type": "Color",
+          "description": "Shadow Color",
+          "flags": [],
+          "attributes": [],
+          "defaultVector": [0, 0, 0, 0]
+        },
+        {
+          "name": "_SdfShapeCount",
+          "type": "Float",
+          "description": "Shape Count",
+          "flags": [],
+          "attributes": [],
+          "defaultFloat": 0
+        },
+        {
+          "name": "_SdfWarp",
+          "type": "Vector",
+          "description": "Warp",
+          "flags": [],
+          "attributes": [],
+          "defaultVector": [0, 1, 0, 0]
+        },
+        {
+          "name": "_Stencil",
+          "type": "Float",
+          "description": "Stencil ID",
+          "flags": [],
+          "attributes": [],
+          "defaultFloat": 0
+        },
+        {
+          "name": "_StencilComp",
+          "type": "Float",
+          "description": "Stencil Comparison",
+          "flags": [],
+          "attributes": [],
+          "defaultFloat": 8
+        },
+        {
+          "name": "_StencilOp",
+          "type": "Float",
+          "description": "Stencil Operation",
+          "flags": [],
+          "attributes": [],
+          "defaultFloat": 0
+        },
+        {
+          "name": "_StencilReadMask",
+          "type": "Float",
+          "description": "Stencil Read Mask",
+          "flags": [],
+          "attributes": [],
+          "defaultFloat": 255
+        },
+        {
+          "name": "_StencilWriteMask",
+          "type": "Float",
+          "description": "Stencil Write Mask",
+          "flags": [],
+          "attributes": [],
+          "defaultFloat": 255
+        },
+        {
+          "name": "_TopoInsideColor",
+          "type": "Color",
+          "description": "Inside Field",
+          "flags": [
+            "HDR"
+          ],
+          "attributes": [],
+          "defaultVector": [0.0299999993, 0.300000012, 0.419999987, 0.720000029]
+        },
+        {
+          "name": "_TopoLineColor",
+          "type": "Color",
+          "description": "Contour Lines",
+          "flags": [
+            "HDR"
+          ],
+          "attributes": [],
+          "defaultVector": [0.300000012, 1.39999998, 1.10000002, 0.949999988]
+        },
+        {
+          "name": "_TopoLineWidth",
+          "type": "Float",
+          "description": "Contour Width",
+          "flags": [],
+          "attributes": [],
+          "defaultFloat": 1.25
+        },
+        {
+          "name": "_TopoOutsideColor",
+          "type": "Color",
+          "description": "Outside Field",
+          "flags": [
+            "HDR"
+          ],
+          "attributes": [],
+          "defaultVector": [0.449999988, 0.0399999991, 0.5, 0.379999995]
+        },
+        {
+          "name": "_TopoRange",
+          "type": "Float",
+          "description": "Visible Field Range",
+          "flags": [],
+          "attributes": [],
+          "defaultFloat": 36
+        },
+        {
+          "name": "_TopoSpacing",
+          "type": "Float",
+          "description": "Contour Spacing",
+          "flags": [],
+          "attributes": [],
+          "defaultFloat": 10
+        },
+        {
+          "name": "_UIMaskSoftnessX",
+          "type": "Float",
+          "description": "UI Mask Softness X",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultFloat": 1
+        },
+        {
+          "name": "_UIMaskSoftnessY",
+          "type": "Float",
+          "description": "UI Mask Softness Y",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultFloat": 1
+        },
+        {
+          "name": "_UseUIAlphaClip",
+          "type": "Float",
+          "description": "Use Alpha Clip",
+          "flags": [],
+          "attributes": [
+            "Toggle(UNITY_UI_ALPHACLIP)"
+          ],
+          "defaultFloat": 0
+        }
+      ],
+      "keywords": [
+        "INSTANCING_ON",
+        "STEREO_CUBEMAP_RENDER_ON",
+        "STEREO_INSTANCING_ON",
+        "STEREO_MULTIVIEW_ON",
+        "UNITY_SINGLE_PASS_STEREO",
+        "UNITY_UI_ALPHACLIP",
+        "UNITY_UI_CLIP_RECT"
+      ]
+    },
+    {
+      "name": "NowUI/SDF Scene",
+      "assetPath": "Assets/NowUI/Extensions/Sdf/NowSdf.shader",
+      "passCount": 1,
+      "passCountParsed": 1,
+      "renderQueue": 3000,
+      "isSupported": true,
+      "properties": [
+        {
+          "name": "_ClipRect",
+          "type": "Vector",
+          "description": "Clip Rect",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultVector": [-32767, -32767, 32767, 32767]
+        },
+        {
+          "name": "_ColorMask",
+          "type": "Float",
+          "description": "Color Mask",
+          "flags": [],
+          "attributes": [],
+          "defaultFloat": 15
+        },
+        {
+          "name": "_MainTex",
+          "type": "Texture",
+          "description": "Texture",
+          "flags": [
+            "PerRendererData"
+          ],
+          "attributes": [],
+          "defaultTexture": "white"
+        },
+        {
+          "name": "_NowCanvasLayout",
+          "type": "Float",
+          "description": "Now Canvas Layout",
+          "flags": [],
+          "attributes": [],
+          "defaultFloat": 0
+        },
+        {
+          "name": "_NowSdfAbiVersion",
+          "type": "Float",
+          "description": "Now SDF ABI Version",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultFloat": 2
+        },
+        {
+          "name": "_NowUIMaskCount",
+          "type": "Float",
+          "description": "Now UI Mask Count",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultFloat": 0
+        },
+        {
+          "name": "_NowUITextureMask0",
+          "type": "Texture",
+          "description": "Now UI Texture Mask 0",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultTexture": "black"
+        },
+        {
+          "name": "_NowUITextureMask1",
+          "type": "Texture",
+          "description": "Now UI Texture Mask 1",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultTexture": "black"
+        },
+        {
+          "name": "_NowUITextureMaskCount",
+          "type": "Float",
+          "description": "Now UI Texture Mask Count",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultFloat": 0
+        },
+        {
+          "name": "_SdfContour",
+          "type": "Vector",
+          "description": "Contour",
+          "flags": [],
+          "attributes": [],
+          "defaultVector": [1, 0, 0, 0]
+        },
+        {
+          "name": "_SdfContourColor",
+          "type": "Color",
+          "description": "Contour Color",
+          "flags": [],
+          "attributes": [],
+          "defaultVector": [0, 0, 0, 0]
+        },
+        {
+          "name": "_SdfContourMask",
+          "type": "Vector",
+          "description": "Contour Mask",
+          "flags": [],
+          "attributes": [],
+          "defaultVector": [0, 0, 0, 0]
+        },
+        {
+          "name": "_SdfEmboss",
+          "type": "Vector",
+          "description": "Emboss",
+          "flags": [],
+          "attributes": [],
+          "defaultVector": [0, 0, 1, 0]
+        },
+        {
+          "name": "_SdfFeather",
+          "type": "Float",
+          "description": "Feather",
+          "flags": [],
+          "attributes": [],
+          "defaultFloat": 0
+        },
+        {
+          "name": "_SdfGlow",
+          "type": "Vector",
+          "description": "Glow",
+          "flags": [],
+          "attributes": [],
+          "defaultVector": [0, 1, 0, 0]
+        },
+        {
+          "name": "_SdfGlowColor",
+          "type": "Color",
+          "description": "Glow Color",
+          "flags": [],
+          "attributes": [],
+          "defaultVector": [0, 0, 0, 0]
+        },
+        {
+          "name": "_SdfImageColor",
+          "type": "Texture",
+          "description": "SDF Image Color",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultTexture": "black"
+        },
+        {
+          "name": "_SdfImageField",
+          "type": "Texture",
+          "description": "SDF Image Field",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultTexture": "black"
+        },
+        {
+          "name": "_SdfInnerShadow",
+          "type": "Vector",
+          "description": "Inner Shadow",
+          "flags": [],
+          "attributes": [],
+          "defaultVector": [0, 0, 0, 0]
+        },
+        {
+          "name": "_SdfInnerShadowColor",
+          "type": "Color",
+          "description": "Inner Shadow Color",
+          "flags": [],
+          "attributes": [],
+          "defaultVector": [0, 0, 0, 0]
+        },
+        {
+          "name": "_SdfLayerCount",
+          "type": "Float",
+          "description": "Layer Count",
+          "flags": [],
+          "attributes": [],
+          "defaultFloat": 0
+        },
+        {
+          "name": "_SdfMaskOutput",
+          "type": "Float",
+          "description": "SDF Mask Output",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultFloat": 0
+        },
+        {
+          "name": "_SdfOutline",
+          "type": "Vector",
+          "description": "Outline",
+          "flags": [],
+          "attributes": [],
+          "defaultVector": [0, 0, 0, 0]
+        },
+        {
+          "name": "_SdfOutlineColor",
+          "type": "Color",
+          "description": "Outline Color",
+          "flags": [],
+          "attributes": [],
+          "defaultVector": [0, 0, 0, 0]
+        },
+        {
+          "name": "_SdfShadow",
+          "type": "Vector",
+          "description": "Shadow",
+          "flags": [],
+          "attributes": [],
+          "defaultVector": [0, 0, 0, 0]
+        },
+        {
+          "name": "_SdfShadowColor",
+          "type": "Color",
+          "description": "Shadow Color",
+          "flags": [],
+          "attributes": [],
+          "defaultVector": [0, 0, 0, 0]
+        },
+        {
+          "name": "_SdfShapeCount",
+          "type": "Float",
+          "description": "Shape Count",
+          "flags": [],
+          "attributes": [],
+          "defaultFloat": 0
+        },
+        {
+          "name": "_SdfWarp",
+          "type": "Vector",
+          "description": "Warp",
+          "flags": [],
+          "attributes": [],
+          "defaultVector": [0, 1, 0, 0]
+        },
+        {
+          "name": "_Stencil",
+          "type": "Float",
+          "description": "Stencil ID",
+          "flags": [],
+          "attributes": [],
+          "defaultFloat": 0
+        },
+        {
+          "name": "_StencilComp",
+          "type": "Float",
+          "description": "Stencil Comparison",
+          "flags": [],
+          "attributes": [],
+          "defaultFloat": 8
+        },
+        {
+          "name": "_StencilOp",
+          "type": "Float",
+          "description": "Stencil Operation",
+          "flags": [],
+          "attributes": [],
+          "defaultFloat": 0
+        },
+        {
+          "name": "_StencilReadMask",
+          "type": "Float",
+          "description": "Stencil Read Mask",
+          "flags": [],
+          "attributes": [],
+          "defaultFloat": 255
+        },
+        {
+          "name": "_StencilWriteMask",
+          "type": "Float",
+          "description": "Stencil Write Mask",
+          "flags": [],
+          "attributes": [],
+          "defaultFloat": 255
+        },
+        {
+          "name": "_UIMaskSoftnessX",
+          "type": "Float",
+          "description": "UI Mask Softness X",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultFloat": 1
+        },
+        {
+          "name": "_UIMaskSoftnessY",
+          "type": "Float",
+          "description": "UI Mask Softness Y",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultFloat": 1
+        },
+        {
+          "name": "_UseUIAlphaClip",
+          "type": "Float",
+          "description": "Use Alpha Clip",
+          "flags": [],
+          "attributes": [
+            "Toggle(UNITY_UI_ALPHACLIP)"
+          ],
+          "defaultFloat": 0
+        }
+      ],
+      "keywords": [
+        "INSTANCING_ON",
+        "STEREO_CUBEMAP_RENDER_ON",
+        "STEREO_INSTANCING_ON",
+        "STEREO_MULTIVIEW_ON",
+        "UNITY_SINGLE_PASS_STEREO",
+        "UNITY_UI_ALPHACLIP",
+        "UNITY_UI_CLIP_RECT"
+      ]
+    },
+    {
+      "name": "NowUI/Text Renderer",
+      "assetPath": "Assets/NowUI/Assets/Shaders/TxtRenderer.shader",
+      "passCount": 1,
+      "passCountParsed": 1,
+      "renderQueue": 3000,
+      "isSupported": true,
+      "properties": [
+        {
+          "name": "_MainTex",
+          "type": "Texture",
+          "description": "Texture",
+          "flags": [],
+          "attributes": [],
+          "defaultTexture": "white"
+        },
+        {
+          "name": "_NowUIMaskCount",
+          "type": "Float",
+          "description": "Now UI Mask Count",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultFloat": 0
+        },
+        {
+          "name": "_NowUITextOutlineOnlyPass",
+          "type": "Float",
+          "description": "Now UI Text Outline-Only Pass",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultFloat": 1
+        },
+        {
+          "name": "_NowUITextSdfEncoding",
+          "type": "Float",
+          "description": "Now UI Text SDF Encoding",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultFloat": 0
+        },
+        {
+          "name": "_NowUITextureMask0",
+          "type": "Texture",
+          "description": "Now UI Texture Mask 0",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultTexture": "black"
+        },
+        {
+          "name": "_NowUITextureMask1",
+          "type": "Texture",
+          "description": "Now UI Texture Mask 1",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultTexture": "black"
+        },
+        {
+          "name": "_NowUITextureMaskCount",
+          "type": "Float",
+          "description": "Now UI Texture Mask Count",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultFloat": 0
+        },
+        {
+          "name": "_ZTest",
+          "type": "Float",
+          "description": "ZTest",
+          "flags": [],
+          "attributes": [],
+          "defaultFloat": 8
+        }
+      ],
+      "keywords": [
+        "INSTANCING_ON",
+        "STEREO_CUBEMAP_RENDER_ON",
+        "STEREO_INSTANCING_ON",
+        "STEREO_MULTIVIEW_ON",
+        "UNITY_SINGLE_PASS_STEREO"
+      ]
+    },
+    {
+      "name": "NowUI/Text Renderer RGBA",
+      "assetPath": "Assets/NowUI/Assets/Shaders/TxtRendererRGBA.shader",
+      "passCount": 1,
+      "passCountParsed": 1,
+      "renderQueue": 3000,
+      "isSupported": true,
+      "properties": [
+        {
+          "name": "_MainTex",
+          "type": "Texture",
+          "description": "Texture",
+          "flags": [],
+          "attributes": [],
+          "defaultTexture": "white"
+        },
+        {
+          "name": "_NowUIMaskCount",
+          "type": "Float",
+          "description": "Now UI Mask Count",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultFloat": 0
+        },
+        {
+          "name": "_NowUITextureMask0",
+          "type": "Texture",
+          "description": "Now UI Texture Mask 0",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultTexture": "black"
+        },
+        {
+          "name": "_NowUITextureMask1",
+          "type": "Texture",
+          "description": "Now UI Texture Mask 1",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultTexture": "black"
+        },
+        {
+          "name": "_NowUITextureMaskCount",
+          "type": "Float",
+          "description": "Now UI Texture Mask Count",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultFloat": 0
+        },
+        {
+          "name": "_ZTest",
+          "type": "Float",
+          "description": "ZTest",
+          "flags": [],
+          "attributes": [],
+          "defaultFloat": 8
+        }
+      ],
+      "keywords": [
+        "INSTANCING_ON",
+        "STEREO_CUBEMAP_RENDER_ON",
+        "STEREO_INSTANCING_ON",
+        "STEREO_MULTIVIEW_ON",
+        "UNITY_SINGLE_PASS_STEREO"
+      ]
+    },
+    {
+      "name": "NowUI/Text Renderer RGBA UGUI",
+      "assetPath": "Assets/NowUI/Assets/Shaders/TxtRendererRGBAUGUI.shader",
+      "passCount": 1,
+      "passCountParsed": 1,
+      "renderQueue": 3000,
+      "isSupported": true,
+      "properties": [
+        {
+          "name": "_ClipRect",
+          "type": "Vector",
+          "description": "Clip Rect",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultVector": [-32767, -32767, 32767, 32767]
+        },
+        {
+          "name": "_ColorMask",
+          "type": "Float",
+          "description": "Color Mask",
+          "flags": [],
+          "attributes": [],
+          "defaultFloat": 15
+        },
+        {
+          "name": "_MainTex",
+          "type": "Texture",
+          "description": "Texture",
+          "flags": [
+            "PerRendererData"
+          ],
+          "attributes": [],
+          "defaultTexture": "white"
+        },
+        {
+          "name": "_NowUIMaskCount",
+          "type": "Float",
+          "description": "Now UI Mask Count",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultFloat": 0
+        },
+        {
+          "name": "_NowUITextureMask0",
+          "type": "Texture",
+          "description": "Now UI Texture Mask 0",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultTexture": "black"
+        },
+        {
+          "name": "_NowUITextureMask1",
+          "type": "Texture",
+          "description": "Now UI Texture Mask 1",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultTexture": "black"
+        },
+        {
+          "name": "_NowUITextureMaskCount",
+          "type": "Float",
+          "description": "Now UI Texture Mask Count",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultFloat": 0
+        },
+        {
+          "name": "_Stencil",
+          "type": "Float",
+          "description": "Stencil ID",
+          "flags": [],
+          "attributes": [],
+          "defaultFloat": 0
+        },
+        {
+          "name": "_StencilComp",
+          "type": "Float",
+          "description": "Stencil Comparison",
+          "flags": [],
+          "attributes": [],
+          "defaultFloat": 8
+        },
+        {
+          "name": "_StencilOp",
+          "type": "Float",
+          "description": "Stencil Operation",
+          "flags": [],
+          "attributes": [],
+          "defaultFloat": 0
+        },
+        {
+          "name": "_StencilReadMask",
+          "type": "Float",
+          "description": "Stencil Read Mask",
+          "flags": [],
+          "attributes": [],
+          "defaultFloat": 255
+        },
+        {
+          "name": "_StencilWriteMask",
+          "type": "Float",
+          "description": "Stencil Write Mask",
+          "flags": [],
+          "attributes": [],
+          "defaultFloat": 255
+        },
+        {
+          "name": "_UIMaskSoftnessX",
+          "type": "Float",
+          "description": "UI Mask Softness X",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultFloat": 1
+        },
+        {
+          "name": "_UIMaskSoftnessY",
+          "type": "Float",
+          "description": "UI Mask Softness Y",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultFloat": 1
+        },
+        {
+          "name": "_UseUIAlphaClip",
+          "type": "Float",
+          "description": "Use Alpha Clip",
+          "flags": [],
+          "attributes": [
+            "Toggle(UNITY_UI_ALPHACLIP)"
+          ],
+          "defaultFloat": 0
+        }
+      ],
+      "keywords": [
+        "INSTANCING_ON",
+        "STEREO_CUBEMAP_RENDER_ON",
+        "STEREO_INSTANCING_ON",
+        "STEREO_MULTIVIEW_ON",
+        "UNITY_SINGLE_PASS_STEREO",
+        "UNITY_UI_ALPHACLIP",
+        "UNITY_UI_CLIP_RECT"
+      ]
+    },
+    {
+      "name": "NowUI/Text Renderer UGUI",
+      "assetPath": "Assets/NowUI/Assets/Shaders/TxtRendererUGUI.shader",
+      "passCount": 1,
+      "passCountParsed": 1,
+      "renderQueue": 3000,
+      "isSupported": true,
+      "properties": [
+        {
+          "name": "_ClipRect",
+          "type": "Vector",
+          "description": "Clip Rect",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultVector": [-32767, -32767, 32767, 32767]
+        },
+        {
+          "name": "_ColorMask",
+          "type": "Float",
+          "description": "Color Mask",
+          "flags": [],
+          "attributes": [],
+          "defaultFloat": 15
+        },
+        {
+          "name": "_MainTex",
+          "type": "Texture",
+          "description": "Texture",
+          "flags": [
+            "PerRendererData"
+          ],
+          "attributes": [],
+          "defaultTexture": "white"
+        },
+        {
+          "name": "_NowUIMaskCount",
+          "type": "Float",
+          "description": "Now UI Mask Count",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultFloat": 0
+        },
+        {
+          "name": "_NowUITextOutlineOnlyPass",
+          "type": "Float",
+          "description": "Now UI Text Outline-Only Pass",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultFloat": 1
+        },
+        {
+          "name": "_NowUITextSdfEncoding",
+          "type": "Float",
+          "description": "Now UI Text SDF Encoding",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultFloat": 0
+        },
+        {
+          "name": "_NowUITextureMask0",
+          "type": "Texture",
+          "description": "Now UI Texture Mask 0",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultTexture": "black"
+        },
+        {
+          "name": "_NowUITextureMask1",
+          "type": "Texture",
+          "description": "Now UI Texture Mask 1",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultTexture": "black"
+        },
+        {
+          "name": "_NowUITextureMaskCount",
+          "type": "Float",
+          "description": "Now UI Texture Mask Count",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultFloat": 0
+        },
+        {
+          "name": "_Stencil",
+          "type": "Float",
+          "description": "Stencil ID",
+          "flags": [],
+          "attributes": [],
+          "defaultFloat": 0
+        },
+        {
+          "name": "_StencilComp",
+          "type": "Float",
+          "description": "Stencil Comparison",
+          "flags": [],
+          "attributes": [],
+          "defaultFloat": 8
+        },
+        {
+          "name": "_StencilOp",
+          "type": "Float",
+          "description": "Stencil Operation",
+          "flags": [],
+          "attributes": [],
+          "defaultFloat": 0
+        },
+        {
+          "name": "_StencilReadMask",
+          "type": "Float",
+          "description": "Stencil Read Mask",
+          "flags": [],
+          "attributes": [],
+          "defaultFloat": 255
+        },
+        {
+          "name": "_StencilWriteMask",
+          "type": "Float",
+          "description": "Stencil Write Mask",
+          "flags": [],
+          "attributes": [],
+          "defaultFloat": 255
+        },
+        {
+          "name": "_UIMaskSoftnessX",
+          "type": "Float",
+          "description": "UI Mask Softness X",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultFloat": 1
+        },
+        {
+          "name": "_UIMaskSoftnessY",
+          "type": "Float",
+          "description": "UI Mask Softness Y",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultFloat": 1
+        },
+        {
+          "name": "_UseUIAlphaClip",
+          "type": "Float",
+          "description": "Use Alpha Clip",
+          "flags": [],
+          "attributes": [
+            "Toggle(UNITY_UI_ALPHACLIP)"
+          ],
+          "defaultFloat": 0
+        }
+      ],
+      "keywords": [
+        "INSTANCING_ON",
+        "STEREO_CUBEMAP_RENDER_ON",
+        "STEREO_INSTANCING_ON",
+        "STEREO_MULTIVIEW_ON",
+        "UNITY_SINGLE_PASS_STEREO",
+        "UNITY_UI_ALPHACLIP",
+        "UNITY_UI_CLIP_RECT"
+      ]
+    },
+    {
+      "name": "NowUI/UI Bezier",
+      "assetPath": "Assets/NowUI/Assets/Shaders/UIBezier.shader",
+      "passCount": 1,
+      "passCountParsed": 1,
+      "renderQueue": 3000,
+      "isSupported": true,
+      "properties": [
+        {
+          "name": "_NowUIMaskCount",
+          "type": "Float",
+          "description": "Now UI Mask Count",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultFloat": 0
+        },
+        {
+          "name": "_NowUITextureMask0",
+          "type": "Texture",
+          "description": "Now UI Texture Mask 0",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultTexture": "black"
+        },
+        {
+          "name": "_NowUITextureMask1",
+          "type": "Texture",
+          "description": "Now UI Texture Mask 1",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultTexture": "black"
+        },
+        {
+          "name": "_NowUITextureMaskCount",
+          "type": "Float",
+          "description": "Now UI Texture Mask Count",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultFloat": 0
+        },
+        {
+          "name": "_ZTest",
+          "type": "Float",
+          "description": "ZTest",
+          "flags": [],
+          "attributes": [],
+          "defaultFloat": 8
+        }
+      ],
+      "keywords": [
+        "INSTANCING_ON",
+        "STEREO_CUBEMAP_RENDER_ON",
+        "STEREO_INSTANCING_ON",
+        "STEREO_MULTIVIEW_ON",
+        "UNITY_SINGLE_PASS_STEREO"
+      ]
+    },
+    {
+      "name": "NowUI/UI Glass",
+      "assetPath": "Assets/NowUI/Assets/Shaders/UIGlass.shader",
+      "passCount": 1,
+      "passCountParsed": 1,
+      "renderQueue": 3000,
+      "isSupported": true,
+      "properties": [
+        {
+          "name": "_NowMaterialBackdropArrayTex",
+          "type": "Texture",
+          "description": "Material Backdrop Array",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultTexture": "black"
+        },
+        {
+          "name": "_NowMaterialBackdropTex",
+          "type": "Texture",
+          "description": "Material Backdrop",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultTexture": "black"
+        },
+        {
+          "name": "_NowMaterialBackdropUVTransform",
+          "type": "Vector",
+          "description": "Material Backdrop UV Transform",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultVector": [1, 1, 0, 0]
+        },
+        {
+          "name": "_NowMaterialGlassBackdropSliceCount",
+          "type": "Float",
+          "description": "Material Backdrop Slice Count",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultFloat": 1
+        },
+        {
+          "name": "_NowMaterialGlassDepthEpsilon",
+          "type": "Float",
+          "description": "Material Depth Epsilon",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultFloat": 0.0199999996
+        },
+        {
+          "name": "_NowMaterialGlassMode",
+          "type": "Float",
+          "description": "Material Glass Mode",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultFloat": 0
+        },
+        {
+          "name": "_NowMaterialGlassSharpBackdropArrayTex",
+          "type": "Texture",
+          "description": "Material Sharp Backdrop Array",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultTexture": "black"
+        },
+        {
+          "name": "_NowMaterialGlassSharpBackdropTex",
+          "type": "Texture",
+          "description": "Material Sharp Backdrop",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultTexture": "black"
+        },
+        {
+          "name": "_NowMaterialGlassUseBackdrop",
+          "type": "Float",
+          "description": "Material Use Backdrop",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultFloat": 0
+        },
+        {
+          "name": "_NowMaterialGlassUseSceneDepth",
+          "type": "Float",
+          "description": "Material Use Scene Depth",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultFloat": 0
+        },
+        {
+          "name": "_NowMaterialGlassUseStereoBackdrop",
+          "type": "Float",
+          "description": "Material Use Stereo Backdrop",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultFloat": 0
+        },
+        {
+          "name": "_NowUIMaskCount",
+          "type": "Float",
+          "description": "Now UI Mask Count",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultFloat": 0
+        },
+        {
+          "name": "_NowUITextureMask0",
+          "type": "Texture",
+          "description": "Now UI Texture Mask 0",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultTexture": "black"
+        },
+        {
+          "name": "_NowUITextureMask1",
+          "type": "Texture",
+          "description": "Now UI Texture Mask 1",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultTexture": "black"
+        },
+        {
+          "name": "_NowUITextureMaskCount",
+          "type": "Float",
+          "description": "Now UI Texture Mask Count",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultFloat": 0
+        },
+        {
+          "name": "_ZTest",
+          "type": "Float",
+          "description": "ZTest",
+          "flags": [],
+          "attributes": [],
+          "defaultFloat": 8
+        }
+      ],
+      "keywords": [
+        "INSTANCING_ON",
+        "NOWUI_GLASS_SCENE_DEPTH",
+        "STEREO_CUBEMAP_RENDER_ON",
+        "STEREO_INSTANCING_ON",
+        "STEREO_MULTIVIEW_ON",
+        "UNITY_SINGLE_PASS_STEREO"
+      ]
+    },
+    {
+      "name": "NowUI/UI Glass UGUI",
+      "assetPath": "Assets/NowUI/Assets/Shaders/UIGlassUGUI.shader",
+      "passCount": 1,
+      "passCountParsed": 1,
+      "renderQueue": 3000,
+      "isSupported": true,
+      "properties": [
+        {
+          "name": "_ClipRect",
+          "type": "Vector",
+          "description": "Clip Rect",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultVector": [-32767, -32767, 32767, 32767]
+        },
+        {
+          "name": "_ColorMask",
+          "type": "Float",
+          "description": "Color Mask",
+          "flags": [],
+          "attributes": [],
+          "defaultFloat": 15
+        },
+        {
+          "name": "_MainTex",
+          "type": "Texture",
+          "description": "Texture",
+          "flags": [
+            "PerRendererData"
+          ],
+          "attributes": [],
+          "defaultTexture": "white"
+        },
+        {
+          "name": "_NowUGUIBackdropOrigin",
+          "type": "Vector",
+          "description": "Backdrop Origin",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultVector": [0, 0, 0, 0]
+        },
+        {
+          "name": "_NowUGUIBackdropSize",
+          "type": "Vector",
+          "description": "Backdrop Size",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultVector": [1, 1, 0, 0]
+        },
+        {
+          "name": "_NowUGUIBackdropTex",
+          "type": "Texture",
+          "description": "Backdrop",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultTexture": "black"
+        },
+        {
+          "name": "_NowUGUIGlassUseBackdrop",
+          "type": "Float",
+          "description": "Use UGUI Backdrop",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultFloat": 0
+        },
+        {
+          "name": "_NowUIMaskCount",
+          "type": "Float",
+          "description": "Now UI Mask Count",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultFloat": 0
+        },
+        {
+          "name": "_NowUITextureMask0",
+          "type": "Texture",
+          "description": "Now UI Texture Mask 0",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultTexture": "black"
+        },
+        {
+          "name": "_NowUITextureMask1",
+          "type": "Texture",
+          "description": "Now UI Texture Mask 1",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultTexture": "black"
+        },
+        {
+          "name": "_NowUITextureMaskCount",
+          "type": "Float",
+          "description": "Now UI Texture Mask Count",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultFloat": 0
+        },
+        {
+          "name": "_Stencil",
+          "type": "Float",
+          "description": "Stencil ID",
+          "flags": [],
+          "attributes": [],
+          "defaultFloat": 0
+        },
+        {
+          "name": "_StencilComp",
+          "type": "Float",
+          "description": "Stencil Comparison",
+          "flags": [],
+          "attributes": [],
+          "defaultFloat": 8
+        },
+        {
+          "name": "_StencilOp",
+          "type": "Float",
+          "description": "Stencil Operation",
+          "flags": [],
+          "attributes": [],
+          "defaultFloat": 0
+        },
+        {
+          "name": "_StencilReadMask",
+          "type": "Float",
+          "description": "Stencil Read Mask",
+          "flags": [],
+          "attributes": [],
+          "defaultFloat": 255
+        },
+        {
+          "name": "_StencilWriteMask",
+          "type": "Float",
+          "description": "Stencil Write Mask",
+          "flags": [],
+          "attributes": [],
+          "defaultFloat": 255
+        },
+        {
+          "name": "_UIMaskSoftnessX",
+          "type": "Float",
+          "description": "UI Mask Softness X",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultFloat": 1
+        },
+        {
+          "name": "_UIMaskSoftnessY",
+          "type": "Float",
+          "description": "UI Mask Softness Y",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultFloat": 1
+        },
+        {
+          "name": "_UseUIAlphaClip",
+          "type": "Float",
+          "description": "Use Alpha Clip",
+          "flags": [],
+          "attributes": [
+            "Toggle(UNITY_UI_ALPHACLIP)"
+          ],
+          "defaultFloat": 0
+        }
+      ],
+      "keywords": [
+        "INSTANCING_ON",
+        "STEREO_CUBEMAP_RENDER_ON",
+        "STEREO_INSTANCING_ON",
+        "STEREO_MULTIVIEW_ON",
+        "UNITY_SINGLE_PASS_STEREO",
+        "UNITY_UI_ALPHACLIP",
+        "UNITY_UI_CLIP_RECT"
+      ]
+    },
+    {
+      "name": "NowUI/UI Gradient",
+      "assetPath": "Assets/NowUI/Assets/Shaders/UIGradient.shader",
+      "passCount": 1,
+      "passCountParsed": 1,
+      "renderQueue": 3000,
+      "isSupported": true,
+      "properties": [
+        {
+          "name": "_MainTex",
+          "type": "Texture",
+          "description": "Ramp Atlas",
+          "flags": [],
+          "attributes": [],
+          "defaultTexture": "white"
+        },
+        {
+          "name": "_NowGradientRampTexelSize",
+          "type": "Vector",
+          "description": "Ramp Atlas Texel Size",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultVector": [0.00390625, 0.00390625, 256, 256]
+        },
+        {
+          "name": "_NowUIMaskCount",
+          "type": "Float",
+          "description": "Now UI Mask Count",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultFloat": 0
+        },
+        {
+          "name": "_NowUITextureMask0",
+          "type": "Texture",
+          "description": "Now UI Texture Mask 0",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultTexture": "black"
+        },
+        {
+          "name": "_NowUITextureMask1",
+          "type": "Texture",
+          "description": "Now UI Texture Mask 1",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultTexture": "black"
+        },
+        {
+          "name": "_NowUITextureMaskCount",
+          "type": "Float",
+          "description": "Now UI Texture Mask Count",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultFloat": 0
+        },
+        {
+          "name": "_ZTest",
+          "type": "Float",
+          "description": "ZTest",
+          "flags": [],
+          "attributes": [],
+          "defaultFloat": 8
+        }
+      ],
+      "keywords": [
+        "INSTANCING_ON",
+        "STEREO_CUBEMAP_RENDER_ON",
+        "STEREO_INSTANCING_ON",
+        "STEREO_MULTIVIEW_ON",
+        "UNITY_SINGLE_PASS_STEREO"
+      ]
+    },
+    {
+      "name": "NowUI/UI Gradient UGUI",
+      "assetPath": "Assets/NowUI/Assets/Shaders/UIGradientUGUI.shader",
+      "passCount": 1,
+      "passCountParsed": 1,
+      "renderQueue": 3000,
+      "isSupported": true,
+      "properties": [
+        {
+          "name": "_ClipRect",
+          "type": "Vector",
+          "description": "Clip Rect",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultVector": [-32767, -32767, 32767, 32767]
+        },
+        {
+          "name": "_ColorMask",
+          "type": "Float",
+          "description": "Color Mask",
+          "flags": [],
+          "attributes": [],
+          "defaultFloat": 15
+        },
+        {
+          "name": "_MainTex",
+          "type": "Texture",
+          "description": "Ramp Atlas",
+          "flags": [
+            "PerRendererData"
+          ],
+          "attributes": [],
+          "defaultTexture": "white"
+        },
+        {
+          "name": "_NowGradientRampTexelSize",
+          "type": "Vector",
+          "description": "Ramp Atlas Texel Size",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultVector": [0.00390625, 0.00390625, 256, 256]
+        },
+        {
+          "name": "_NowUIMaskCount",
+          "type": "Float",
+          "description": "Now UI Mask Count",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultFloat": 0
+        },
+        {
+          "name": "_NowUITextureMask0",
+          "type": "Texture",
+          "description": "Now UI Texture Mask 0",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultTexture": "black"
+        },
+        {
+          "name": "_NowUITextureMask1",
+          "type": "Texture",
+          "description": "Now UI Texture Mask 1",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultTexture": "black"
+        },
+        {
+          "name": "_NowUITextureMaskCount",
+          "type": "Float",
+          "description": "Now UI Texture Mask Count",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultFloat": 0
+        },
+        {
+          "name": "_Stencil",
+          "type": "Float",
+          "description": "Stencil ID",
+          "flags": [],
+          "attributes": [],
+          "defaultFloat": 0
+        },
+        {
+          "name": "_StencilComp",
+          "type": "Float",
+          "description": "Stencil Comparison",
+          "flags": [],
+          "attributes": [],
+          "defaultFloat": 8
+        },
+        {
+          "name": "_StencilOp",
+          "type": "Float",
+          "description": "Stencil Operation",
+          "flags": [],
+          "attributes": [],
+          "defaultFloat": 0
+        },
+        {
+          "name": "_StencilReadMask",
+          "type": "Float",
+          "description": "Stencil Read Mask",
+          "flags": [],
+          "attributes": [],
+          "defaultFloat": 255
+        },
+        {
+          "name": "_StencilWriteMask",
+          "type": "Float",
+          "description": "Stencil Write Mask",
+          "flags": [],
+          "attributes": [],
+          "defaultFloat": 255
+        },
+        {
+          "name": "_UIMaskSoftnessX",
+          "type": "Float",
+          "description": "UI Mask Softness X",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultFloat": 1
+        },
+        {
+          "name": "_UIMaskSoftnessY",
+          "type": "Float",
+          "description": "UI Mask Softness Y",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultFloat": 1
+        },
+        {
+          "name": "_UseUIAlphaClip",
+          "type": "Float",
+          "description": "Use Alpha Clip",
+          "flags": [],
+          "attributes": [
+            "Toggle(UNITY_UI_ALPHACLIP)"
+          ],
+          "defaultFloat": 0
+        }
+      ],
+      "keywords": [
+        "INSTANCING_ON",
+        "STEREO_CUBEMAP_RENDER_ON",
+        "STEREO_INSTANCING_ON",
+        "STEREO_MULTIVIEW_ON",
+        "UNITY_SINGLE_PASS_STEREO",
+        "UNITY_UI_ALPHACLIP",
+        "UNITY_UI_CLIP_RECT"
+      ]
+    },
+    {
+      "name": "NowUI/UI Rectangle",
+      "assetPath": "Assets/NowUI/Assets/Shaders/UIRectangle.shader",
+      "passCount": 1,
+      "passCountParsed": 1,
+      "renderQueue": 3000,
+      "isSupported": true,
+      "properties": [
+        {
+          "name": "_MainTex",
+          "type": "Texture",
+          "description": "Texture",
+          "flags": [],
+          "attributes": [],
+          "defaultTexture": "white"
+        },
+        {
+          "name": "_NowPremultipliedTexture",
+          "type": "Float",
+          "description": "Premultiplied Texture",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultFloat": 0
+        },
+        {
+          "name": "_NowUIMaskCount",
+          "type": "Float",
+          "description": "Now UI Mask Count",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultFloat": 0
+        },
+        {
+          "name": "_NowUITextureMask0",
+          "type": "Texture",
+          "description": "Now UI Texture Mask 0",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultTexture": "black"
+        },
+        {
+          "name": "_NowUITextureMask1",
+          "type": "Texture",
+          "description": "Now UI Texture Mask 1",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultTexture": "black"
+        },
+        {
+          "name": "_NowUITextureMaskCount",
+          "type": "Float",
+          "description": "Now UI Texture Mask Count",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultFloat": 0
+        },
+        {
+          "name": "_ZTest",
+          "type": "Float",
+          "description": "ZTest",
+          "flags": [],
+          "attributes": [],
+          "defaultFloat": 8
+        }
+      ],
+      "keywords": [
+        "INSTANCING_ON",
+        "STEREO_CUBEMAP_RENDER_ON",
+        "STEREO_INSTANCING_ON",
+        "STEREO_MULTIVIEW_ON",
+        "UNITY_SINGLE_PASS_STEREO"
+      ]
+    },
+    {
+      "name": "NowUI/UI Rectangle UGUI",
+      "assetPath": "Assets/NowUI/Assets/Shaders/UIRectangleUGUI.shader",
+      "passCount": 1,
+      "passCountParsed": 1,
+      "renderQueue": 3000,
+      "isSupported": true,
+      "properties": [
+        {
+          "name": "_ClipRect",
+          "type": "Vector",
+          "description": "Clip Rect",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultVector": [-32767, -32767, 32767, 32767]
+        },
+        {
+          "name": "_ColorMask",
+          "type": "Float",
+          "description": "Color Mask",
+          "flags": [],
+          "attributes": [],
+          "defaultFloat": 15
+        },
+        {
+          "name": "_MainTex",
+          "type": "Texture",
+          "description": "Texture",
+          "flags": [
+            "PerRendererData"
+          ],
+          "attributes": [],
+          "defaultTexture": "white"
+        },
+        {
+          "name": "_NowPremultipliedTexture",
+          "type": "Float",
+          "description": "Premultiplied Texture",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultFloat": 0
+        },
+        {
+          "name": "_NowUIMaskCount",
+          "type": "Float",
+          "description": "Now UI Mask Count",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultFloat": 0
+        },
+        {
+          "name": "_NowUITextureMask0",
+          "type": "Texture",
+          "description": "Now UI Texture Mask 0",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultTexture": "black"
+        },
+        {
+          "name": "_NowUITextureMask1",
+          "type": "Texture",
+          "description": "Now UI Texture Mask 1",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultTexture": "black"
+        },
+        {
+          "name": "_NowUITextureMaskCount",
+          "type": "Float",
+          "description": "Now UI Texture Mask Count",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultFloat": 0
+        },
+        {
+          "name": "_Stencil",
+          "type": "Float",
+          "description": "Stencil ID",
+          "flags": [],
+          "attributes": [],
+          "defaultFloat": 0
+        },
+        {
+          "name": "_StencilComp",
+          "type": "Float",
+          "description": "Stencil Comparison",
+          "flags": [],
+          "attributes": [],
+          "defaultFloat": 8
+        },
+        {
+          "name": "_StencilOp",
+          "type": "Float",
+          "description": "Stencil Operation",
+          "flags": [],
+          "attributes": [],
+          "defaultFloat": 0
+        },
+        {
+          "name": "_StencilReadMask",
+          "type": "Float",
+          "description": "Stencil Read Mask",
+          "flags": [],
+          "attributes": [],
+          "defaultFloat": 255
+        },
+        {
+          "name": "_StencilWriteMask",
+          "type": "Float",
+          "description": "Stencil Write Mask",
+          "flags": [],
+          "attributes": [],
+          "defaultFloat": 255
+        },
+        {
+          "name": "_UIMaskSoftnessX",
+          "type": "Float",
+          "description": "UI Mask Softness X",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultFloat": 1
+        },
+        {
+          "name": "_UIMaskSoftnessY",
+          "type": "Float",
+          "description": "UI Mask Softness Y",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultFloat": 1
+        },
+        {
+          "name": "_UseUIAlphaClip",
+          "type": "Float",
+          "description": "Use Alpha Clip",
+          "flags": [],
+          "attributes": [
+            "Toggle(UNITY_UI_ALPHACLIP)"
+          ],
+          "defaultFloat": 0
+        }
+      ],
+      "keywords": [
+        "INSTANCING_ON",
+        "STEREO_CUBEMAP_RENDER_ON",
+        "STEREO_INSTANCING_ON",
+        "STEREO_MULTIVIEW_ON",
+        "UNITY_SINGLE_PASS_STEREO",
+        "UNITY_UI_ALPHACLIP",
+        "UNITY_UI_CLIP_RECT"
+      ]
+    },
+    {
+      "name": "NowUI/UI Ripple",
+      "assetPath": "Assets/NowUI/Assets/Shaders/UIRipple.shader",
+      "passCount": 1,
+      "passCountParsed": 1,
+      "renderQueue": 3000,
+      "isSupported": true,
+      "properties": [
+        {
+          "name": "_NowUIMaskCount",
+          "type": "Float",
+          "description": "Now UI Mask Count",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultFloat": 0
+        },
+        {
+          "name": "_NowUITextureMask0",
+          "type": "Texture",
+          "description": "Now UI Texture Mask 0",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultTexture": "black"
+        },
+        {
+          "name": "_NowUITextureMask1",
+          "type": "Texture",
+          "description": "Now UI Texture Mask 1",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultTexture": "black"
+        },
+        {
+          "name": "_NowUITextureMaskCount",
+          "type": "Float",
+          "description": "Now UI Texture Mask Count",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultFloat": 0
+        },
+        {
+          "name": "_ZTest",
+          "type": "Float",
+          "description": "ZTest",
+          "flags": [],
+          "attributes": [],
+          "defaultFloat": 8
+        }
+      ],
+      "keywords": [
+        "INSTANCING_ON",
+        "STEREO_CUBEMAP_RENDER_ON",
+        "STEREO_INSTANCING_ON",
+        "STEREO_MULTIVIEW_ON",
+        "UNITY_SINGLE_PASS_STEREO"
+      ]
+    },
+    {
+      "name": "NowUI/UI Ripple UGUI",
+      "assetPath": "Assets/NowUI/Assets/Shaders/UIRippleUGUI.shader",
+      "passCount": 1,
+      "passCountParsed": 1,
+      "renderQueue": 3000,
+      "isSupported": true,
+      "properties": [
+        {
+          "name": "_ClipRect",
+          "type": "Vector",
+          "description": "Clip Rect",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultVector": [-32767, -32767, 32767, 32767]
+        },
+        {
+          "name": "_ColorMask",
+          "type": "Float",
+          "description": "Color Mask",
+          "flags": [],
+          "attributes": [],
+          "defaultFloat": 15
+        },
+        {
+          "name": "_MainTex",
+          "type": "Texture",
+          "description": "Texture",
+          "flags": [
+            "PerRendererData"
+          ],
+          "attributes": [],
+          "defaultTexture": "white"
+        },
+        {
+          "name": "_NowUIMaskCount",
+          "type": "Float",
+          "description": "Now UI Mask Count",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultFloat": 0
+        },
+        {
+          "name": "_NowUITextureMask0",
+          "type": "Texture",
+          "description": "Now UI Texture Mask 0",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultTexture": "black"
+        },
+        {
+          "name": "_NowUITextureMask1",
+          "type": "Texture",
+          "description": "Now UI Texture Mask 1",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultTexture": "black"
+        },
+        {
+          "name": "_NowUITextureMaskCount",
+          "type": "Float",
+          "description": "Now UI Texture Mask Count",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultFloat": 0
+        },
+        {
+          "name": "_Stencil",
+          "type": "Float",
+          "description": "Stencil ID",
+          "flags": [],
+          "attributes": [],
+          "defaultFloat": 0
+        },
+        {
+          "name": "_StencilComp",
+          "type": "Float",
+          "description": "Stencil Comparison",
+          "flags": [],
+          "attributes": [],
+          "defaultFloat": 8
+        },
+        {
+          "name": "_StencilOp",
+          "type": "Float",
+          "description": "Stencil Operation",
+          "flags": [],
+          "attributes": [],
+          "defaultFloat": 0
+        },
+        {
+          "name": "_StencilReadMask",
+          "type": "Float",
+          "description": "Stencil Read Mask",
+          "flags": [],
+          "attributes": [],
+          "defaultFloat": 255
+        },
+        {
+          "name": "_StencilWriteMask",
+          "type": "Float",
+          "description": "Stencil Write Mask",
+          "flags": [],
+          "attributes": [],
+          "defaultFloat": 255
+        },
+        {
+          "name": "_UIMaskSoftnessX",
+          "type": "Float",
+          "description": "UI Mask Softness X",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultFloat": 1
+        },
+        {
+          "name": "_UIMaskSoftnessY",
+          "type": "Float",
+          "description": "UI Mask Softness Y",
+          "flags": [
+            "HideInInspector"
+          ],
+          "attributes": [],
+          "defaultFloat": 1
+        },
+        {
+          "name": "_UseUIAlphaClip",
+          "type": "Float",
+          "description": "Use Alpha Clip",
+          "flags": [],
+          "attributes": [
+            "Toggle(UNITY_UI_ALPHACLIP)"
+          ],
+          "defaultFloat": 0
+        }
+      ],
+      "keywords": [
+        "INSTANCING_ON",
+        "STEREO_CUBEMAP_RENDER_ON",
+        "STEREO_INSTANCING_ON",
+        "STEREO_MULTIVIEW_ON",
+        "UNITY_SINGLE_PASS_STEREO",
+        "UNITY_UI_ALPHACLIP",
+        "UNITY_UI_CLIP_RECT"
+      ]
+    }
+  ]
+}

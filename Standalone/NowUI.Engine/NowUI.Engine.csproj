@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- The UnityEngine-compatible shim for the engine-free NowUI build. It provides the UnityEngine value types, host
+       services and graphics resource handles that Assets/NowUI/Runtime is written against, and delegates real work to
+       an INowRenderBackend / host-services implementation registered by the host. See Docs/Standalone/. -->
+  <PropertyGroup>
+    <AssemblyName>NowUI.Engine</AssemblyName>
+    <RootNamespace>NowUI.Engine</RootNamespace>
+    <LangVersion>latest</LangVersion>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <NoWarn>$(NoWarn);CS1591;CS0660;CS0661</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="NowUI.Engine.Tests" />
+    <InternalsVisibleTo Include="Tests" />
+  </ItemGroup>
+</Project>

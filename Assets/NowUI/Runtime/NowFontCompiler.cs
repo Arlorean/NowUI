@@ -6,7 +6,9 @@
 // DllImport with no plugin is a link error, not a runtime exception.
 // WebGL's plugin is built by Now-UI/Native/build-msdf-webgl.sh, which keeps
 // its symbols disjoint from Unity's player libraries.
+#if !NOWUI_STANDALONE
 #define NOWUI_MSDF_NATIVE
+#endif
 
 using NowUI.Internal;
 using System;

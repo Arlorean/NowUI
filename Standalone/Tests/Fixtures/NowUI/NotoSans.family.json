@@ -1,0 +1,22 @@
+{
+  "schema": "nowui.standalone.fontfamily/1",
+  "unityVersion": "6000.4.0f1",
+  "resourcePath": "NowUI/NotoSans",
+  "name": "NotoSans",
+  "assetPath": "Assets/NowUI/Assets/Resources/NowUI/NotoSans.asset",
+  "faces": {
+    "regular": "NotoSans-Regular.font.json",
+    "bold": "NotoSans-Bold.font.json",
+    "italic": "NotoSans-Italic.font.json",
+    "boldItalic": "NotoSans-BoldItalic.font.json"
+  },
+  "fallbacks": [],
+  "omittedFallbacks": [
+    "MaterialDesign-Icons",
+    "NotoSansArabic",
+    "NotoSansJP",
+    "NotoSansKR",
+    "NotoSansSC",
+    "OpenMoji-color-cbdt.ttf"
+  ]
+}

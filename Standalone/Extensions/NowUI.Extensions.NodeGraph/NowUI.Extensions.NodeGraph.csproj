@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Engine-free build of Assets/NowUI/Extensions/NodeGraph. See Docs/Standalone/StandaloneCoreDesign.md section 2.3. -->
+  <PropertyGroup>
+    <AssemblyName>NowUI.Extensions.NodeGraph</AssemblyName>
+    <RootNamespace>NowUI</RootNamespace>
+    <LangVersion>9.0</LangVersion>
+    <AllowUnsafeBlocks>false</AllowUnsafeBlocks>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <DefineConstants>$(DefineConstants);NOWUI_STANDALONE</DefineConstants>
+    <NoWarn>$(NoWarn);CS1591;CS0649;CS0169;CS0414</NoWarn>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)'=='Debug'">
+    <DefineConstants>$(DefineConstants);DEVELOPMENT_BUILD</DefineConstants>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../../Assets/NowUI/Extensions/NodeGraph/**/*.cs" LinkBase="Extensions/NodeGraph" />
+    <ProjectReference Include="../../NowUI.Runtime/NowUI.Runtime.csproj" />
+    <Analyzer Include="../../../Assets/NowUI/Runtime/Analyzers/NowUI.Analyzers.dll" />
+  </ItemGroup>
+</Project>

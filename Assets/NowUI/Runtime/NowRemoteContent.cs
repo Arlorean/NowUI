@@ -1,10 +1,13 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+#if !NOWUI_STANDALONE
 using UnityEngine.Networking;
+#endif
 
 namespace NowUI.Internal
 {
+#if !NOWUI_STANDALONE
     /// <summary>
     /// Buffers a response while refusing a chunk before it would cross the
     /// configured retained-byte limit. DownloadHandlerBuffer cannot provide
@@ -276,6 +279,7 @@ namespace NowUI.Internal
             }
         }
     }
+#endif
 
     /// <summary>
     /// Reads only the fixed ZIP end records needed to enforce an entry-count

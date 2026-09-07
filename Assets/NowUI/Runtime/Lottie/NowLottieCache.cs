@@ -1,8 +1,6 @@
 using System;
-using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
-using UnityEngine.Networking;
 
 namespace NowUI
 {
@@ -14,9 +12,9 @@ namespace NowUI
         Failed
     }
 
-    public static class NowLottieCache
+    public static partial class NowLottieCache
     {
-        sealed class Entry
+        sealed partial class Entry
         {
             public string url;
             public NowLottieAsset asset;
@@ -25,24 +23,12 @@ namespace NowUI
             public bool ownsAsset;
             public bool active;
             public long lastAccess;
-            public Coroutine coroutine;
-            public UnityWebRequest request;
             public LinkedListNode<Entry> pendingNode;
-        }
-
-        sealed class Runner : MonoBehaviour
-        {
-            void Update()
-            {
-                Tick();
-            }
         }
 
         static readonly Dictionary<string, Entry> _entries = new Dictionary<string, Entry>(16);
 
         static readonly LinkedList<Entry> _pending = new LinkedList<Entry>();
-
-        static Runner _runner;
 
         static int _activeLoads;
 
@@ -134,21 +120,13 @@ namespace NowUI
         public static void Reset()
         {
             foreach (var entry in _entries.Values)
-            {
-                if (entry.request != null)
-                    entry.request.Abort();
-            }
+                AbortLoad(entry);
 
-            if (_runner != null)
-                _runner.StopAllCoroutines();
+            StopLoads();
 
             foreach (var entry in _entries.Values)
             {
-                if (entry.request != null)
-                {
-                    entry.request.Dispose();
-                    entry.request = null;
-                }
+                DisposeLoad(entry);
 
                 if (entry.ownsAsset)
                     NowLottieAsset.DestroyRuntimeAsset(entry.asset);
@@ -159,15 +137,7 @@ namespace NowUI
             _activeLoads = 0;
             _accessClock = 0L;
 
-            if (_runner != null)
-            {
-                if (Application.isPlaying)
-                    UnityEngine.Object.Destroy(_runner.gameObject);
-                else
-                    UnityEngine.Object.DestroyImmediate(_runner.gameObject);
-
-                _runner = null;
-            }
+            DestroyRunner();
         }
 
         static void Tick()
@@ -194,95 +164,13 @@ namespace NowUI
                     continue;
                 }
 
-                var runner = GetRunner();
-
-                if (runner == null)
+                if (!StartLoad(entry))
                 {
                     entry.state = NowLottieCacheState.Failed;
                     entry.error = "Could not create Lottie cache runner.";
                     continue;
                 }
-
-                entry.active = true;
-                ++_activeLoads;
-                entry.coroutine = runner.StartCoroutine(Load(entry));
             }
-        }
-
-        static IEnumerator Load(Entry entry)
-        {
-            NowLottieAsset loaded = null;
-            string error = null;
-
-            yield return NowLottieAsset.LoadFromUrlInternal(
-                entry.url,
-                asset => loaded = asset,
-                value => error = value,
-                request =>
-                {
-                    entry.request = request;
-
-                    if (request != null &&
-                        (!_entries.TryGetValue(entry.url, out var current) || !ReferenceEquals(current, entry)))
-                    {
-                        request.Abort();
-                    }
-                });
-
-            entry.request = null;
-            entry.coroutine = null;
-
-            if (entry.active)
-            {
-                entry.active = false;
-                _activeLoads = Mathf.Max(0, _activeLoads - 1);
-            }
-
-            if (!_entries.TryGetValue(entry.url, out var current) || !ReferenceEquals(current, entry))
-            {
-                NowLottieAsset.DestroyRuntimeAsset(loaded);
-                PumpLoads();
-                yield break;
-            }
-
-            if (error != null)
-            {
-                entry.state = NowLottieCacheState.Failed;
-                entry.error = error;
-                NowLottieAsset.DestroyRuntimeAsset(loaded);
-                PumpLoads();
-                yield break;
-            }
-
-            if (loaded == null)
-            {
-                entry.state = NowLottieCacheState.Failed;
-                entry.error = $"Failed to load Lottie from '{entry.url}'.";
-                PumpLoads();
-                yield break;
-            }
-
-            entry.asset = loaded;
-            entry.state = NowLottieCacheState.Loaded;
-            entry.error = null;
-            entry.ownsAsset = true;
-            Touch(entry);
-            TrimCache(entry);
-            PumpLoads();
-        }
-
-        static Runner GetRunner()
-        {
-            if (_runner != null)
-                return _runner;
-
-            var go = new GameObject("Now Lottie Cache")
-            {
-                hideFlags = HideFlags.HideAndDontSave
-            };
-            UnityEngine.Object.DontDestroyOnLoad(go);
-            _runner = go.AddComponent<Runner>();
-            return _runner;
         }
 
         static void TrimCache(Entry preserve = null)
@@ -341,8 +229,7 @@ namespace NowUI
                 entry.pendingNode = null;
             }
 
-            if (entry.request != null)
-                entry.request.Abort();
+            AbortLoad(entry);
 
             if (entry.ownsAsset)
                 NowLottieAsset.DestroyRuntimeAsset(entry.asset);
