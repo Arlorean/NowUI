@@ -1,3 +1,10 @@
+# [1.12.0](https://github.com/BlenMiner/NowUI/compare/nowui-v1.11.8...nowui-v1.12.0) (2026-09-07)
+
+
+### Features
+
+* preview NowUI hosts in the Inspector ([cbe0c28](https://github.com/BlenMiner/NowUI/commit/cbe0c289d63017521aa252970abb217935118e83))
+
 ## [1.11.8](https://github.com/BlenMiner/NowUI/compare/nowui-v1.11.7...nowui-v1.11.8) (2026-09-06)
 
 
