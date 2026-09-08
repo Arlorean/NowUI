@@ -1320,7 +1320,8 @@ Stated as decisions, not as gaps to be discovered.
     The second pass is not free of consequences, and item 2 records the one that bit: a control that hands a value
     to the next frame through latched state has that state drained by the measure pass, whose results are
     discarded. The decode is still side-effect free (§5.6) — the side effect is inside NowUI's own control state,
-    not in the decode — so the bridge carries such a value across the two passes rather than trying to prevent it.
+    not in the decode. The bridge carried such a value across the two passes until the package was fixed on
+    2026-09-08; that carry has since been deleted, and item 2 above records what replaced it.
 24. **The C# escape hatch is not available to a JavaScript-only author.** `ui.host` requires somebody to write and
     compile C#. This is the price of a curated surface, and it is charged in exactly the places listed as items 7-13.
 

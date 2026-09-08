@@ -15,10 +15,13 @@
 // page is kept because it is the end-to-end guard: NowPopupUXTests covers the package invariant in Unity, and
 // this covers the JavaScript path that motivated finding it.
 //
-// Every control here commits through a deferred overlay, which is what makes them the affected family. ONE is
-// deliberately absent: ui.colorField, because its popup needs the 'NowUI/Color Picker' material this WebGL2
-// backend does not carry - the same reason ?area=fields leaves ColorPicker out. Its package path took the same
-// fix as the four below.
+// Every control here commits through a deferred overlay, which is what makes them the affected family.
+//
+// ui.colorField is MISSING FROM THIS PAGE AND SHOULD BE ADDED. The reason recorded here previously - that the
+// WebGL2 backend has no 'NowUI/Color Picker' material - is false, and was false when it was written:
+// WebGL2Backend.cs:110-122 resolves that shader and wwwroot/shaders/nowui-colorpicker.{vert,frag} are ported.
+// The same stale premise is why ?area=fields still leaves ColorPicker out. GradientField and CurveField are in
+// the same position. All three took the same package fix as the four below, so what is missing is the coverage.
 import { start, ui } from './nowui/nowui.js';
 
 const ROLES  = ['Engineering', 'Compilers', 'Research', 'Design'];

@@ -385,7 +385,13 @@ namespace NowUI
 
         static bool ApplyPending(PopupState state, ref string path)
         {
-            if (!state.hasPendingPath)
+            // Only a live pass may commit the choice. The popup hands the chosen path to the next frame through
+            // this one-shot, and NowLayout.RunMeasured draws the UI twice and discards the first pass - which the
+            // auto-sizing hosts (NowLayoutGraphic, NowPipelineLayoutGraphic, NowWorldLayoutGraphic and the UI
+            // Toolkit NowVisualElement) all turn on unconditionally. Draining it on the discarded pass leaves the
+            // live pass with nothing, so the caller keeps the path but never sees changed == true and never acts
+            // on it. Same defect and same guard as NowDropdown.Draw.
+            if (NowInput.isPassive || !state.hasPendingPath)
                 return false;
 
             state.hasPendingPath = false;

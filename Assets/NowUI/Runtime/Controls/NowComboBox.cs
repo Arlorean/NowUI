@@ -143,11 +143,16 @@ namespace NowUI
             bool changed = false;
 
             // Only a live pass may commit the choice. See NowDropdown.Draw for why.
-            if (!NowInput.isPassive && pending > 0 && pending - 1 < optionCount)
+            // A live pass always drains the latch, even out of range. See NowDropdown.Draw.
+            if (!NowInput.isPassive && pending > 0)
             {
-                int next = pending - 1;
-                changed = next != selected;
-                selected = next;
+                if (pending - 1 < optionCount)
+                {
+                    int next = pending - 1;
+                    changed = next != selected;
+                    selected = next;
+                }
+
                 pending = 0;
             }
 
@@ -244,11 +249,16 @@ namespace NowUI
             bool changed = false;
 
             // Only a live pass may commit the choice. See NowDropdown.Draw for why.
-            if (!NowInput.isPassive && pending > 0 && pending - 1 < optionCount)
+            // A live pass always drains the latch, even out of range. See NowDropdown.Draw.
+            if (!NowInput.isPassive && pending > 0)
             {
-                string next = _options[pending - 1] ?? string.Empty;
-                changed = next != value;
-                value = next;
+                if (pending - 1 < optionCount)
+                {
+                    string next = _options[pending - 1] ?? string.Empty;
+                    changed = next != value;
+                    value = next;
+                }
+
                 pending = 0;
             }
 

@@ -385,6 +385,75 @@ public class NowPopupUXTests
         Assert.IsTrue(changed, "The live pass must report the change, not just leave the value behind.");
     }
 
+    /// <summary>
+    /// One frame of a dropdown over a caller-supplied option list, in ORDINARY one-pass layout. The list is a
+    /// parameter because the point of the test is what happens when it changes underneath a latched choice.
+    /// </summary>
+    bool DrawDropdownFrameWithOptions(ref int selected, List<string> options, NowInputSnapshot snapshot)
+    {
+        NowOverlay.ForceNewFrame();
+        _pointer.snapshot = snapshot;
+        _keyboard.frame = default;
+        NowTextInput.Invalidate();
+
+        using (NowInput.Begin(_pointer, Surface))
+        using (_drawList.Begin(Surface))
+        {
+            bool changed = Now.Dropdown(FieldRect, "dd", options).Draw(ref selected);
+            NowOverlay.Flush();
+            return changed;
+        }
+    }
+
+    /// <summary>
+    /// A popup latches its choice as a one-based INDEX for the next frame to apply. If the caller's option list
+    /// shrinks in between, that index no longer names anything and the latch must be discarded, not held: a held
+    /// latch commits silently on the first later frame whose list is long enough again, reporting a change the
+    /// user never made. Guarding the whole commit is right, but the drain has to stay unconditional on a live
+    /// pass, which is why it sits outside the range test rather than inside it.
+    /// </summary>
+    [Test]
+    public void AnOutOfRangeLatchIsDiscardedRatherThanCommittedLater()
+    {
+        var full = new List<string> { "Low", "Medium", "High" };
+        var shortened = new List<string> { "Low" };
+
+        int selected = 0;
+        var fieldCenter = FieldRect.center;
+
+        DrawDropdownFrameWithOptions(ref selected, full, Snapshot(fieldCenter, down: true, pressed: true));
+        DrawDropdownFrameWithOptions(ref selected, full, Snapshot(fieldCenter, released: true));
+
+        Assert.IsTrue(
+            NowControlState.Get<bool>(ResolveControlId("dd")),
+            "The press must open the popup, or the rest of this test proves nothing.");
+
+        var styles = NowTheme.themeAsset.controlStyles;
+        float itemHeight = styles.dropdownItemHeight;
+        float popupTop = FieldRect.yMax + styles.dropdownPopupGap + styles.popupPadding;
+        var onHigh = new Vector2(fieldCenter.x, popupTop + 2.5f * itemHeight);
+
+        DrawDropdownFrameWithOptions(ref selected, full, Snapshot(onHigh));
+        DrawDropdownFrameWithOptions(ref selected, full, Snapshot(onHigh, down: true, pressed: true));
+        DrawDropdownFrameWithOptions(ref selected, full, Snapshot(onHigh, released: true));
+
+        // "High" is latched as index 3. The caller's list now shrinks to one entry before the commit frame.
+        DrawDropdownFrameWithOptions(ref selected, shortened, Snapshot(onHigh));
+        Assert.AreEqual(0, selected, "An index the list no longer has must not be applied.");
+
+        // The list grows back. Nothing is clicked from here on, so any change is the stale latch firing.
+        for (int i = 0; i < 4; ++i)
+        {
+            bool changed = DrawDropdownFrameWithOptions(ref selected, full, Snapshot(onHigh));
+
+            Assert.IsFalse(
+                changed,
+                "A latch that could not be applied must have been discarded, not held until the list grew back.");
+        }
+
+        Assert.AreEqual(0, selected, "The discarded choice must never arrive late.");
+    }
+
     [Test]
     public void CurrentPassPopupOwnsWheelBeforeDeferredContentFlushes()
     {

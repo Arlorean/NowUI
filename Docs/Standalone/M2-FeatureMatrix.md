@@ -164,10 +164,34 @@ supported by a measurement rather than by reading.
    so a passive pass observes without mutating, which is the rule `NowControlState.AdvanceTransition`
    (`:313`) and `RepeatByStateKey` (`:486`) already followed. It costs one frame of measurement against the
    previous label, self-correcting on the next frame, and that is strictly cheaper than a destroyed choice.
-   Applied at **eight** sites, three of them found by sweeping for the shape rather than reported:
+   Applied at **ten** sites. The first report of this said eight and then listed nine, which was simply a
+   miscount; the tenth is `NowFilePicker`, found later by a second sweep and described below. Four were found by
+   sweeping for the shape rather than reported:
    `NowDropdown.cs`, `NowComboBox.cs` ×3 (the int overload, the string overload, and `pendingCustomValue`, the
    free-text commit), `NowMaskField.cs` (whose clear sat *outside* the `if`, so a passive pass ate it
    unconditionally), `NowValueControls.cs` ×3 (colour, gradient, curve) and `NowDatePicker.cs`.
+   **A tenth site, and why the first sweep could not see it.** `NowFilePicker.ApplyPending`
+   (`NowFilePicker.cs:386`, called unconditionally from `:313`) drains `state.hasPendingPath` with no guard. The
+   sweep that found the other nine grepped `NowControlState.Get<...>("pending")`, and the picker keeps its
+   one-shot in a **private `Dictionary<NowResolvedId, PopupState>`** (`:166`) instead, so a name-and-container
+   sweep was structurally incapable of finding it. Measured with the latch set exactly as `Commit()`
+   (`:3238-3240`) sets it, then ordinary frames: without the guard, one-pass commits and two-pass reports
+   `changed == False`; with it, both commit. Not reachable from JavaScript, since the picker is outside the
+   JavaScript surface.
+
+   **The trigger set is wider than "someone called RunMeasured".** Four shipped host components hard-code the
+   two-pass path for the whole user callback, every frame: `NowLayoutGraphic.cs:17`,
+   `NowPipelineLayoutGraphic.cs:9`, `NowWorldLayoutGraphic.cs:9` and `NowVisualElement.cs:707`, the auto-sizing
+   UI Toolkit host. So an author who never writes `RunMeasured` still gets the two-pass frame by default, which
+   is what makes this class worth sweeping for rather than patching where reported.
+
+   **The first version of this fix shipped a leak, recorded here rather than quietly corrected.** Moving
+   `pending = 0` inside the guard put it behind the range test as well, so a latch whose index no longer fit a
+   shrunken option list was neither applied nor cleared. It then committed silently on the first later frame
+   whose list was long enough again, with `changed == true` and no user input. Measured against a genuine
+   pre-fix tree: pre-fix `selected=0 changed=False`, leaking version `selected=2 changed=True`. The drain is now
+   unconditional on a live pass and sits outside the range test, and
+   `NowPopupUXTests.AnOutOfRangeLatchIsDiscardedRatherThanCommittedLater` fails without that.
    **Verified**: Unity EditMode and PlayMode identical to the baseline case-for-case
    (`Tools/Standalone/Compare-TestResults.ps1`, `artifacts/local/popup-fix-check`); the standalone gate at
    801 passed / 9 skipped; all six rows of the headless repro committing; and the three browser fixtures
