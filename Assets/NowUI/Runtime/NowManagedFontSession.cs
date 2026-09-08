@@ -69,6 +69,11 @@ namespace NowUI.Internal
 
         public bool usesPackedSdf16 => _packedSdf16;
 
+        public bool TryGetGlyphIndex(int codepoint, out int glyphIndex)
+        {
+            return _font.TryGetGlyphIndex(codepoint, out glyphIndex);
+        }
+
         NowManagedFontSession(NowTrueType font, int size, int pixelRange, int atlasSide, bool packedSdf16)
         {
             _font = font;
