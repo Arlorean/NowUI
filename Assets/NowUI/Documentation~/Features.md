@@ -672,7 +672,8 @@ fades. Apply a text gradient when the authored color glyph should be
 deliberately recolored.
 
 The generated `NowFont` stores the source font bytes directly and does not keep
-a reference to the original `.ttf` asset or create a baked atlas texture subasset.
+a reference to the original `.ttf` asset. It carries no atlas texture unless you
+bake one (see [Baked Pages](#baked-pages)).
 
 Glyph baking uses the managed compiler by default (pure-C# TrueType parsing
 plus a Burst-compiled SDF rasterizer — measured faster than the native
@@ -692,6 +693,50 @@ exact. Segments containing glyphs the font lacks — and platforms without the
 plugin — automatically use the per-codepoint path, where font fallbacks
 resolve missing characters. Shaped glyphs bake through the managed compiler,
 so HarfBuzz is the only native dependency in the shaped path.
+
+## Baked Pages
+
+Dynamic baking rasterizes each glyph on the main thread the first time text asks
+for it, so the first screen that draws a font pays for every glyph it shows at
+once. A `NowFont` can instead carry that work as **baked pages**: dynamic atlas
+pages sealed at author time and stored as sub-assets, which enter the page list
+on first use exactly like pages a warmed session would have produced. Everything
+outside the baked set keeps baking on demand, so the feature changes when
+glyphs are rasterized, never whether a glyph can be drawn.
+
+1. Select the `NowFont` asset and press **Baked Pages > Bake All Glyphs**. A
+   dialog states what every codepoint the font maps will cost before anything
+   is written; a Latin face is a few megabytes, a CJK face can be hundreds.
+2. For a subset instead, type the characters (or add the ASCII, Latin-1,
+   Latin Ext-A presets) and press **Bake Characters**.
+3. `Assets > NowUI > Bake Font Glyphs` repeats each selected `NowFont` or
+   `NowFontFamily`'s last bake, all glyphs when nothing was authored, with one
+   confirmation for the all-glyph fonts.
+4. Ship the asset. The Inspector's atlas strip labels baked pages **Baked** and
+   runtime pages **Cache**.
+
+Baking runs the same compiler session as the runtime at the font's current glyph
+size and base pixel range. Each codepoint is registered under its glyph-index key
+too (managed sessions), so shaped and per-codepoint draws resolve the same cell
+and neither path bakes it again; whitespace-free runs of the authored text are
+shaped so ligatures land in the bake as well. Wider distance-range tiers used by
+outlined text are not baked and still resolve dynamically.
+
+Pages start at the smallest power-of-two side that holds the set and spill into
+further pages only past the font's **Page Size**, like runtime pages: printable
+ASCII at the default 64 px / 16 px settings fills one 1024 px page (4 MB,
+RGBA32, uncompressed), the same page a warmed runtime would hold, minus the
+readable CPU copy. Baked textures are stored
+non-readable, count toward the font's dynamic cache budget like any resident
+page, and are never destroyed by `ClearDynamicCache()`. Changing the glyph size
+or pixel range leaves the pages dormant (the Inspector warns) until you bake
+again; recompiling the font from its source file discards them. Color fonts bake
+on demand only.
+
+`NowFontBaker.TryBakeAll(font, out error)` and
+`NowFontBaker.TryBake(font, characters, out error)` perform the same bakes from
+editor scripts, `NowFontBaker.EstimateBake` reports the expected pages and
+bytes, and `NowFontBaker.Clear(font)` removes the pages.
 
 ## Example Scenes And Scripts
 

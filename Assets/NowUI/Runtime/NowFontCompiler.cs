@@ -508,6 +508,16 @@ namespace NowUI
             /// </summary>
             public bool supportsGlyphIndexBaking => _managed != null;
 
+            /// <summary>Glyph index for a codepoint. Managed sessions only.</summary>
+            public bool TryGetGlyphIndex(int codepoint, out int glyphIndex)
+            {
+                if (_managed != null)
+                    return _managed.TryGetGlyphIndex(codepoint, out glyphIndex);
+
+                glyphIndex = 0;
+                return false;
+            }
+
             public AddResult TryAddGlyphsByIndex(int[] glyphIndices, int glyphIndexCount, List<NowFontAtlasInfo.Glyph> results, out string error)
             {
                 if (_managed != null)
