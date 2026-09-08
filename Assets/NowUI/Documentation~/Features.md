@@ -720,8 +720,9 @@ outlined text are not baked and still resolve dynamically.
 
 Pages start at the smallest power-of-two side that holds the set and spill into
 further pages only past the font's **Page Size**, like runtime pages: printable
-ASCII at the default 64 px / 16 px settings fits a 512 px page (1 MB, RGBA32,
-uncompressed), Latin-1 grows it to 1024 px (4 MB). Baked textures are stored
+ASCII at the default 64 px / 16 px settings fills one 1024 px page (4 MB,
+RGBA32, uncompressed), the same page a warmed runtime would hold, minus the
+readable CPU copy. Baked textures are stored
 non-readable, count toward the font's dynamic cache budget like any resident
 page, and are never destroyed by `ClearDynamicCache()`. Changing the glyph size
 or pixel range leaves the pages dormant (the Inspector warns) until you bake

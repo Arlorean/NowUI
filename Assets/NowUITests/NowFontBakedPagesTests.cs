@@ -136,13 +136,16 @@ public class NowFontBakedPagesTests
     }
 
     [Test]
-    public void PrintableAsciiFitsOneSmallPage()
+    public void PrintableAsciiFitsOneDefaultPage()
     {
         var font = CreateFont();
         var pages = Bake(font, NowFontBaker.ASCII);
 
         Assert.AreEqual(1, pages.Count, "Printable ASCII should fit one page at the default settings.");
-        Assert.LessOrEqual(pages[0].texture.width, 512, "Printable ASCII should not need more than a 512 px page.");
+        Assert.LessOrEqual(
+            pages[0].texture.width,
+            NowFont.DEFAULT_DYNAMIC_PAGE_SIZE,
+            "Printable ASCII should not need more than the default page size.");
     }
 
     [Test]
