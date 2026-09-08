@@ -7,9 +7,9 @@ using NowUI.Editor;
 using Object = UnityEngine.Object;
 
 /// <summary>
-/// Baked font pages: an editor bake of the authored characters must serve the
-/// runtime exactly like a warmed dynamic cache, without creating a compiler
-/// session, and must survive the asset round trip and cache clears.
+/// Baked font pages must behave like a warmed dynamic cache: no compiler session
+/// for baked glyphs, same records as a dynamic bake, and they survive cache clears
+/// and the asset round trip.
 /// </summary>
 public class NowFontBakedPagesTests
 {

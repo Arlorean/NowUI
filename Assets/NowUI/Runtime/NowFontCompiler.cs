@@ -506,11 +506,7 @@ namespace NowUI
             /// </summary>
             public bool supportsGlyphIndexBaking => _managed != null;
 
-            /// <summary>
-            /// Resolves the nominal glyph index this session bakes for a codepoint, so a
-            /// record baked by codepoint can be registered under its glyph-index key as
-            /// well. Managed sessions only; the native session keeps its cmap private.
-            /// </summary>
+            /// <summary>Glyph index for a codepoint. Managed sessions only.</summary>
             public bool TryGetGlyphIndex(int codepoint, out int glyphIndex)
             {
                 if (_managed != null)

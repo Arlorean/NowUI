@@ -29,6 +29,7 @@ namespace NowUI.Editor
         SerializedProperty _dynamicMaxAtlasBytes;
         SerializedProperty _fallbacks;
         SerializedProperty _bakedCharacters;
+        static bool s_bakedPagesExpanded;
 
         readonly NowFontGlyphPickerControl _glyphPicker = new NowFontGlyphPickerControl();
         NowFont _previewFont;
@@ -224,12 +225,20 @@ namespace NowUI.Editor
 
         void DrawBakedPages()
         {
-            EditorGUILayout.LabelField("Baked Pages", EditorStyles.boldLabel);
-
             if (_bakedCharacters == null)
                 return;
 
-            if (targets.Length == 1 && target is NowFont single)
+            NowFont single = targets.Length == 1 ? target as NowFont : null;
+            s_bakedPagesExpanded = EditorGUILayout.Foldout(
+                s_bakedPagesExpanded,
+                BakedPagesHeader(single),
+                true,
+                EditorStyles.foldoutHeader);
+
+            if (!s_bakedPagesExpanded)
+                return;
+
+            if (single != null)
                 DrawBakedStatus(single);
 
             int bakedFonts = 0;
@@ -297,11 +306,6 @@ namespace NowUI.Editor
             SetBakedCharacters(NowFontBaker.Merge(_bakedCharacters.stringValue, preset));
         }
 
-        /// <summary>
-        /// A focused IMGUI text field keeps showing its own buffer and writes it back on
-        /// the next keystroke, so a value set behind it is invisible and then lost. Drop
-        /// keyboard focus first and the field re-reads the property.
-        /// </summary>
         void SetBakedCharacters(string characters)
         {
             GUI.FocusControl(null);
@@ -325,16 +329,21 @@ namespace NowUI.Editor
             return count == 1 ? "1 character" : $"{count} characters";
         }
 
-        static void DrawBakedStatus(NowFont font)
+        static string BakedPagesHeader(NowFont font)
         {
-            if (font.bakedPageCount == 0)
-            {
-                EditorGUILayout.LabelField("No baked pages; glyphs bake on first use.", EditorStyles.miniLabel);
-                return;
-            }
+            if (font == null || font.bakedPageCount == 0)
+                return "Baked Pages";
 
+            return $"Baked Pages ({font.bakedPageCount} page(s), {BakedBytes(font) / (1024f * 1024f):0.0} MB)";
+        }
+
+        static long BakedBytes(NowFont font)
+        {
             long bytes = 0;
             var pages = font.GetBakedPages();
+
+            if (pages == null)
+                return 0;
 
             for (int i = 0; i < pages.Length; ++i)
             {
@@ -344,9 +353,20 @@ namespace NowUI.Editor
                     bytes += (long)texture.width * texture.height * 4;
             }
 
+            return bytes;
+        }
+
+        static void DrawBakedStatus(NowFont font)
+        {
+            if (font.bakedPageCount == 0)
+            {
+                EditorGUILayout.LabelField("No baked pages; glyphs bake on first use.", EditorStyles.miniLabel);
+                return;
+            }
+
             string coverage = font.bakedAllGlyphs ? "All glyphs" : "Characters";
             EditorGUILayout.LabelField(
-                $"{coverage}: {font.bakedPageCount} page(s), {font.bakedGlyphCount} glyph record(s), {bytes / (1024f * 1024f):0.0} MB",
+                $"{coverage}: {font.bakedPageCount} page(s), {font.bakedGlyphCount} glyph record(s), {BakedBytes(font) / (1024f * 1024f):0.0} MB",
                 EditorStyles.miniLabel);
 
             if (font.bakedPagesStale)

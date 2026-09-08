@@ -1235,23 +1235,12 @@ namespace NowUI
         [SerializeField, HideInInspector]
         byte[] _fontBytes;
 
-        /// <summary>
-        /// Characters the editor baked into <see cref="_bakedPages"/>. Kept beside the
-        /// output so a rebake after a settings change reproduces the same coverage.
-        /// </summary>
         [SerializeField, HideInInspector]
         string _bakedCharacters;
 
-        /// <summary>True when the pages were baked from every codepoint the font maps
-        /// rather than from <see cref="_bakedCharacters"/>, so a rebake repeats that.</summary>
         [SerializeField, HideInInspector]
         bool _bakedAllGlyphs;
 
-        /// <summary>
-        /// Dynamic atlas pages sealed at author time. They enter the runtime page list
-        /// on first use exactly like pages a warmed session would have produced, so the
-        /// first draw of the baked characters skips rasterization and upload.
-        /// </summary>
         [SerializeField, HideInInspector]
         BakedPage[] _bakedPages;
 
@@ -1281,15 +1270,9 @@ namespace NowUI
             /// native atlas storage; the legacy cursor-based packer must never write into them.</summary>
             public bool sessionOwned;
 
-            /// <summary>The atlas texture belongs to the serialized asset, so clearing the
-            /// cache releases only the runtime wrapper and material, never the texture.</summary>
             public bool baked;
         }
 
-        /// <summary>
-        /// Serialized form of one sealed dynamic page: the atlas texture sub-asset, the
-        /// variant it was rasterized for, and its glyph records in both key spaces.
-        /// </summary>
         [Serializable]
         internal struct BakedPage
         {
@@ -1577,7 +1560,7 @@ namespace NowUI
             }
         }
 
-        /// <summary>Characters authored for baking; the editor bake input, never read at runtime.</summary>
+        /// <summary>The characters the editor baked. Runtime never reads this.</summary>
         public string bakedCharacters => _bakedCharacters;
 
         public bool bakedAllGlyphs => _bakedAllGlyphs;
@@ -1601,8 +1584,8 @@ namespace NowUI
         }
 
         /// <summary>
-        /// True when baked pages exist but none were rasterized for the current glyph
-        /// size and pixel range; the runtime leaves those dormant until a rebake.
+        /// True when the baked pages were made with a different glyph size or pixel range
+        /// than the font uses now. The runtime ignores them until the font is baked again.
         /// </summary>
         public bool bakedPagesStale
         {
@@ -1831,12 +1814,6 @@ namespace NowUI
             _bakedPagesLoaded = false;
         }
 
-        /// <summary>
-        /// Registers the baked pages the first time the dynamic cache is consulted, so
-        /// nothing is resident for a font nobody draws with. Pages baked for another
-        /// glyph size or pixel range stay dormant: their records would answer for a
-        /// variant they were never rasterized at.
-        /// </summary>
         void EnsureBakedPagesLoaded()
         {
             if (_bakedPagesLoaded)
@@ -2751,11 +2728,6 @@ namespace NowUI
             return dynamicPixelRange > 0 ? dynamicPixelRange : DEFAULT_DYNAMIC_PIXEL_RANGE;
         }
 
-        /// <summary>
-        /// Managed sessions pack a 16-bit distance into the page only when the text
-        /// material can decode it; the editor bake asks the same question so a baked
-        /// page carries the encoding the runtime would have chosen.
-        /// </summary>
         internal bool ResolvePackedManagedSdf16()
         {
             var encodingMaterial = _dynamicMaterialTemplate;
@@ -3892,11 +3864,6 @@ namespace NowUI
             };
         }
 
-        /// <summary>
-        /// Wraps one atlas texture in the page font the mesh builder reads glyphs and
-        /// material from. Session pages start empty and append as they bake; baked
-        /// pages arrive with their records and never change.
-        /// </summary>
         NowFont CreateDynamicPageFont(
             Texture2D texture,
             int distanceRange,

@@ -9,11 +9,8 @@ using Object = UnityEngine.Object;
 namespace NowUI.Editor
 {
     /// <summary>
-    /// Bakes a <see cref="NowFont"/>'s authored characters into sealed dynamic atlas
-    /// pages stored on the asset. The bake drives the same compiler session the runtime
-    /// uses, so a baked page is exactly what a warmed session would have produced; the
-    /// first draw of those characters finds it resident instead of rasterizing them.
-    /// Glyphs outside the authored set keep baking on demand.
+    /// Bakes glyphs into atlas pages stored on a <see cref="NowFont"/> asset, so the first
+    /// draw does not have to rasterize them. Uses the same compiler session as the runtime.
     /// </summary>
     public static class NowFontBaker
     {
@@ -65,25 +62,19 @@ namespace NowUI.Editor
             }
         }
 
-        /// <summary>A font bakes all of its glyphs unless a character subset was authored
-        /// and its last bake used that subset.</summary>
+        /// <summary>True unless the font has a character subset and was last baked from it.</summary>
         public static bool BakesAllGlyphs(NowFont font)
         {
             return font != null && (font.bakedAllGlyphs || string.IsNullOrEmpty(font.bakedCharacters));
         }
 
-        /// <summary>Number of codepoints the font maps; what "all glyphs" bakes.</summary>
+        /// <summary>How many codepoints the font maps, which is what "all glyphs" bakes.</summary>
         public static int CountAllGlyphs(NowFont font)
         {
             return CollectAllCodepoints(font).Count;
         }
 
-        /// <summary>
-        /// Page count and asset bytes a bake of <paramref name="glyphCount"/> glyphs is
-        /// expected to take at the font's current settings. Glyph cells are estimated at
-        /// their full padded size; real bakes land close to this, a page over at most
-        /// when a font has many glyphs wider than its em box.
-        /// </summary>
+        /// <summary>Rough page count and asset size for baking <paramref name="glyphCount"/> glyphs at the font's current settings.</summary>
         public static void EstimateBake(NowFont font, int glyphCount, out int pageCount, out int pageSide, out long bytes)
         {
             pageCount = 0;
@@ -115,11 +106,7 @@ namespace NowUI.Editor
             return $"{glyphCount:N0} glyphs, about {pageCount} page(s) of {pageSide} px, ~{bytes / (1024f * 1024f):0.0} MB stored in the asset.";
         }
 
-        /// <summary>
-        /// Asks before baking every glyph of the given fonts, showing what it will cost:
-        /// a Latin face is a few megabytes, a CJK face can be hundreds. The choice stays
-        /// with the user either way.
-        /// </summary>
+        /// <summary>Shows a dialog with the estimated size before baking every glyph of the given fonts.</summary>
         public static bool ConfirmBakeAll(IList<NowFont> fonts)
         {
             const int MAX_LISTED_FONTS = 8;
@@ -200,8 +187,7 @@ namespace NowUI.Editor
             return builder.ToString();
         }
 
-        /// <summary>Appends the codepoints of <paramref name="addition"/> that
-        /// <paramref name="existing"/> lacks, keeping the authored order readable.</summary>
+        /// <summary>Appends the characters of <paramref name="addition"/> that <paramref name="existing"/> does not have yet.</summary>
         public static string Merge(string existing, string addition)
         {
             if (string.IsNullOrEmpty(addition))
@@ -229,7 +215,7 @@ namespace NowUI.Editor
             return builder.ToString();
         }
 
-        /// <summary>Repeats the font's last bake: every glyph, or the authored characters.</summary>
+        /// <summary>Repeats the font's last bake, either every glyph or its character subset.</summary>
         public static bool TryBake(NowFont font, out string error)
         {
             return BakesAllGlyphs(font)
@@ -237,7 +223,7 @@ namespace NowUI.Editor
                 : TryBake(font, font.bakedCharacters, out error);
         }
 
-        /// <summary>Bakes every codepoint the font maps into pages stored on its asset.</summary>
+        /// <summary>Bakes every codepoint the font maps and stores the pages on its asset.</summary>
         public static bool TryBakeAll(NowFont font, out string error)
         {
             if (!TryGetAssetPath(font, out string path, out error))
@@ -250,10 +236,7 @@ namespace NowUI.Editor
             return true;
         }
 
-        /// <summary>
-        /// Bakes <paramref name="characters"/> into pages stored as sub-assets of the font,
-        /// replacing any previous bake, and records the characters as the font's authored set.
-        /// </summary>
+        /// <summary>Bakes the given characters and stores the pages on the font asset, replacing any previous bake.</summary>
         public static bool TryBake(NowFont font, string characters, out string error)
         {
             if (!TryGetAssetPath(font, out string path, out error))
@@ -298,7 +281,7 @@ namespace NowUI.Editor
             AssetDatabase.SaveAssets();
         }
 
-        /// <summary>Removes the baked pages from the asset; the authored characters stay.</summary>
+        /// <summary>Removes the baked pages from the asset. The character subset is kept.</summary>
         public static void Clear(NowFont font)
         {
             if (font == null)
@@ -336,10 +319,6 @@ namespace NowUI.Editor
             }
         }
 
-        /// <summary>
-        /// The editor keeps texture data for serialization either way; clearing the flag
-        /// only tells players to drop the CPU copy after upload, halving the page's memory.
-        /// </summary>
         static void SetTextureReadable(Texture2D texture, bool readable)
         {
             var serialized = new SerializedObject(texture);
@@ -352,13 +331,6 @@ namespace NowUI.Editor
             serialized.ApplyModifiedPropertiesWithoutUndo();
         }
 
-        /// <summary>
-        /// Bakes <paramref name="characters"/> into in-memory pages without touching the
-        /// asset database. Every page is rasterized at the font's current glyph size and
-        /// base pixel range through the runtime compiler session; pages start at the
-        /// smallest power-of-two side that holds the set and spill into further pages
-        /// only past the font's configured page size, like runtime pages do.
-        /// </summary>
         internal static bool TryBakePages(
             NowFont font,
             string characters,
@@ -368,7 +340,6 @@ namespace NowUI.Editor
             return TryBakeCodepoints(font, CollectCodepoints(characters), characters, out pages, out error);
         }
 
-        /// <summary>Bakes every codepoint the font's cmap maps, in codepoint order.</summary>
         internal static bool TryBakeAllPages(
             NowFont font,
             out List<NowFont.BakedPage> pages,
@@ -507,11 +478,6 @@ namespace NowUI.Editor
             return codepoints;
         }
 
-        /// <summary>
-        /// Glyph indices the shaper produces for the authored text: each codepoint on its
-        /// own, plus every whitespace-free run so ligatures and contextual forms that only
-        /// appear between neighbours are included. Empty when shaping is unavailable.
-        /// </summary>
         static List<int> CollectShapedGlyphIndices(NowFont font, string characters, List<int> codepoints)
         {
             var indices = new List<int>();
@@ -560,11 +526,6 @@ namespace NowUI.Editor
             }
         }
 
-        /// <summary>
-        /// Grow-then-spill: while the first page is below the maximum side, a full atlas
-        /// asks the caller to restart at twice the side; at the maximum, a full atlas seals
-        /// the page and continues on a fresh one, matching what the runtime does.
-        /// </summary>
         static bool TryBakeFromSide(
             byte[] fontData,
             List<int> codepoints,
@@ -726,8 +687,6 @@ namespace NowUI.Editor
             return false;
         }
 
-        /// <summary>A single glyph no longer fits: grow the page while it may, otherwise
-        /// seal it and continue on a fresh session of the same side.</summary>
         static bool TrySpill(
             byte[] fontData,
             int atlasSize,
@@ -787,11 +746,6 @@ namespace NowUI.Editor
             return false;
         }
 
-        /// <summary>
-        /// Copies the session atlas into a page texture and registers every codepoint
-        /// record under its glyph-index key as well, so shaped and per-codepoint draws
-        /// resolve the same rasterized cell instead of baking the glyph twice.
-        /// </summary>
         static bool TrySealPage(
             NowUI.NowFontCompiler.DynamicSession session,
             List<NowFontAtlasInfo.Glyph> records,
