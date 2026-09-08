@@ -1,3 +1,10 @@
+# [1.13.0](https://github.com/BlenMiner/NowUI/compare/nowui-v1.12.0...nowui-v1.13.0) (2026-09-08)
+
+
+### Features
+
+* bake authored glyph pages into NowFont assets ([3386836](https://github.com/BlenMiner/NowUI/commit/3386836e7d4f2c6d97f230950fd8cb4a5a9591a4))
+
 # [1.12.0](https://github.com/BlenMiner/NowUI/compare/nowui-v1.11.8...nowui-v1.12.0) (2026-09-07)
 
 
