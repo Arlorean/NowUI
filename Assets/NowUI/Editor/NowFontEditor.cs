@@ -240,20 +240,13 @@ namespace NowUI.Editor
                     ++bakedFonts;
             }
 
-            using (new EditorGUILayout.HorizontalScope())
-            {
-                if (GUILayout.Button("Bake All Glyphs"))
-                    BakeAllTargets();
-
-                using (new EditorGUI.DisabledScope(bakedFonts == 0))
-                {
-                    if (GUILayout.Button("Remove Baked Pages"))
-                        ClearTargetBakes();
-                }
-            }
+            if (GUILayout.Button("Bake All Glyphs"))
+                BakeAllTargets();
 
             EditorGUILayout.Space(4f);
-            EditorGUILayout.LabelField("Characters (subset instead of all glyphs)", EditorStyles.miniLabel);
+            EditorGUILayout.LabelField(
+                $"Characters (subset instead of all glyphs): {CountCodepoints(_bakedCharacters.stringValue)}",
+                EditorStyles.miniLabel);
             EditorGUI.showMixedValue = _bakedCharacters.hasMultipleDifferentValues;
             EditorGUI.BeginChangeCheck();
             string characters = EditorGUILayout.TextArea(
@@ -277,22 +270,59 @@ namespace NowUI.Editor
                     AppendBakedPreset(NowFontBaker.LATIN_EXTENDED_A);
 
                 if (GUILayout.Button("Clear"))
-                    _bakedCharacters.stringValue = string.Empty;
+                    SetBakedCharacters(string.Empty);
             }
 
             bool hasCharacters = _bakedCharacters.hasMultipleDifferentValues ||
                 !string.IsNullOrEmpty(_bakedCharacters.stringValue);
 
-            using (new EditorGUI.DisabledScope(!hasCharacters))
+            using (new EditorGUILayout.HorizontalScope())
             {
-                if (GUILayout.Button("Bake Characters"))
-                    BakeCharacterTargets();
+                using (new EditorGUI.DisabledScope(!hasCharacters))
+                {
+                    if (GUILayout.Button("Bake Characters"))
+                        BakeCharacterTargets();
+                }
+
+                using (new EditorGUI.DisabledScope(bakedFonts == 0))
+                {
+                    if (GUILayout.Button("Remove Baked Pages"))
+                        ClearTargetBakes();
+                }
             }
         }
 
         void AppendBakedPreset(string preset)
         {
-            _bakedCharacters.stringValue = NowFontBaker.Merge(_bakedCharacters.stringValue, preset);
+            SetBakedCharacters(NowFontBaker.Merge(_bakedCharacters.stringValue, preset));
+        }
+
+        /// <summary>
+        /// A focused IMGUI text field keeps showing its own buffer and writes it back on
+        /// the next keystroke, so a value set behind it is invisible and then lost. Drop
+        /// keyboard focus first and the field re-reads the property.
+        /// </summary>
+        void SetBakedCharacters(string characters)
+        {
+            GUI.FocusControl(null);
+            EditorGUIUtility.editingTextField = false;
+            _bakedCharacters.stringValue = characters;
+        }
+
+        static string CountCodepoints(string characters)
+        {
+            if (string.IsNullOrEmpty(characters))
+                return "empty";
+
+            int count = 0;
+
+            for (int i = 0; i < characters.Length; ++i)
+            {
+                if (NowFont.ReadCodepoint(characters, ref i) > 0)
+                    ++count;
+            }
+
+            return count == 1 ? "1 character" : $"{count} characters";
         }
 
         static void DrawBakedStatus(NowFont font)
