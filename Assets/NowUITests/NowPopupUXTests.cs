@@ -454,6 +454,57 @@ public class NowPopupUXTests
         Assert.AreEqual(0, selected, "The discarded choice must never arrive late.");
     }
 
+    /// <summary>
+    /// The time picker carries no one-shot: it keeps a persistent parts mirror and writes the caller's value
+    /// whenever the two differ. That is the same defect by another mechanism, because the measure pass performs
+    /// the write and the live pass then compares the value against itself and reports nothing. Measured: without
+    /// the guard the hour moves to 08:30 and the caller never sees changed == true.
+    /// </summary>
+    [Test]
+    public void MeasuredFrameReportsTheTimePickerChangeItApplied()
+    {
+        var value = new System.TimeSpan(7, 30, 0);
+        bool changedOnLivePass = false;
+        var fieldCenter = FieldRect.center;
+
+        void Frame(NowInputSnapshot snapshot)
+        {
+            NowOverlay.ForceNewFrame();
+            _pointer.snapshot = snapshot;
+            _keyboard.frame = default;
+            NowTextInput.Invalidate();
+
+            var local = value;
+
+            using (NowInput.Begin(_pointer, Surface))
+            using (_drawList.Begin(Surface))
+            {
+                NowLayout.RunMeasured(
+                    new NowRect(0f, 0f, Surface.x, Surface.y),
+                    () =>
+                    {
+                        bool changed = Now.TimePicker(FieldRect).SetId(new NowId("tp")).Draw(ref local);
+                        if (changed && !NowInput.isPassive) changedOnLivePass = true;
+                    });
+
+                NowOverlay.Flush();
+            }
+
+            value = local;
+        }
+
+        Frame(Snapshot(fieldCenter, down: true, pressed: true));
+        Frame(Snapshot(fieldCenter, released: true));
+        Frame(Snapshot(fieldCenter));
+
+        // Nudge the hour through the popup's keyboard path; the repeat needs the direction held across frames.
+        for (int i = 0; i < 6; ++i)
+            Frame(Snapshot(fieldCenter, navigation: new Vector2(0f, 1f)));
+
+        Assert.AreNotEqual(new System.TimeSpan(7, 30, 0), value, "The hour must actually move, or this proves nothing.");
+        Assert.IsTrue(changedOnLivePass, "The live pass must report the change the measure pass applied.");
+    }
+
     [Test]
     public void CurrentPassPopupOwnsWheelBeforeDeferredContentFlushes()
     {

@@ -139,7 +139,13 @@ namespace NowUI
             ref bool open = ref NowControlState.Get<bool>(id);
             bool changed = false;
 
-            if (open && parts.initialized != 0)
+            // Only a live pass may commit the choice. This control has no one-shot: it compares a persistent
+            // TimeParts mirror against the caller's value each pass and writes when they differ. Unguarded, the
+            // MEASURE pass of a two-pass frame performs that write and the live pass then compares the value
+            // against itself and reports changed == false, so a caller whose variable persists keeps the new time
+            // and never learns it changed. Every auto-sizing host runs two passes unconditionally. Same guard as
+            // NowDropdown.Draw; here it protects a mirror sync rather than a latch drain.
+            if (!NowInput.isPassive && open && parts.initialized != 0)
             {
                 int previousHour = value.Hours;
                 int previousMinute = value.Minutes;

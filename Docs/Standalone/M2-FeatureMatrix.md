@@ -150,7 +150,7 @@ supported by a measurement rather than by reading.
    `RunMeasured` gets the value and loses the event. A caller whose state is re-seeded from outside on every
    pass, which is what the JavaScript bridge is by design (§5.6 of `M3-Spec.md`), loses the value as well. Same
    shape at `NowComboBox.cs:142` and `:242`, `NowValueControls.cs:506-519` (the colour picker) and
-   `NowDatePicker.cs:181-190`. `NowTimePicker` is NOT affected — it derives its value from persistent `TimeParts`
+   `NowDatePicker.cs:181-190`. `NowTimePicker` was recorded here as NOT affected, wrongly (see the eleventh site below) — it derives its value from persistent `TimeParts`
    each pass rather than from a one-shot — which is what makes this a shape rather than a guess.
    **Measured four ways**: headless, in a two-pass frame with a synthetic pointer, bridge shape loses the value
    and gallery shape keeps it; and in the browser, same build and same driven click, `?app=app` and `?app=popups`
@@ -164,8 +164,9 @@ supported by a measurement rather than by reading.
    so a passive pass observes without mutating, which is the rule `NowControlState.AdvanceTransition`
    (`:313`) and `RepeatByStateKey` (`:486`) already followed. It costs one frame of measurement against the
    previous label, self-correcting on the next frame, and that is strictly cheaper than a destroyed choice.
-   Applied at **ten** sites. The first report of this said eight and then listed nine, which was simply a
-   miscount; the tenth is `NowFilePicker`, found later by a second sweep and described below. Four were found by
+   Applied at **eleven** sites. The first report of this said eight and then listed nine, which was simply a
+   miscount; the tenth is `NowFilePicker` and the eleventh `NowTimePicker`, both found later by a second sweep and
+   described below. Four were found by
    sweeping for the shape rather than reported:
    `NowDropdown.cs`, `NowComboBox.cs` ×3 (the int overload, the string overload, and `pendingCustomValue`, the
    free-text commit), `NowMaskField.cs` (whose clear sat *outside* the `if`, so a passive pass ate it
@@ -178,6 +179,22 @@ supported by a measurement rather than by reading.
    (`:3238-3240`) sets it, then ordinary frames: without the guard, one-pass commits and two-pass reports
    `changed == False`; with it, both commit. Not reachable from JavaScript, since the picker is outside the
    JavaScript surface.
+
+   **An eleventh site, and the reason a shape-based sweep still missed it.** `NowTimePicker` carries no one-shot
+   at all. It keeps a persistent `TimeParts` mirror and, on every pass, writes the caller's value whenever the
+   mirror and the value differ (`NowTimePicker.cs:147-161`). That is the same defect with the latch inverted: the
+   measure pass performs the write, and the live pass then compares the value against itself and reports nothing.
+   Earlier notes in this document asserted the opposite, that the picker "derives its value from persistent
+   TimeParts each pass rather than from a one-shot - which is what makes this a shape rather than a guess." The
+   reasoning was right and the conclusion was wrong; persistence is what makes it vulnerable, not what protects
+   it. Measured through the real control, opening the popup with a click and moving the hour on the real keyboard
+   path: without the guard the hour reaches 08:30 and the live pass reports `changed == false`; with it, both
+   pass shapes report the change. `NowPopupUXTests.MeasuredFrameReportsTheTimePickerChangeItApplied` fails
+   without it.
+
+   The bridge was never affected here, which is why the browser looked fine: `Replay.Controls.cs` re-seeds the
+   value from the op stream on every pass, so the mirror differs from the value on both passes and both report
+   the change. Only a C# caller whose variable persists loses the event.
 
    **The trigger set is wider than "someone called RunMeasured".** Four shipped host components hard-code the
    two-pass path for the whole user callback, every frame: `NowLayoutGraphic.cs:17`,
