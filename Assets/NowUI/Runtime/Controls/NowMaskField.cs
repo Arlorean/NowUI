@@ -137,14 +137,14 @@ namespace NowUI
             ref var pending = ref NowControlState.Get<PendingMask>(id, "pending");
             bool changed = false;
 
-            if (pending.hasValue != 0)
+            // Only a live pass may commit the choice. See NowDropdown.Draw for why.
+            if (!NowInput.isPassive && pending.hasValue != 0)
             {
                 int next = pending.value & allBits;
                 changed = next != mask;
                 mask = next;
+                pending.hasValue = 0;
             }
-
-            pending.hasValue = 0;
 
             var textStyle = NowControls.Text(theme, NowTextStyle.Body);
             float lineHeight = textStyle.font != null

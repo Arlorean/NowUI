@@ -181,7 +181,8 @@ namespace NowUI
             ref var pending = ref NowControlState.Get<PendingDate>(id.Child(PendingDateSeed));
             bool changed = false;
 
-            if (pending.has != 0)
+            // Only a live pass may commit the choice. See NowDropdown.Draw for why.
+            if (!NowInput.isPassive && pending.has != 0)
             {
                 var next = new DateTime(pending.ticks).Date + value.TimeOfDay;
                 changed = next != value;

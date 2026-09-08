@@ -506,7 +506,8 @@ namespace NowUI
             ref var pending = ref NowControlState.Get<PendingColor>(pendingId);
             bool changed = false;
 
-            if (pending.hasValue != 0)
+            // Only a live pass may commit the choice. See NowDropdown.Draw for why.
+            if (!NowInput.isPassive && pending.hasValue != 0)
             {
                 var pendingValue = Clamp01(pending.value);
                 pending.hasValue = 0;
@@ -1417,7 +1418,8 @@ namespace NowUI
             ref var pending = ref NowControlState.Get<PendingGradient>(pendingId);
             bool changed = false;
 
-            if (pending.hasValue != 0)
+            // Only a live pass may commit the edit. See NowDropdown.Draw for why.
+            if (!NowInput.isPassive && pending.hasValue != 0)
             {
                 pending.hasValue = 0;
                 ApplyGradient(value, pending.colorKeys, pending.alphaKeys, pending.mode);
@@ -2846,7 +2848,8 @@ namespace NowUI
             ref var pending = ref NowControlState.Get<PendingCurve>(pendingId);
             bool changed = false;
 
-            if (pending.hasValue != 0)
+            // Only a live pass may commit the edit. See NowDropdown.Draw for why.
+            if (!NowInput.isPassive && pending.hasValue != 0)
             {
                 pending.hasValue = 0;
                 ApplyCurve(value, pending.keys, pending.preWrapMode, pending.postWrapMode);

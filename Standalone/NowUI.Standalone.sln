@@ -27,6 +27,10 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NowUI.Extensions.Sdf", "Ext
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Tests", "Tests\Tests.csproj", "{4AC207AD-B2DE-48DB-AF29-2B7F74F5AB7A}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NowUI.Bridge", "NowUI.Bridge\NowUI.Bridge.csproj", "{D8C58E7F-81B0-4AB9-899E-B233CD8D5C5A}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NowUI.Bridge.Tests", "NowUI.Bridge.Tests\NowUI.Bridge.Tests.csproj", "{2B309A95-9EC6-42A8-B7AD-76139848F083}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -80,6 +84,14 @@ Global
 		{4AC207AD-B2DE-48DB-AF29-2B7F74F5AB7A}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{4AC207AD-B2DE-48DB-AF29-2B7F74F5AB7A}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{4AC207AD-B2DE-48DB-AF29-2B7F74F5AB7A}.Release|Any CPU.Build.0 = Release|Any CPU
+		{D8C58E7F-81B0-4AB9-899E-B233CD8D5C5A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{D8C58E7F-81B0-4AB9-899E-B233CD8D5C5A}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{D8C58E7F-81B0-4AB9-899E-B233CD8D5C5A}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{D8C58E7F-81B0-4AB9-899E-B233CD8D5C5A}.Release|Any CPU.Build.0 = Release|Any CPU
+		{2B309A95-9EC6-42A8-B7AD-76139848F083}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{2B309A95-9EC6-42A8-B7AD-76139848F083}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{2B309A95-9EC6-42A8-B7AD-76139848F083}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{2B309A95-9EC6-42A8-B7AD-76139848F083}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{DFCB9F61-CB96-4A16-9580-D35FCF490A83} = {1BA93781-8554-4AB9-B1CB-DE5A0E1CE85B}

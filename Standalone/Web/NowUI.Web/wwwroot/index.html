@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>NowUI</title>
+  <style>
+    /* A full-window canvas and nothing else. The page has no DOM to speak of on purpose: everything visible is
+       drawn by NowUI through WebGL2, so anything the browser lays out here would be a second, competing answer to
+       "what is on screen". */
+    html,
+    body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #000;
+    }
+
+    #nowui-canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+  </style>
+  <script type="module" src="./main.js"></script>
+</head>
+
+<body>
+  <canvas id="nowui-canvas"></canvas>
+</body>
+
+</html>

@@ -1,0 +1,111 @@
+<Project Sdk="Microsoft.NET.Sdk.WebAssembly">
+  <!--
+    The browser host for the engine-free NowUI build: the same NowUI.Runtime sources Unity compiles, on the same
+    NowUI.Engine shim, running under WebAssembly and drawing through WebGL2.
+
+    Created from `dotnet new wasmbrowser`. Nothing under Assets/ and nothing in NowUI.Runtime or NowUI.Engine is
+    modified by this project; it only references them.
+
+    See Docs/Standalone/M2-Scouting.md (what a frame asks the backend for, and the payload measurements behind the two
+    properties below) and Docs/Standalone/M2-ShaderPort.md (the two shader programs).
+  -->
+  <PropertyGroup>
+    <!--
+      net9.0-browser, not net9.0, since NowUI.Bridge landed. This is a restore-level requirement, not a preference:
+      a library that declares [JSImport] must target net9.0-browser (a browser-wasm RuntimeIdentifier forces
+      OutputType=Exe and the project cannot build as a library at all - verified), and NuGet refuses a net9.0-browser
+      ProjectReference from a net9.0 project with NU1201. SetTargetFramework on the reference does not help; restore
+      ignores it.
+
+      The change is a no-op for what this project produces. The WebAssembly SDK already pins RuntimeIdentifier to
+      browser-wasm, this assembly already declares [assembly: SupportedOSPlatform("browser")] in Properties, and the
+      build output is byte-identical apart from moving from bin/Release/net9.0 to bin/Release/net9.0-browser. Nothing
+      in the repository refers to that path.
+    -->
+    <TargetFramework>net9.0-browser</TargetFramework>
+    <RootNamespace>NowUI.Web</RootNamespace>
+    <AssemblyName>NowUI.Web</AssemblyName>
+    <LangVersion>latest</LangVersion>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+
+    <!--
+      The two payload properties, from M2-Scouting.md section 2. Measured, not assumed: a default Release publish is
+      2017 KB brotli and these two take it to 943 KB, almost all of it ICU globalization data that a browser host has
+      no use for. They belong here rather than in Standalone/Directory.Build.props, because the test project needs
+      real cultures and must not inherit InvariantGlobalization.
+    -->
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <PublishTrimmed>true</PublishTrimmed>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../NowUI.Runtime/NowUI.Runtime.csproj" />
+    <ProjectReference Include="../../NowUI.Engine/NowUI.Engine.csproj" />
+    <!-- The managed half of the JavaScript surface (Docs/Standalone/M3-Spec.md section 9). -->
+    <ProjectReference Include="../../NowUI.Bridge/NowUI.Bridge.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      The seven extension assemblies. Milestone 1 made them compile engine-free; until this change nothing had ever
+      LINKED them into a browser payload, so "they compile" was the whole of what was known about them. Referencing
+      them here is what turns the extension row of the feature matrix from a prediction into a measurement.
+
+      Sdf is referenced like the rest even though its shader programs are not ported, and deliberately so: with the
+      reference in place its failure is a specific one this host can name at the draw call ("NowUI/SDF Scene is not
+      ported"), where without it the only honest statement available would have been "not linked". The Sdf gallery
+      area is a report page and does not call into the extension - see GalleryAreas.Extensions.cs.
+
+      Payload cost, measured by publishing with and without this ItemGroup: see the report accompanying this slice.
+      A trimmed publish keeps only what the gallery actually reaches.
+    -->
+    <ProjectReference Include="../../Extensions/NowUI.Extensions.Markdown/NowUI.Extensions.Markdown.csproj" />
+    <ProjectReference Include="../../Extensions/NowUI.Extensions.Markup/NowUI.Extensions.Markup.csproj" />
+    <ProjectReference Include="../../Extensions/NowUI.Extensions.Markdown.Markup/NowUI.Extensions.Markdown.Markup.csproj" />
+    <ProjectReference Include="../../Extensions/NowUI.Extensions.CodeEditor/NowUI.Extensions.CodeEditor.csproj" />
+    <ProjectReference Include="../../Extensions/NowUI.Extensions.Docking/NowUI.Extensions.Docking.csproj" />
+    <ProjectReference Include="../../Extensions/NowUI.Extensions.NodeGraph/NowUI.Extensions.NodeGraph.csproj" />
+    <ProjectReference Include="../../Extensions/NowUI.Extensions.Sdf/NowUI.Extensions.Sdf.csproj" />
+  </ItemGroup>
+
+
+  <ItemGroup>
+    <!--
+      Trimming would otherwise remove the members the shim reaches by NAME - the Awake/OnEnable/OnDisable/OnDestroy
+      handlers ScriptableObject.CreateInstance dispatches, and the internal Shader constructor WebResourceProvider
+      mints through. The descriptor names exactly those and nothing else; it costs 108 KB brotli, and the file itself
+      records what the alternatives cost.
+    -->
+    <TrimmerRootDescriptor Include="ILLink.Descriptors.xml" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      The placeholder is compiled ONLY while the real backend is absent, so that this project builds, publishes and
+      can be measured on its own. The moment WebGL2Backend.cs lands next to it, the condition below drops the
+      placeholder and nothing has to be deleted by hand.
+    -->
+    <Compile Remove="Placeholder/**/*.cs" Condition="Exists('$(MSBuildThisFileDirectory)WebGL2Backend.cs')" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The exported fonts, material templates and shader metadata the host fetches. Same tree the standalone test
+         run reads from disk; see Standalone/Tests/Support/NowStandaloneTestResources.cs for the format. -->
+    <NowUIFixture Include="$(MSBuildThisFileDirectory)../../Tests/Fixtures/**/*" />
+  </ItemGroup>
+
+  <Target Name="CopyNowUIFixtures"
+          BeforeTargets="PrepareForBuild;ResolveStaticWebAssetsInputs"
+          Inputs="@(NowUIFixture)"
+          Outputs="@(NowUIFixture->'$(MSBuildThisFileDirectory)wwwroot/Fixtures/%(RecursiveDir)%(Filename)%(Extension)')">
+    <!--
+      Copied into wwwroot rather than referenced in place, because the WebAssembly SDK publishes wwwroot as the site
+      root and the host fetches these over HTTP at start-up. wwwroot/Fixtures is generated output, and .gitignore
+      beside this file says so.
+    -->
+    <Copy SourceFiles="@(NowUIFixture)"
+          DestinationFiles="@(NowUIFixture->'$(MSBuildThisFileDirectory)wwwroot/Fixtures/%(RecursiveDir)%(Filename)%(Extension)')"
+          SkipUnchangedFiles="true" />
+  </Target>
+</Project>

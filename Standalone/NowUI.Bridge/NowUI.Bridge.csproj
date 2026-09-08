@@ -1,0 +1,51 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    The managed half of the JavaScript surface (Docs/Standalone/M3-Spec.md section 5). References NowUI.Runtime and
+    nothing else; the browser host references this.
+
+    TWO target frameworks, and the second one is W2's doing.
+
+    net9.0-browser is the one the browser host consumes, and it is not cosmetic: [JSImport] and JSMarshalAs live in
+    System.Runtime.InteropServices.JavaScript, which exists only in the browser targeting pack, and the interop
+    source generator only runs for a browser target. The two other ways to reach it were tried and rejected:
+
+      - net9.0 with RuntimeIdentifier=browser-wasm. The interop generator runs and the attributes resolve, but the
+        SDK forces OutputType back to Exe for that RID, so the project fails with CS5001 no matter what OutputType
+        says. Verified, not assumed.
+      - Declaring the [JSImport]s inside NowUI.Web. That works, and it is what the existing bridges do, but it puts
+        the ABI in the host rather than in the project section 9 says owns it.
+
+    net9.0 exists so Standalone/NowUI.Bridge.Tests can reference this project AT ALL. A net9.0 test project cannot
+    reference a net9.0-browser one (NU1201), and the alternative - linking the sources into the test assembly with
+    <Compile Include="../NowUI.Bridge/*.cs"> - would mean the tests exercise a COPY of the bridge rather than the
+    bridge. Under net9.0 exactly one file is dropped, BridgeInterop.cs, which is the only file with a [JSImport] in
+    it; everything the tests assert about - the ABI, the buffers, the growth protocol, the validator, the identity
+    plumbing and the decoder - compiles and runs identically on both.
+  -->
+  <PropertyGroup>
+    <!-- Cleared so TargetFrameworks wins over the single TargetFramework in Standalone/Directory.Build.props. -->
+    <TargetFramework></TargetFramework>
+    <TargetFrameworks>net9.0-browser;net9.0</TargetFrameworks>
+    <RootNamespace>NowUI.Bridge</RootNamespace>
+    <AssemblyName>NowUI.Bridge</AssemblyName>
+    <LangVersion>latest</LangVersion>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(TargetFramework)'!='net9.0-browser'">
+    <!--
+      The only two browser-only files: the [JSImport] declarations, and the assembly-level
+      [SupportedOSPlatform("browser")] that exists to make CA1416 check them.
+    -->
+    <Compile Remove="BridgeInterop.cs" />
+    <Compile Remove="Properties/AssemblyInfo.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../NowUI.Runtime/NowUI.Runtime.csproj" />
+  </ItemGroup>
+
+  <!-- Gate G10 / invariant I1. See the file for what it checks and why it is a build failure. -->
+  <Import Project="InvariantI1.targets" />
+</Project>

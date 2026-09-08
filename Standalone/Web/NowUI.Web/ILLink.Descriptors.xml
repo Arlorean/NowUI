@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Trimmer roots for the browser host.
+
+  PublishTrimmed is on (Docs/Standalone/M2-Scouting.md section 2), and a full trim is right for everything a browser
+  never reaches - the six hundred kilobytes of NowUI controls, inspector, docking, markdown and code editor that the
+  quick-start scene does not touch are correctly removed. What a full trim CANNOT see is the handful of members the
+  shim reaches by NAME, and every one of them is here:
+
+    the six ScriptableObject subclasses   UnityEngine.ScriptableObject.CreateInstance activates the type through
+                                          Activator and dispatches Awake / OnEnable / OnDisable / OnDestroy by name
+                                          (Standalone/NowUI.Engine/Object/ScriptableObject.cs:48 and :140). Those four
+                                          methods are private and nothing calls them statically, so a full trim
+                                          removes them and the object's lifecycle silently stops running -
+                                          NowFont.OnDisable (NowFont.cs:1649) is the one that matters here, since the
+                                          page bakes a font atlas. Preserved whole rather than method-by-method
+                                          because the reflection is by name and a rename would not be caught.
+
+    UnityEngine.Shader                    WebResourceProvider mints one through the shim's internal
+                                          Shader(string, NowShaderInfo) constructor, by reflection, because NowUI.Web
+                                          is not a friend assembly. The [DynamicDependency] on
+                                          WebResourceProvider.NewShader states the same thing; this is belt and
+                                          braces, and it costs a few hundred bytes.
+
+  MEASURED, not guessed. Publishing the host three ways (placeholder backend, Release, brotli, framework + managed +
+  page, fixtures excluded):
+
+      no descriptor at all                      1167 KB   - and NowFont.OnDisable is gone
+      this file                                 1275 KB
+      whole NowUI.Runtime + NowUI.Engine        1610 KB
+
+  So the correctness this file buys costs 108 KB, and the lazy version of the same correctness would cost 443 KB.
+
+  NOT rooted, deliberately: the ~40 [RuntimeInitializeOnLoadMethod] methods NowRuntime.ResetAll finds by reflection.
+  The frame loop never calls ResetAll - neither does the standalone test host before its run - so nothing depends on
+  them here. A host that ever does call ResetAll under a trimmed publish will find it a no-op, which is a real
+  behaviour difference and belongs in that host's notes, not in this file's payload.
+-->
+<linker>
+  <assembly fullname="NowUI.Runtime">
+    <type fullname="NowUI.NowFontAsset" preserve="all" />
+    <type fullname="NowUI.NowFont" preserve="all" />
+    <type fullname="NowUI.NowFontFamily" preserve="all" />
+    <type fullname="NowUI.NowThemeAsset" preserve="all" />
+    <type fullname="NowUI.NowControlRenderer" preserve="all" />
+    <type fullname="NowUI.NowLottieAsset" preserve="all" />
+  </assembly>
+  <assembly fullname="NowUI.Engine">
+    <type fullname="UnityEngine.Shader" preserve="all" />
+  </assembly>
+</linker>

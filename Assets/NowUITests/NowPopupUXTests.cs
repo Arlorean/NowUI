@@ -312,6 +312,79 @@ public class NowPopupUXTests
         }
     }
 
+    // ------------------------------------------------------ the measure pass must not eat a popup's commit
+
+    /// <summary>
+    /// One frame of a dropdown drawn through <see cref="NowLayout.RunMeasured"/>, which draws the UI TWICE and
+    /// throws the first pass away. The local stands in for a caller's persisting variable, and only the live
+    /// pass's <c>changed</c> is reported, because the measure pass's return value is discarded by definition.
+    /// </summary>
+    bool DrawMeasuredDropdownFrame(ref int selected, NowInputSnapshot snapshot)
+    {
+        NowOverlay.ForceNewFrame();
+        _pointer.snapshot = snapshot;
+        _keyboard.frame = default;
+        NowTextInput.Invalidate();
+
+        int local = selected;
+        bool changed = false;
+
+        using (NowInput.Begin(_pointer, Surface))
+        using (_drawList.Begin(Surface))
+        {
+            NowLayout.RunMeasured(
+                new NowRect(0f, 0f, Surface.x, Surface.y),
+                () =>
+                {
+                    bool passChanged = Now.Dropdown(FieldRect, "dd", Options).Draw(ref local);
+
+                    if (!NowInput.isPassive)
+                        changed = passChanged;
+                });
+
+            NowOverlay.Flush();
+        }
+
+        selected = local;
+        return changed;
+    }
+
+    /// <summary>
+    /// A dropdown hands its choice to the NEXT frame through a one-shot slot in <c>NowControlState</c>. Under
+    /// <see cref="NowLayout.RunMeasured"/> that frame runs the UI twice, and the first pass is passive and
+    /// discarded - so a commit that is not guarded against passive passes is drained by the measure pass and
+    /// never reaches the caller. On screen that is indistinguishable from clicking outside the popup: it opens,
+    /// it highlights, it closes, and nothing changes.
+    /// </summary>
+    [Test]
+    public void MeasuredFramePublishesTheDropdownChoiceItCommitted()
+    {
+        int selected = 0;
+        var fieldCenter = FieldRect.center;
+
+        DrawMeasuredDropdownFrame(ref selected, Snapshot(fieldCenter, down: true, pressed: true));
+        DrawMeasuredDropdownFrame(ref selected, Snapshot(fieldCenter, released: true));
+
+        Assert.IsTrue(
+            NowControlState.Get<bool>(ResolveControlId("dd")),
+            "The press must open the popup, or the rest of this test proves nothing.");
+
+        var styles = NowTheme.themeAsset.controlStyles;
+        float itemHeight = styles.dropdownItemHeight;
+        float popupTop = FieldRect.yMax + styles.dropdownPopupGap + styles.popupPadding;
+        var onHigh = new Vector2(fieldCenter.x, popupTop + 2.5f * itemHeight);
+
+        DrawMeasuredDropdownFrame(ref selected, Snapshot(onHigh));
+        DrawMeasuredDropdownFrame(ref selected, Snapshot(onHigh, down: true, pressed: true));
+        DrawMeasuredDropdownFrame(ref selected, Snapshot(onHigh, released: true));
+
+        // The choice was latched by the release; the commit lands on the frame after it.
+        bool changed = DrawMeasuredDropdownFrame(ref selected, Snapshot(onHigh));
+
+        Assert.AreEqual(2, selected, "The measure pass must not consume the choice the popup latched.");
+        Assert.IsTrue(changed, "The live pass must report the change, not just leave the value behind.");
+    }
+
     [Test]
     public void CurrentPassPopupOwnsWheelBeforeDeferredContentFlushes()
     {

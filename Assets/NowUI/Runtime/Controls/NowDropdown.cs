@@ -95,14 +95,18 @@ namespace NowUI
             ref int pending = ref NowControlState.Get<int>(id, "pending");
             bool changed = false;
 
-            if (pending > 0 && pending - 1 < optionCount)
+            // Only a live pass may commit the choice. NowLayout.RunMeasured, NowEffects and NowViewStack draw the
+            // same UI twice and discard the first pass, so committing on a passive pass either eats the choice
+            // outright or, for a caller whose variable persists, leaves the live pass comparing the new value
+            // against itself and reporting changed == false. A passive pass observes without mutating, as
+            // NowControlState.AdvanceTransition and RepeatByStateKey already do.
+            if (!NowInput.isPassive && pending > 0 && pending - 1 < optionCount)
             {
                 int next = pending - 1;
                 changed = next != selected;
                 selected = next;
+                pending = 0;
             }
-
-            pending = 0;
 
             var textStyle = NowControls.Text(theme, NowTextStyle.Body);
             float lineHeight = textStyle.font != null
