@@ -704,11 +704,15 @@ on first use exactly like pages a warmed session would have produced. Everything
 outside the baked set keeps baking on demand, so the feature changes when
 glyphs are rasterized, never whether a glyph can be drawn.
 
-1. Select the `NowFont` asset and type the characters to bake into
-   **Baked Pages > Characters**, or add a preset (ASCII, Latin-1, Latin Ext-A).
-2. Press **Bake**. `Assets > NowUI > Bake Font Glyphs` bakes every selected
-   `NowFont` or `NowFontFamily` using each font's authored characters.
-3. Ship the asset. The Inspector's atlas strip labels baked pages **Baked** and
+1. Select the `NowFont` asset and press **Baked Pages > Bake All Glyphs**. A
+   dialog states what every codepoint the font maps will cost before anything
+   is written; a Latin face is a few megabytes, a CJK face can be hundreds.
+2. For a subset instead, type the characters (or add the ASCII, Latin-1,
+   Latin Ext-A presets) and press **Bake Characters**.
+3. `Assets > NowUI > Bake Font Glyphs` repeats each selected `NowFont` or
+   `NowFontFamily`'s last bake, all glyphs when nothing was authored, with one
+   confirmation for the all-glyph fonts.
+4. Ship the asset. The Inspector's atlas strip labels baked pages **Baked** and
    runtime pages **Cache**.
 
 Baking runs the same compiler session as the runtime at the font's current glyph
@@ -729,8 +733,10 @@ or pixel range leaves the pages dormant (the Inspector warns) until you bake
 again; recompiling the font from its source file discards them. Color fonts bake
 on demand only.
 
-`NowFontBaker.TryBake(font, characters, out error)` performs the same bake from
-editor scripts; `NowFontBaker.Clear(font)` removes the pages.
+`NowFontBaker.TryBakeAll(font, out error)` and
+`NowFontBaker.TryBake(font, characters, out error)` perform the same bakes from
+editor scripts, `NowFontBaker.EstimateBake` reports the expected pages and
+bytes, and `NowFontBaker.Clear(font)` removes the pages.
 
 ## Example Scenes And Scripts
 

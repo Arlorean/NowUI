@@ -187,7 +187,7 @@ public class NowFontBakedPagesTests
     {
         var font = CreateFont();
         var pages = Bake(font, NowFontBaker.ASCII);
-        font.SetBakedPages(NowFontBaker.ASCII, pages.ToArray());
+        font.SetBakedPages(NowFontBaker.ASCII, false, pages.ToArray());
 
         Assert.IsTrue(font.GetGlyph('A', FontSize, out var glyph));
         Assert.Greater(glyph.advance, 0f);
@@ -206,7 +206,7 @@ public class NowFontBakedPagesTests
     public void BakedRecordsMatchDynamicBake()
     {
         var baked = CreateFont();
-        baked.SetBakedPages(NowFontBaker.ASCII, Bake(baked, NowFontBaker.ASCII).ToArray());
+        baked.SetBakedPages(NowFontBaker.ASCII, false, Bake(baked, NowFontBaker.ASCII).ToArray());
 
         var dynamic = CreateFont();
         dynamic.EnsureGlyphs(NowFontBaker.ASCII, FontSize);
@@ -229,7 +229,7 @@ public class NowFontBakedPagesTests
     public void StaleBakedPagesStayDormant()
     {
         var font = CreateFont();
-        font.SetBakedPages(NowFontBaker.ASCII, Bake(font, NowFontBaker.ASCII).ToArray());
+        font.SetBakedPages(NowFontBaker.ASCII, false, Bake(font, NowFontBaker.ASCII).ToArray());
         Assert.IsFalse(font.bakedPagesStale);
 
         font.dynamicAtlasSize = 48;
@@ -246,7 +246,7 @@ public class NowFontBakedPagesTests
     {
         var font = CreateFont();
         var pages = Bake(font, NowFontBaker.ASCII);
-        font.SetBakedPages(NowFontBaker.ASCII, pages.ToArray());
+        font.SetBakedPages(NowFontBaker.ASCII, false, pages.ToArray());
 
         Assert.IsTrue(font.GetGlyph('A', FontSize, out _));
         font.ClearDynamicCache();
@@ -263,7 +263,7 @@ public class NowFontBakedPagesTests
     public void OutlineTierStillBakesDynamically()
     {
         var font = CreateFont();
-        font.SetBakedPages(NowFontBaker.ASCII, Bake(font, NowFontBaker.ASCII).ToArray());
+        font.SetBakedPages(NowFontBaker.ASCII, false, Bake(font, NowFontBaker.ASCII).ToArray());
 
         Assert.IsTrue(font.GetGlyph('A', FontSize, 0.2f, out _));
         Assert.AreEqual(1, font.dynamicSessionCount, "A wider distance-range tier is not baked and resolves dynamically.");
@@ -273,7 +273,7 @@ public class NowFontBakedPagesTests
     public void GlyphsOutsideTheBakeStillBakeDynamically()
     {
         var font = CreateFont();
-        font.SetBakedPages(NowFontBaker.ASCII, Bake(font, NowFontBaker.ASCII).ToArray());
+        font.SetBakedPages(NowFontBaker.ASCII, false, Bake(font, NowFontBaker.ASCII).ToArray());
 
         Assert.IsTrue(font.GetGlyph('é', FontSize, out var glyph));
         Assert.Greater(glyph.advance, 0f);
@@ -319,14 +319,67 @@ public class NowFontBakedPagesTests
         Assert.Greater(glyph.advance, 0f);
         Assert.AreEqual(0, loaded.dynamicSessionCount);
 
+        Assert.IsFalse(loaded.bakedAllGlyphs);
+        Assert.IsTrue(NowFontBaker.TryBakeAll(loaded, out error), error);
+        Assert.IsTrue(loaded.bakedAllGlyphs);
+        Assert.AreEqual(NowFontBaker.ASCII, loaded.bakedCharacters, "Baking all glyphs keeps the authored characters.");
+        Assert.IsTrue(NowFontBaker.BakesAllGlyphs(loaded));
+        Assert.Greater(loaded.bakedGlyphCount, NowFontBaker.ASCII.Length * 2 - 2);
+
         NowFontBaker.Clear(loaded);
         Assert.AreEqual(0, loaded.bakedPageCount);
+        Assert.IsFalse(loaded.bakedAllGlyphs);
         Assert.AreEqual(NowFontBaker.ASCII, loaded.bakedCharacters, "Clearing keeps the authored characters.");
 
         representations = AssetDatabase.LoadAllAssetRepresentationsAtPath(TempAssetPath);
 
         for (int i = 0; i < representations.Length; ++i)
             Assert.IsFalse(representations[i] is Texture2D, "Clearing removes the texture sub-assets.");
+    }
+
+    [Test]
+    public void BakeAllCoversTheWholeCmap()
+    {
+        var font = CreateFont();
+        int allGlyphs = NowFontBaker.CountAllGlyphs(font);
+        Assert.Greater(allGlyphs, NowFontBaker.ASCII.Length, "The test font maps more than ASCII.");
+
+        Assert.IsTrue(NowFontBaker.TryBakeAllPages(font, out var pages, out string error), error);
+
+        for (int i = 0; i < pages.Count; ++i)
+            _cleanup.Add(pages[i].texture);
+
+        var keys = CollectKeys(pages);
+        int codepointRecords = 0;
+
+        foreach (int key in keys)
+        {
+            if (key >= 0)
+                ++codepointRecords;
+        }
+
+        foreach (int codepoint in Codepoints(NowFontBaker.ASCII))
+            Assert.IsTrue(keys.Contains(codepoint), $"U+{codepoint:X4} was not baked.");
+
+        Assert.LessOrEqual(codepointRecords, allGlyphs);
+        Assert.Greater(codepointRecords, NowFontBaker.ASCII.Length);
+
+        NowFontBaker.EstimateBake(font, allGlyphs, out int estimatedPages, out _, out long estimatedBytes);
+        Assert.GreaterOrEqual(estimatedPages + 1, pages.Count, "The estimate tracks the real page count closely.");
+        Assert.Greater(estimatedBytes, 0);
+    }
+
+    [Test]
+    public void EstimateMatchesTheAsciiBake()
+    {
+        var font = CreateFont();
+        var pages = Bake(font, NowFontBaker.ASCII);
+
+        NowFontBaker.EstimateBake(font, NowFontBaker.ASCII.Length, out int pageCount, out int pageSide, out long bytes);
+        Assert.AreEqual(pages.Count, pageCount);
+        Assert.AreEqual(pages[0].texture.width, pageSide);
+        Assert.AreEqual((long)pageSide * pageSide * 4 * pageCount, bytes);
+        Assert.IsTrue(NowFontBaker.BakesAllGlyphs(font), "A font with nothing authored bakes all glyphs by default.");
     }
 
     [Test]

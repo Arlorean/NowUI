@@ -35,18 +35,23 @@ namespace NowUI.Editor
                 return;
             }
 
+            var allGlyphFonts = new List<NowFont>();
+
+            for (int i = 0; i < fonts.Count; ++i)
+            {
+                if (BakesAllGlyphs(fonts[i]))
+                    allGlyphFonts.Add(fonts[i]);
+            }
+
+            if (allGlyphFonts.Count > 0 && !ConfirmBakeAll(allGlyphFonts))
+                return;
+
             try
             {
                 for (int i = 0; i < fonts.Count; ++i)
                 {
                     var font = fonts[i];
                     EditorUtility.DisplayProgressBar("Bake Font Glyphs", font.name, i / (float)fonts.Count);
-
-                    if (string.IsNullOrEmpty(font.bakedCharacters))
-                    {
-                        Debug.Log($"NowUI: {font.name} has no baked characters authored; skipped.");
-                        continue;
-                    }
 
                     if (TryBake(font, out string error))
                         Debug.Log($"NowUI: baked {font.bakedGlyphCount} glyph records into {font.bakedPageCount} page(s) for {font.name}.");
@@ -58,6 +63,95 @@ namespace NowUI.Editor
             {
                 EditorUtility.ClearProgressBar();
             }
+        }
+
+        /// <summary>A font bakes all of its glyphs unless a character subset was authored
+        /// and its last bake used that subset.</summary>
+        public static bool BakesAllGlyphs(NowFont font)
+        {
+            return font != null && (font.bakedAllGlyphs || string.IsNullOrEmpty(font.bakedCharacters));
+        }
+
+        /// <summary>Number of codepoints the font maps; what "all glyphs" bakes.</summary>
+        public static int CountAllGlyphs(NowFont font)
+        {
+            return CollectAllCodepoints(font).Count;
+        }
+
+        /// <summary>
+        /// Page count and asset bytes a bake of <paramref name="glyphCount"/> glyphs is
+        /// expected to take at the font's current settings. Glyph cells are estimated at
+        /// their full padded size; real bakes land close to this, a page over at most
+        /// when a font has many glyphs wider than its em box.
+        /// </summary>
+        public static void EstimateBake(NowFont font, int glyphCount, out int pageCount, out int pageSide, out long bytes)
+        {
+            pageCount = 0;
+            pageSide = 0;
+            bytes = 0;
+
+            if (font == null || glyphCount <= 0)
+                return;
+
+            int cell = font.GetBaseDynamicGlyphSize() + font.GetBaseDynamicPixelRange() + NowFont.DYNAMIC_GLYPH_PADDING * 2;
+            int maxSide = font.GetDynamicPageSize(cell);
+            int side = MIN_PAGE_SIDE;
+
+            while (side < cell)
+                side *= 2;
+
+            while (side < maxSide && (long)(side / cell) * (side / cell) < glyphCount)
+                side *= 2;
+
+            long cellsPerPage = Math.Max(1L, (long)(side / cell) * (side / cell));
+            pageSide = side;
+            pageCount = (int)Math.Min(int.MaxValue, (glyphCount + cellsPerPage - 1) / cellsPerPage);
+            bytes = pageCount * (long)side * side * 4;
+        }
+
+        public static string DescribeEstimate(NowFont font, int glyphCount)
+        {
+            EstimateBake(font, glyphCount, out int pageCount, out int pageSide, out long bytes);
+            return $"{glyphCount:N0} glyphs, about {pageCount} page(s) of {pageSide} px, ~{bytes / (1024f * 1024f):0.0} MB stored in the asset.";
+        }
+
+        /// <summary>
+        /// Asks before baking every glyph of the given fonts, showing what it will cost:
+        /// a Latin face is a few megabytes, a CJK face can be hundreds. The choice stays
+        /// with the user either way.
+        /// </summary>
+        public static bool ConfirmBakeAll(IList<NowFont> fonts)
+        {
+            const int MAX_LISTED_FONTS = 8;
+
+            if (fonts == null || fonts.Count == 0)
+                return false;
+
+            var message = new StringBuilder();
+            long totalBytes = 0;
+
+            for (int i = 0; i < fonts.Count; ++i)
+            {
+                int glyphCount = CountAllGlyphs(fonts[i]);
+                EstimateBake(fonts[i], glyphCount, out _, out _, out long bytes);
+                totalBytes += bytes;
+
+                if (i < MAX_LISTED_FONTS)
+                    message.AppendLine($"{fonts[i].name}: {DescribeEstimate(fonts[i], glyphCount)}");
+                else if (i == MAX_LISTED_FONTS)
+                    message.AppendLine($"... and {fonts.Count - MAX_LISTED_FONTS} more.");
+            }
+
+            if (fonts.Count > 1)
+                message.AppendLine($"Total: ~{totalBytes / (1024f * 1024f):0.0} MB.");
+
+            message.Append("Glyphs outside a bake still render on demand; bake a character subset instead when the size is more than the font is worth.");
+
+            return EditorUtility.DisplayDialog(
+                fonts.Count == 1 ? $"Bake all glyphs of {fonts[0].name}?" : $"Bake all glyphs of {fonts.Count} fonts?",
+                message.ToString(),
+                "Bake",
+                "Cancel");
         }
 
         [MenuItem("Assets/NowUI/Bake Font Glyphs", true)]
@@ -135,10 +229,25 @@ namespace NowUI.Editor
             return builder.ToString();
         }
 
-        /// <summary>Bakes the font's authored characters and stores the pages on its asset.</summary>
+        /// <summary>Repeats the font's last bake: every glyph, or the authored characters.</summary>
         public static bool TryBake(NowFont font, out string error)
         {
-            return TryBake(font, font != null ? font.bakedCharacters : null, out error);
+            return BakesAllGlyphs(font)
+                ? TryBakeAll(font, out error)
+                : TryBake(font, font.bakedCharacters, out error);
+        }
+
+        /// <summary>Bakes every codepoint the font maps into pages stored on its asset.</summary>
+        public static bool TryBakeAll(NowFont font, out string error)
+        {
+            if (!TryGetAssetPath(font, out string path, out error))
+                return false;
+
+            if (!TryBakeAllPages(font, out var pages, out error))
+                return false;
+
+            StorePages(font, path, font.bakedCharacters, true, pages);
+            return true;
         }
 
         /// <summary>
@@ -147,7 +256,19 @@ namespace NowUI.Editor
         /// </summary>
         public static bool TryBake(NowFont font, string characters, out string error)
         {
-            string path = font != null ? AssetDatabase.GetAssetPath(font) : null;
+            if (!TryGetAssetPath(font, out string path, out error))
+                return false;
+
+            if (!TryBakePages(font, characters, out var pages, out error))
+                return false;
+
+            StorePages(font, path, characters, false, pages);
+            return true;
+        }
+
+        static bool TryGetAssetPath(NowFont font, out string path, out string error)
+        {
+            path = font != null ? AssetDatabase.GetAssetPath(font) : null;
 
             if (string.IsNullOrEmpty(path))
             {
@@ -155,9 +276,12 @@ namespace NowUI.Editor
                 return false;
             }
 
-            if (!TryBakePages(font, characters, out var pages, out error))
-                return false;
+            error = null;
+            return true;
+        }
 
+        static void StorePages(NowFont font, string path, string characters, bool allGlyphs, List<NowFont.BakedPage> pages)
+        {
             font.ClearDynamicCache();
             RemoveBakedTextures(font, path);
 
@@ -169,10 +293,9 @@ namespace NowUI.Editor
                 SetTextureReadable(texture, false);
             }
 
-            font.SetBakedPages(characters, pages.ToArray());
+            font.SetBakedPages(characters, allGlyphs, pages.ToArray());
             EditorUtility.SetDirty(font);
             AssetDatabase.SaveAssets();
-            return true;
         }
 
         /// <summary>Removes the baked pages from the asset; the authored characters stay.</summary>
@@ -187,7 +310,7 @@ namespace NowUI.Editor
             if (!string.IsNullOrEmpty(path))
                 RemoveBakedTextures(font, path);
 
-            font.SetBakedPages(font.bakedCharacters, null);
+            font.SetBakedPages(font.bakedCharacters, false, null);
             EditorUtility.SetDirty(font);
 
             if (!string.IsNullOrEmpty(path))
@@ -242,6 +365,46 @@ namespace NowUI.Editor
             out List<NowFont.BakedPage> pages,
             out string error)
         {
+            return TryBakeCodepoints(font, CollectCodepoints(characters), characters, out pages, out error);
+        }
+
+        /// <summary>Bakes every codepoint the font's cmap maps, in codepoint order.</summary>
+        internal static bool TryBakeAllPages(
+            NowFont font,
+            out List<NowFont.BakedPage> pages,
+            out string error)
+        {
+            return TryBakeCodepoints(font, CollectAllCodepoints(font), null, out pages, out error);
+        }
+
+        static List<int> CollectAllCodepoints(NowFont font)
+        {
+            var codepoints = new List<int>();
+
+            if (font == null || !font.HasEmbeddedSource)
+                return codepoints;
+
+            var glyphs = NowFontGlyphCatalog.Load(font).glyphs;
+            var seen = new HashSet<int>();
+
+            for (int i = 0; i < glyphs.Length; ++i)
+            {
+                int codepoint = glyphs[i].codepoint;
+
+                if (codepoint > 0 && codepoint != '\n' && codepoint != '\r' && codepoint != '\t' && seen.Add(codepoint))
+                    codepoints.Add(codepoint);
+            }
+
+            return codepoints;
+        }
+
+        static bool TryBakeCodepoints(
+            NowFont font,
+            List<int> codepoints,
+            string shapedText,
+            out List<NowFont.BakedPage> pages,
+            out string error)
+        {
             pages = null;
 
             if (font == null)
@@ -262,9 +425,7 @@ namespace NowUI.Editor
                 return false;
             }
 
-            var codepoints = CollectCodepoints(characters);
-
-            if (codepoints.Count == 0)
+            if (codepoints == null || codepoints.Count == 0)
             {
                 error = "No characters to bake.";
                 return false;
@@ -286,7 +447,7 @@ namespace NowUI.Editor
             }
 
             bool packedSdf16 = font.ResolvePackedManagedSdf16();
-            var shapedIndices = CollectShapedGlyphIndices(font, characters, codepoints);
+            var shapedIndices = CollectShapedGlyphIndices(font, shapedText, codepoints);
             var result = new List<NowFont.BakedPage>();
 
             while (true)

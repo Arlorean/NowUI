@@ -229,6 +229,31 @@ namespace NowUI.Editor
             if (_bakedCharacters == null)
                 return;
 
+            if (targets.Length == 1 && target is NowFont single)
+                DrawBakedStatus(single);
+
+            int bakedFonts = 0;
+
+            for (int i = 0; i < targets.Length; ++i)
+            {
+                if (targets[i] is NowFont font && font.bakedPageCount > 0)
+                    ++bakedFonts;
+            }
+
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                if (GUILayout.Button("Bake All Glyphs"))
+                    BakeAllTargets();
+
+                using (new EditorGUI.DisabledScope(bakedFonts == 0))
+                {
+                    if (GUILayout.Button("Remove Baked Pages"))
+                        ClearTargetBakes();
+                }
+            }
+
+            EditorGUILayout.Space(4f);
+            EditorGUILayout.LabelField("Characters (subset instead of all glyphs)", EditorStyles.miniLabel);
             EditorGUI.showMixedValue = _bakedCharacters.hasMultipleDifferentValues;
             EditorGUI.BeginChangeCheck();
             string characters = EditorGUILayout.TextArea(
@@ -257,31 +282,12 @@ namespace NowUI.Editor
 
             bool hasCharacters = _bakedCharacters.hasMultipleDifferentValues ||
                 !string.IsNullOrEmpty(_bakedCharacters.stringValue);
-            int bakedFonts = 0;
 
-            for (int i = 0; i < targets.Length; ++i)
+            using (new EditorGUI.DisabledScope(!hasCharacters))
             {
-                if (targets[i] is NowFont font && font.bakedPageCount > 0)
-                    ++bakedFonts;
+                if (GUILayout.Button("Bake Characters"))
+                    BakeCharacterTargets();
             }
-
-            using (new EditorGUILayout.HorizontalScope())
-            {
-                using (new EditorGUI.DisabledScope(!hasCharacters))
-                {
-                    if (GUILayout.Button("Bake"))
-                        BakeTargets();
-                }
-
-                using (new EditorGUI.DisabledScope(bakedFonts == 0))
-                {
-                    if (GUILayout.Button("Remove Baked Pages"))
-                        ClearTargetBakes();
-                }
-            }
-
-            if (targets.Length == 1 && target is NowFont single)
-                DrawBakedStatus(single);
         }
 
         void AppendBakedPreset(string preset)
@@ -308,8 +314,9 @@ namespace NowUI.Editor
                     bytes += (long)texture.width * texture.height * 4;
             }
 
+            string coverage = font.bakedAllGlyphs ? "All glyphs" : "Characters";
             EditorGUILayout.LabelField(
-                $"{font.bakedPageCount} page(s), {font.bakedGlyphCount} glyph record(s), {bytes / (1024f * 1024f):0.0} MB",
+                $"{coverage}: {font.bakedPageCount} page(s), {font.bakedGlyphCount} glyph record(s), {bytes / (1024f * 1024f):0.0} MB",
                 EditorStyles.miniLabel);
 
             if (font.bakedPagesStale)
@@ -320,20 +327,50 @@ namespace NowUI.Editor
             }
         }
 
-        void BakeTargets()
+        void BakeAllTargets()
+        {
+            var fonts = new List<NowFont>();
+
+            for (int i = 0; i < targets.Length; ++i)
+            {
+                if (targets[i] is NowFont font)
+                    fonts.Add(font);
+            }
+
+            if (!NowFontBaker.ConfirmBakeAll(fonts))
+                return;
+
+            BakeTargets(fonts, true);
+        }
+
+        void BakeCharacterTargets()
         {
             serializedObject.ApplyModifiedProperties();
+            var fonts = new List<NowFont>();
 
+            for (int i = 0; i < targets.Length; ++i)
+            {
+                if (targets[i] is NowFont font)
+                    fonts.Add(font);
+            }
+
+            BakeTargets(fonts, false);
+        }
+
+        void BakeTargets(List<NowFont> fonts, bool allGlyphs)
+        {
             try
             {
-                for (int i = 0; i < targets.Length; ++i)
+                for (int i = 0; i < fonts.Count; ++i)
                 {
-                    if (targets[i] is not NowFont font)
-                        continue;
+                    var font = fonts[i];
+                    EditorUtility.DisplayProgressBar("Bake Font Glyphs", font.name, i / (float)fonts.Count);
 
-                    EditorUtility.DisplayProgressBar("Bake Font Glyphs", font.name, i / (float)targets.Length);
+                    bool baked = allGlyphs
+                        ? NowFontBaker.TryBakeAll(font, out string error)
+                        : NowFontBaker.TryBake(font, font.bakedCharacters, out error);
 
-                    if (!NowFontBaker.TryBake(font, out string error))
+                    if (!baked)
                         Debug.LogError($"NowUI: failed to bake {font.name}\n{error}");
                 }
             }

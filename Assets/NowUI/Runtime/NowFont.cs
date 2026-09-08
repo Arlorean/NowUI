@@ -1242,6 +1242,11 @@ namespace NowUI
         [SerializeField, HideInInspector]
         string _bakedCharacters;
 
+        /// <summary>True when the pages were baked from every codepoint the font maps
+        /// rather than from <see cref="_bakedCharacters"/>, so a rebake repeats that.</summary>
+        [SerializeField, HideInInspector]
+        bool _bakedAllGlyphs;
+
         /// <summary>
         /// Dynamic atlas pages sealed at author time. They enter the runtime page list
         /// on first use exactly like pages a warmed session would have produced, so the
@@ -1575,6 +1580,8 @@ namespace NowUI
         /// <summary>Characters authored for baking; the editor bake input, never read at runtime.</summary>
         public string bakedCharacters => _bakedCharacters;
 
+        public bool bakedAllGlyphs => _bakedAllGlyphs;
+
         public int bakedPageCount => _bakedPages?.Length ?? 0;
 
         public int bakedGlyphCount
@@ -1636,10 +1643,11 @@ namespace NowUI
             return _bakedPages;
         }
 
-        internal void SetBakedPages(string characters, BakedPage[] pages)
+        internal void SetBakedPages(string characters, bool allGlyphs, BakedPage[] pages)
         {
             _bakedCharacters = characters;
             _bakedPages = pages != null && pages.Length > 0 ? pages : null;
+            _bakedAllGlyphs = allGlyphs && _bakedPages != null;
             ClearDynamicCache();
         }
 
