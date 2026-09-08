@@ -5,6 +5,15 @@
 
 import { start, ui } from './nowui/nowui.js';
 
+// A slider, a colour field and a dropdown have no label of their own - NowUI draws the text beside the control
+// rather than inside it, and the surface now says so rather than ignoring { label } silently.
+function labelled(text, body) {
+  ui.row({ gap: 10, align: 'center' }, () => {
+    ui.text(text, { width: 92 });
+    body();
+  });
+}
+
 const WAVES = ['sine', 'square', 'triangle'];
 
 const state = {
@@ -46,17 +55,17 @@ function controls() {
 
     ui.card({ padding: 12, gap: 8 }, () => {
         state.wave = ui.tabs('wave', state.wave, WAVES);
-        state.freq = ui.slider('freq', state.freq, 0.25, 8, { label: 'frequency' });
-        state.amp = ui.slider('amp', state.amp, 0.05, 1, { label: 'amplitude' });
-        state.phase = ui.slider('phase', state.phase, 0, 6.28318, { label: 'phase' });
-        state.samples = ui.intSlider('samples', state.samples, 8, 240, { label: 'samples' });
+        labelled('frequency', () => { state.freq = ui.slider('freq', state.freq, 0.25, 8); });
+        labelled('amplitude', () => { state.amp = ui.slider('amp', state.amp, 0.05, 1); });
+        labelled('phase', () => { state.phase = ui.slider('phase', state.phase, 0, 6.28318); });
+        labelled('samples', () => { state.samples = ui.intSlider('samples', state.samples, 8, 240); });
     });
 
     ui.card({ padding: 12, gap: 8 }, () => {
-        state.trace = ui.colorField('trace', state.trace, { label: 'trace colour' });
+        labelled('trace colour', () => { state.trace = ui.colorField('trace', state.trace); });
         state.grid = ui.checkbox('grid', state.grid, { label: 'grid' });
         state.fill = ui.switch('fill', state.fill, { label: 'fill under curve' });
-        state.mode = ui.dropdown('mode', state.mode, ['light', 'dark'], { label: 'theme' });
+        labelled('theme', () => { state.mode = ui.dropdown('mode', state.mode, ['light', 'dark']); });
     });
 
     if (ui.button('Reset view')) {

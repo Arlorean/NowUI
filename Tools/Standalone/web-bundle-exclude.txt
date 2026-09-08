@@ -16,3 +16,11 @@ nowui-test-large.png
 # It is not referenced by index.html, main.js or the gallery, and nothing in the package documents it. Kept
 # out of the shipped tree rather than deleted, so whoever owns it still has it on disk.
 w9-draw.js
+
+# A reference app written against the published surface only (a signal desk: drawing primitives driven by
+# controls). It reached wwwroot as a test fixture while the drawing surface was being verified, and shipped
+# because this list is a DENYLIST - anything in wwwroot ships unless named here. It is unreferenced by
+# index.html and by the Editor window, so a user would never find it. Kept in the repository at
+# Standalone/Web/NowUI.Web/wwwroot/ as a worked example, out of the shipped bundle until someone decides it
+# belongs there. The denylist shape is the real hazard here and is worth revisiting.
+vscope.js

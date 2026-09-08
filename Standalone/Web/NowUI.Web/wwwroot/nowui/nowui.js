@@ -648,6 +648,20 @@ function labelOf(opts, key) {
     return opts && opts.label !== undefined ? String(opts.label) : String(key);
 }
 
+/// The other half of `labelOf`, and the reason it needs one. Four controls draw a label - button, checkbox,
+/// selectable and foldout - because their NowUI op carries a string slot for one. The rest have no such slot,
+/// and NowUI's own NowSlider and NowDropdown have no label concept at all: a caller draws the text beside the
+/// control. So `{ label }` on those was ACCEPTED by the global option set and then silently dropped, which is the
+/// invisible no-op this surface exists to refuse. It is refused by name instead, with the thing to write instead.
+function refuseLabel(opts, fn) {
+    if (opts && opts.label !== undefined)
+        throw new NowUIAuthorError(
+            'NowUI: ' + fn + ' has no label of its own, so { label: ' + JSON.stringify(String(opts.label)) +
+            ' } would be silently ignored. NowUI draws the text beside the control, not inside it:\n' +
+            "  ui.row(() => { ui.text('" + String(opts.label) + "'); " + fn + "(...); });" + '\n' +
+            'The controls that DO take a label are button, checkbox, selectable and foldout.');
+}
+
 function segArgs(node) {
     W.i32(node.rid);
     W.i32(node.seg);
@@ -1422,6 +1436,7 @@ export const ui = {
     },
 
     numberField(key, value, opts) {
+        refuseLabel(opts, 'ui.numberField');
         const payload = encodeOptions(opts);
         const node = trie.control(key);
         let resolved = R.value(node.rid, numArg(value, 'ui.numberField', 'value'));
@@ -1508,6 +1523,7 @@ export const ui = {
     },
 
     slider(key, value, min, max, opts) {
+        refuseLabel(opts, 'ui.slider');
         const payload = encodeOptions(opts);
         const node = trie.control(key);
         const resolved = R.value(node.rid, numArg(value, 'ui.slider', 'value'));
@@ -1524,6 +1540,7 @@ export const ui = {
     },
 
     intSlider(key, value, min, max, opts) {
+        refuseLabel(opts, 'ui.intSlider');
         const payload = encodeOptions(opts);
         const node = trie.control(key);
         const resolved = R.value(node.rid, Math.round(numArg(value, 'ui.intSlider', 'value')));
@@ -1542,16 +1559,19 @@ export const ui = {
     /// Section 2.5. The INDEX never surfaces: the value going in and the value coming out are both the option
     /// itself. Two frames late (section 6.2) - the popup's selection is delivered on the frame after the click.
     dropdown(key, value, list, opts) {
+        refuseLabel(opts, 'ui.dropdown');
         return emitChoice(OPS.DROPDOWN, key, value, list, opts, 'ui.dropdown(key, value, options, opts?)');
     },
 
     combo(key, value, list, opts) {
+        refuseLabel(opts, 'ui.combo');
         return emitChoice(OPS.COMBO, key, value, list, opts, 'ui.combo(key, value, options, opts?)');
     },
 
     /// Section 2.5. The one tier-1 function that returns a non-primitive, and it is a VALUE rather than an event:
     /// `if (ui.colorField(...))` is as meaningless as `if (someArray)` anywhere else in JavaScript.
     colorField(key, value, opts) {
+        refuseLabel(opts, 'ui.colorField');
         const payload = encodeOptions(opts);
         const node = trie.control(key);
 
@@ -1570,6 +1590,7 @@ export const ui = {
     },
 
     datePicker(key, value, opts) {
+        refuseLabel(opts, 'ui.datePicker');
         const payload = encodeOptions(opts);
         const node = trie.control(key);
         const resolved = R.value(node.rid, numArg(value, 'ui.datePicker', 'value'));
@@ -1585,6 +1606,7 @@ export const ui = {
     },
 
     timePicker(key, value, opts) {
+        refuseLabel(opts, 'ui.timePicker');
         const payload = encodeOptions(opts);
         const node = trie.control(key);
         const resolved = R.value(node.rid, Math.round(numArg(value, 'ui.timePicker', 'value')));
@@ -1599,6 +1621,7 @@ export const ui = {
     },
 
     tabs(key, selected, labels, opts) {
+        refuseLabel(opts, 'ui.tabs');
         requireList(labels, 'ui.tabs(key, selected, labels, opts?)');
 
         const payload = encodeOptions(opts);
@@ -1618,6 +1641,7 @@ export const ui = {
     // ----------------------------------------------------------------------------------------- 2.6 feedback
 
     progress(value01, opts) {
+        refuseLabel(opts, 'ui.progress');
         const resolved = numArg(value01, 'ui.progress', 'value01');
         options(opts);
         W.op(OPS.PROGRESS);
