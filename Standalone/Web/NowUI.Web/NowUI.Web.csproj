@@ -39,6 +39,19 @@
     <PublishTrimmed>true</PublishTrimmed>
   </PropertyGroup>
 
+  <PropertyGroup>
+    <!--
+      The SDK's default compression include list (Microsoft.NET.Sdk.StaticWebAssets.Compression.targets) carries
+      **/*.otf but NOT **/*.ttf, and none of the GLSL extensions, so the four NotoSans faces and the shader sources
+      ship uncompressed on any hosted deploy. Measured: the four faces are 2,546,680 B raw and 942,742 B at
+      brotli-11, so this line is worth ~1.6 MB to anyone serving this tree over a real network.
+
+      Inert when CompressionEnabled=false, which is how the shipped Editor bundle is built (loopback needs no
+      compression) - see Tools/Build-NowUIWebBundle.ps1.
+    -->
+    <CompressionIncludePatterns>$(CompressionIncludePatterns);**/*.ttf;**/*.frag;**/*.vert;**/*.glsl</CompressionIncludePatterns>
+  </PropertyGroup>
+
   <ItemGroup>
     <ProjectReference Include="../../NowUI.Runtime/NowUI.Runtime.csproj" />
     <ProjectReference Include="../../NowUI.Engine/NowUI.Engine.csproj" />

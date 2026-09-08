@@ -93,6 +93,40 @@ Dedicated hosts own the frame and, for layout hosts, the measure/draw cycle.
 Do not call `Now.StartUI` or `NowLayout.RunMeasured` inside their
 `DrawNowUI(...)` methods.
 
+## Run NowUI in a browser
+
+NowUI ships a precompiled WebAssembly build of itself inside this package, at
+`WebBundle~/`. You do not need the .NET SDK, emscripten, a terminal or a network
+connection to use it.
+
+Choose **Tools > NowUI > Web Preview**. The Editor starts a loopback web server
+on `http://127.0.0.1:8973/` and opens your browser on it. The first launch also
+creates `<ProjectRoot>/NowUI/apps/app.js` with a small sample application.
+
+That folder is yours. It sits outside `Assets/` and outside this package, so
+updating NowUI can never overwrite it and Unity never reimports it. Edit
+`apps/app.js` in any editor, save, and press F5 — or leave the preview's watch
+option on and the page reloads itself.
+
+- `?app=NAME` serves `<ProjectRoot>/NowUI/apps/NAME.js`, falling back to the
+  sample of that name inside the package.
+- The bare URL opens the C# feature gallery.
+
+The application API is JavaScript. `WebBundle~/nowui/nowui.js` is the surface
+itself and documents every function in comments beside it; the longer written
+specification is `Docs/Standalone/M3-Spec.md` in the source repository, which a
+package install does not carry.
+
+The browser surface is a subset of the C# API. It covers layout, containers,
+controls, values and the drawing primitives — `ui.canvas`, `ui.rect`,
+`ui.circle`, `ui.line`, `ui.bezier`, `ui.triangle`, `ui.polygon`, `ui.gradient`
+and `ui.mask`. It has no textures, no transforms, no SDF, no node graph and no
+markdown or code editor, and `ui.reset`, `ui.overlay` and `ui.contextMenu`
+throw a named error rather than working.
+
+Everything is served from your own machine. Nothing is downloaded and nothing
+leaves it.
+
 ## Agent integration
 
 The [AI guide](Documentation~/AI_GUIDE.md) routes usage tasks to the relevant

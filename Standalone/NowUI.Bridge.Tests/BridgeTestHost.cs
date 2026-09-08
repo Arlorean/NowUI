@@ -28,6 +28,7 @@ namespace NowUI.Bridge.Tests
     public sealed class BridgeTestHost
     {
         private static NowRecordingRenderBackend s_Backend;
+        private static VertexCountingBackend s_Counting;
 
         /// <summary>
         /// The op log W4's acceptance diffs. Wrapped around the same <see cref="NullRenderBackend"/> the suite
@@ -35,6 +36,13 @@ namespace NowUI.Bridge.Tests
         /// down.
         /// </summary>
         public static NowRecordingRenderBackend backend => s_Backend;
+
+        /// <summary>
+        /// W9. The same backend, wrapped in a vertex counter. NowUI batches, so a DrawMesh count cannot tell a
+        /// shape that tessellated from one that was configured and never filled; the vertex count can. The
+        /// drawing tests assert on its delta between a frame with a shape and the same frame without one.
+        /// </summary>
+        public static VertexCountingBackend counting => s_Counting;
 
         /// <summary>
         /// Whether the real material and font fixtures were found. False turns W4's draw-list diff into a
@@ -50,7 +58,8 @@ namespace NowUI.Bridge.Tests
             NowRuntime.colorSpace = ColorSpace.Gamma;
 
             s_Backend = new NowRecordingRenderBackend();
-            NowRuntime.Initialize(new BridgeHostServices(), s_Backend);
+            s_Counting = new VertexCountingBackend(s_Backend);
+            NowRuntime.Initialize(new BridgeHostServices(), s_Counting);
         }
 
         [OneTimeTearDown]
@@ -63,6 +72,7 @@ namespace NowUI.Bridge.Tests
         {
             NowRuntime.BeginFrame();
             if (s_Backend != null) s_Backend.Clear();
+            if (s_Counting != null) s_Counting.ResetCounters();
         }
 
         /// <summary>
@@ -116,7 +126,7 @@ namespace NowUI.Bridge.Tests
                     {
                         var resources = new NowUI.Standalone.Tests.NowStandaloneTestResources(root);
                         hasResources = true;
-                        return resources;
+                        return new CanvasMaterialAliases(resources);
                     }
                     catch (Exception e)
                     {
@@ -148,6 +158,73 @@ namespace NowUI.Bridge.Tests
 
                 return null;
             }
+        }
+
+        /// <summary>
+        /// Mints the <c>*UGUI</c> material templates the exporter drops but the runtime still insists on, by
+        /// cloning their non-UGUI twin - the same workaround, for the same reason,
+        /// <c>WebResourceProvider.AliasCanvasMaterials</c> already carries.
+        /// </summary>
+        /// <remarks>
+        /// <para>Without it a gradient draws NOTHING in this test host, silently.
+        /// <c>NowGradientMaterials.TryGet</c> returns <c>material != null &amp;&amp; canvasMaterial != null</c>
+        /// (NowGradient.cs:697), <c>NowGradient.Draw</c> returns early when it is false, and the only trace is one
+        /// resource warning at start-up. W9 found this the way the web host found it: the GRADIENT op decoded
+        /// perfectly, called Now.Gradient, and produced zero vertices.</para>
+        /// <para>Cloning is sound because the canvas template exists only to satisfy a null check - the UGUI hosts
+        /// it belongs to cannot exist in a build with no Canvas and no CanvasRenderer, so nothing renders through
+        /// the clone. The real repair is in the exporter, which is Unity-side and outside this assembly.</para>
+        /// </remarks>
+        private sealed class CanvasMaterialAliases : INowResourceProvider
+        {
+            private static readonly (string canvas, string source)[] k_Aliases =
+            {
+                ("NowUI/GradientMaterialUGUI", "NowUI/GradientMaterial"),
+                ("NowUI/GlassMaterialUGUI", "NowUI/GlassMaterial"),
+                ("NowUI/UIMaterialUGUI", "NowUI/UIMaterial"),
+                ("NowUI/TxtMaterialUGUI", "NowUI/TxtMaterial"),
+                ("NowUI/TxtMaterialRGBAUGUI", "NowUI/TxtMaterialRGBA"),
+                ("NowUI/RippleMaterialUGUI", "NowUI/RippleMaterial"),
+            };
+
+            private readonly INowResourceProvider m_Inner;
+            private readonly System.Collections.Generic.Dictionary<string, UnityEngine.Object> m_Clones =
+                new System.Collections.Generic.Dictionary<string, UnityEngine.Object>(StringComparer.Ordinal);
+
+            public CanvasMaterialAliases(INowResourceProvider inner)
+            {
+                m_Inner = inner;
+            }
+
+            public UnityEngine.Object Load(string path, Type type)
+            {
+                UnityEngine.Object direct = m_Inner.Load(path, type);
+                if (direct != null) return direct;
+
+                UnityEngine.Object cached;
+                if (m_Clones.TryGetValue(path, out cached)) return cached;
+
+                foreach ((string canvas, string source) alias in k_Aliases)
+                {
+                    if (!string.Equals(alias.canvas, path, StringComparison.Ordinal)) continue;
+
+                    var template = m_Inner.Load(alias.source, typeof(Material)) as Material;
+                    if (ReferenceEquals(template, null)) return null;
+
+                    var clone = new Material(template)
+                    {
+                        name = template.name + "UGUI",
+                        hideFlags = HideFlags.HideAndDontSave,
+                    };
+
+                    m_Clones[path] = clone;
+                    return clone;
+                }
+
+                return null;
+            }
+
+            public Shader FindShader(string name) => m_Inner.FindShader(name);
         }
 
         /// <summary>

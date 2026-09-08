@@ -226,10 +226,10 @@ imports and no build step: `app.js` is served as-is and `nowui.js` is a static f
 
 ## 2. The complete JavaScript surface
 
-**41 functions.** 23 take a key. This is the whole of tier 1. Everything else in the C# library — 55 builders, 184
+**50 functions.** 24 take a key. This is the whole of tier 1. Everything else in the C# library — 55 builders, 184
 factories, 830 fluent setters (M3-SurfaceScout §0) — is reachable through tier 2 (§7.5), or not at all (§8).
 
-Three markers appear in the tables and mean something precise:
+**Four** markers appear in the tables and mean something precise:
 
 * **`*`** the first argument is a mandatory key (R1).
 * **`△` alias** — the function is the same op as another with one option pre-set. The expansion is declared in
@@ -239,6 +239,35 @@ Three markers appear in the tables and mean something precise:
   expansion is declared in `surface.json`, and the generator refuses to build a composite that has no hand-written C#
   twin in the gate-5 corpus (§7.4 G5). There are exactly six: `card`, `when`, `list`, `radio`, `rule`, and the
   `disabled` option. Six is the cap; a seventh requires a decision recorded in this document.
+* **`✗` not in this release** — the function EXISTS on the `ui` object and THROWS a named `NowUIAuthorError`
+  when called. §2.0 lists all of them with the reason. Do not write code against a `✗` row.
+
+### 2.0 Not in this release
+
+Three functions in the tables below are absent. They are marked `✗` at their row and listed here, before the
+signatures, so a reader meets the absences before the shapes that would make them look available.
+
+| JS | Why | Where it becomes possible |
+|---|---|---|
+| `ui.reset` ✗ | Hot reload is a COORDINATED clear: `NowRuntime`, the intern table on **both** sides of the boundary, the path trie and the result table have to go together. Clearing one without the others is how a string handle comes to mean two different strings | W7. `start()`'s returned handle also exposes `reset()` and it throws for the same reason — the handle member is the same absence, not a second route around it |
+| `ui.overlay` ✗ | It is the sole consumer of the recorded subtrees of §5.8. `OP_CALLBACK_BEGIN` and `OP_CALLBACK_END` are reserved opcodes 2 and 3 and nothing emits them | W11 |
+| `ui.contextMenu` ✗ | Said to need a `NowResolvedId` rather than a `NowId`, through a begin/item/end triple the command stream does not carry. **That blocker is UNVERIFIED and is recorded as unverified rather than laundered into this document as fact**: `Replay.Identity.cs`'s `DuplicateIdBackstop` already maps a `NowResolvedId` back to a rid, so resolved ids are demonstrably obtainable on that side. `NowContextMenu.cs` has not been read since. Expect this to be implementable | after someone reads `NowContextMenu.cs` |
+
+**This table is generated from one array, and that is the point.** `nowui.js` exports
+`NOT_IMPLEMENTED = ['reset', 'overlay', 'contextMenu']`, and its `notInThisRelease` helper asserts at **module
+load** that the name it is given appears in that array. So the runtime cannot throw for a function this document
+says works, and cannot silently start working for one it says is absent. That assertion exists because the
+opposite happened: five functions threw while §2 tabled all five with no marker, and code written from this
+document threw on its first call.
+
+Two functions that were on that list are now real, and neither stated blocker survived reading the source:
+
+* **`ui.theme`** — the claim was "the host has no resource manifest". `NowTheme` already builds **and caches**
+  both a light and a dark `NowThemeAsset` (`NowTheme.cs:79-96`), and `NowControls.Theme(asset)` pushes a real
+  scope (`NowControls.cs:155`). A two-entry table is the whole manifest a browser host needs. The *general*
+  named-asset form is still absent, and that absence is real — it is the same missing piece that blocks textures.
+* **`ui.split`** — the claim was "the command stream has one scope bracket". Brackets **nest**, so a split is
+  `SPLIT{ PANE(0){…} PANE(1){…} }`: three ops and a structural rule that already existed.
 
 ### 2.1 Frame and lifecycle — 5
 
@@ -246,11 +275,11 @@ Three markers appear in the tables and mean something precise:
 |---|---|---|
 | `start` | `start(draw, options?) → { stop(), reset() }` | owns `requestAnimationFrame` through the existing `WebApp.Frame()` export (`Standalone/Web/NowUI.Web/Program.cs:250`); `options` is `{ exactLayout = true, onFault = 'partial' \| 'lastGood', maxStrings = 65536 }` |
 | `ui.frame` | read-only `{ width, height, dpr, dt, time, count }` | the host poll at the top of the current frame (`Program.cs:258`); **not** one frame old |
-| `ui.theme` | `ui.theme(name, body)` | `NowControls.Theme(asset)` with the asset resolved by name from the host resource manifest (`NowControls.cs:155`) |
-| `ui.reset` | `ui.reset()` | `NowRuntime.ResetAll()` plus a clear of the string table, the path trie and the result table — this is hot reload |
+| `ui.theme` | `ui.theme(name, body)` | `NowControls.Theme(asset)` (`NowControls.cs:155`). `name` is **`'light'` or `'dark'`** and nothing else: the bridge builds both assets the way `NowTheme` builds its own defaults (`NowTheme.cs:79-96`), so no resource manifest is involved. A theme by ASSET NAME needs one and is absent (§8). Any other name throws, naming the two |
+| `ui.reset` ✗ | `ui.reset()` | **Not in this release** (§2.0). `NowRuntime.ResetAll()` plus a coordinated clear of the string table, the path trie and the result table — this is hot reload, W7 |
 | `ui.debugPath` | `ui.debugPath() → string` | recorder-only; returns the canonical path (§3.2) of the position the recorder is at. Costs one string build, on demand |
 
-### 2.2 Scopes — 9
+### 2.2 Scopes — 11
 
 `opts` on every scope accepts `key` to promote an anonymous scope to a keyed one (§3.5).
 
@@ -263,8 +292,10 @@ Three markers appear in the tables and mean something precise:
 | `ui.list` * ◇ | `(key, items, keyOf, render)` | `IdScope(listSeg)`, then per item `NowControls.KeyedItemIn(listSeg, itemSeg)` (`NowControls.cs:260`). `keyOf` is **required**; there is no overload without it and no index default. No options object in the first release |
 | `ui.scroll` * | `(key, opts?, body)` | `IdScope(seg)` + `NowLayout.ScrollView().SetId(seg)…Begin()` (`Controls/NowScrollView.cs:74`, `:123`) |
 | `ui.foldout` * | `(key, open, opts?, body) → boolean` | `NowLayout.Foldout(label, id)` (`Controls/NowFoldout.cs:143`); `opts.label` defaults to the key; returns the open state and runs `body` when open |
-| `ui.split` * | `(key, ratio, opts?, first, second) → number` | `NowLayout.SplitView(axis).SetId(seg)` (`NowControlFactories.cs:329`); returns the new ratio. The only function with two bodies |
-| `ui.overlay` * | `(key, rect, body)` | `NowOverlay.Defer(rect, action)` over a recorded subtree (`Controls/NowOverlay.cs:805`; §5.8). The overlay's id ancestry is correct for free: `Defer` captures the id scope and restores it when the deferred draw runs (`:848`, `:1857`) |
+| `ui.split` * | `(key, ratio, opts?, first, second) → number` | `NowSplitView.Begin(ref float)` under `NowLayout.SplitView(axis).SetId(seg)` (`NowControlFactories.cs:329`); returns the new ratio, reconciled per §6.4, so a drag reaches the author. The only function with two bodies, and it needs no new kind of scope bracket: brackets NEST, so the wire is `SPLIT{ PANE(0){…} PANE(1){…} }`. `opts.axis` is `'horizontal'` (default) or `'vertical'`. Identity: one keyed node for the split, one anonymous ordinal per pane |
+| `ui.overlay` * ✗ | `(key, rect, body)` | **Not in this release** (§2.0). `NowOverlay.Defer(rect, action)` over a recorded subtree (`Controls/NowOverlay.cs:805`; §5.8). The overlay's id ancestry would be correct for free: `Defer` captures the id scope and restores it when the deferred draw runs (`:848`, `:1857`) |
+| `ui.canvas` * | `(key, opts, body) → { width, height, stale }` | `NowLayout.Column().SetId(seg)…Begin()` + `Now.Mask(scope.rect)`. **The drawing scope**: it reserves one layout box, defines the coordinate origin every drawing inside it is relative to, and clips to that box so a drawing cannot escape it (which is also what makes a canvas nest correctly inside a scroll view). See §2.3b for the coordinate model. THROWS when given none of `height`, `minHeight` or `grow` — a canvas has no children to size it, so without one it collapses to zero and draws an invisible nothing |
+| `ui.mask` | `(shape, body)` | `Now.Mask(NowMaskShape)` — an analytic clip over a SUBSET of the enclosing canvas. `shape` is exactly one of `{ rect }`, `{ rect, radius }`, `{ ellipse }`, `{ circle, radius }`, `{ capsule, radius }`, plus an optional `{ feather }`. Anonymous, like `ui.when`. **It opens an identity scope**, so wrapping EXISTING controls in one changes their canonical path and their keyed state — scroll offset, caret, foldout — resets once. That is the same cost as wrapping them in a `ui.column` |
 
 ### 2.3 Drawings — 8, none keyed
 
@@ -278,6 +309,65 @@ Three markers appear in the tables and mean something precise:
 | `ui.flexSpace` | `(weight?)` | `NowLayout.FlexibleSpace(weight)` (`:2104`) |
 | `ui.rule` ◇ | `(opts?)` | a `NowLayout.Row().FillWidth().Height(1).Begin()` whose rect is filled with `Now.Rectangle(rect).SetStyle(Outline).Draw()` |
 | `ui.badge` | `(content, opts?)` | `NowLayout.Badge(content)…Draw()` (`NowControlFactories.cs:305`) |
+
+### 2.3b Shapes — 7, none keyed, none returns anything
+
+A drawing has no state and no interaction, so it has no identity either — the same reasoning §2.3 applies to
+`ui.text`.
+
+**THE COORDINATE MODEL, once.** A coordinate is **canvas-local**: relative to the top-left of the innermost
+enclosing `ui.canvas`, so `(0, 0)` is that canvas's own corner. Where there is no enclosing canvas it is screen
+space, the space `ui.frame.width/height` is in. The **decoder** adds the origin; JavaScript emits raw numbers.
+That is what makes a drawing land in the right place even on the frame a window is resized, when JavaScript's
+idea of the canvas *size* is one frame old: the origin is always exact, only the size briefly is not.
+
+Why a canvas exists at all: `Now.Rectangle` is the only NowUI draw that takes a `NowRect` a layout scope can
+supply. `Now.Ellipse`, `Now.Line`, `Now.Bezier`, `Now.Triangle` and `Now.Polygon` take raw `Vector2` and cannot
+be laid out — there is no such thing as laying out a bezier. So layout answers *where is the drawing area* once,
+and coordinates answer *where in it*.
+
+A `point` is `[x, y]`; a `box` is `[x, y, width, height]`. All numbers, all finite (§2.8).
+
+| JS | Signature | Replays as |
+|---|---|---|
+| `ui.rect` | `(box, opts?)` | `Now.Rectangle(NowRect)`. The one shape with a semantic `style`, because `NowRectangle` is the one NowUI shape with a `SetStyle`. Layering: **style first, explicit second**, so `{ style: 'accent', radius: 0 }` means what it reads as. With neither `color` nor `style` it takes `NowRectangleStyle.Surface` rather than raw white |
+| `ui.circle` | `(center, radius, opts?)` | `Now.Ellipse(Vector2, Vector2)`. `radius` is one number broadcast to both axes, or `[rx, ry]`. The radius is a SIZE and is not translated by the origin — only the centre moves |
+| `ui.line` | `(from, to, opts?)` | `Now.Line(Vector2, Vector2)` |
+| `ui.bezier` | `(from, control1, control2, to, opts?)` | `Now.Bezier(…)` — the same `NowLine`, so the same `stroke`, `cap` and `dash` |
+| `ui.triangle` | `(a, b, c, opts?)` | `Now.Triangle(…)` |
+| `ui.polygon` | `(points, opts?)` | `Now.Polygon(List<Vector2>, int, int)`. `points` is `[[x,y], …]` **or** a flat `[x,y,x,y,…]`, discriminated by the first element — both, because the nested form is what a person writes and the flat form is what a 500-point chart sends without allocating 500 arrays a frame. Fewer than three points draws nothing, silently: a chart whose data has not loaded legitimately has none |
+| `ui.gradient` | `(box, from, to, opts?)` | `Now.Gradient(NowRect, Color, Color)`. The two ramp ends are ARGUMENTS, not options: a gradient with one colour is not a gradient. `opts.kind` is `'linear'` (default), `'radial'` or `'conic'`; `opts.angle` follows CSS's convention — 0 up, 90 right, clockwise — so a value copied out of a CSS gradient needs no conversion |
+
+**Colour**, for all of them, is one option discriminated by shape:
+
+| Written | Meaning |
+|---|---|
+| `{ color: 'accent' }` | one of the 27 `NowColorToken` names — **prefer this**, it follows light and dark where hex does not |
+| `{ color: '#3B82F6' }` | a literal; `'#rgb'`, `'#rrggbb'` and `'#rrggbbaa'` all parse |
+| `{ color: [0.2, 0.5, 1] }` | RGBA floats 0..1 — **the same array `ui.colorField` returns**, so `{ color: ui.colorField('c', c) }` composes with no conversion anywhere |
+
+The tokens are `background surface surfaceMuted text textMuted border accent accentText surfaceElevated
+surfaceHover surfacePressed accentHover accentPressed accentMuted borderStrong focusRing success successText
+successMuted warning warningText warningMuted danger dangerText dangerMuted shadow scrim`.
+
+A shape with **no** colour is drawn in the theme's text colour, not in white: white on the light theme's white
+ground is invisible-and-correct, which this library has already shipped once.
+
+**`style` is refused by name on every shape but `ui.rect`**, with the pointer to `ui.rect` in the message.
+`NowCircle`, `NowLine`, `NowTriangle` and `NowPolygon` have no `SetStyle` — there is nothing to map it to — and
+the precedent is `align: 'stretch'` (§2.7): reject, rather than silently draw nothing.
+
+Every drawing option is refused on the functions whose decoder does not read it. The allowed sets are:
+
+| Function | Options |
+|---|---|
+| `ui.rect` | `color stroke strokeColor radius blur style disabled` |
+| `ui.circle` | `color stroke strokeColor fill segments` |
+| `ui.line`, `ui.bezier` | `color stroke cap dash` |
+| `ui.triangle`, `ui.polygon` | `color stroke strokeColor fill` |
+| `ui.gradient` | `kind angle spread radius blur stroke strokeColor` |
+| `ui.canvas` | the layout half of §2.7 only: `key width height minWidth maxWidth minHeight maxHeight grow gap padding align justify` |
+| `ui.split` | the same, plus `axis` |
 
 ### 2.4 Actions — 3, all keyed
 
@@ -315,7 +405,7 @@ Every one returns the value, following the reconciliation rule of §6.4.
 | JS | Signature | Replays as |
 |---|---|---|
 | `ui.progress` | `(value01, opts?)` | `NowLayout.ProgressBar(value01)…Draw()` (`NowControlFactories.cs:299`) |
-| `ui.contextMenu` * | `(key, items, opts?) → number` | `NowContextMenu.Begin(NowResolvedId)` / `Item(label, NowId id, …)` / `End()` (`Controls/NowContextMenu.cs:304`, `:390`, `:614`), begin/end kept inside the bridge. Returns the index of the item clicked, or `-1`. **Two frames late** |
+| `ui.contextMenu` * ✗ | `(key, items, opts?) → number` | **Not in this release** (§2.0), and its blocker is recorded there as UNVERIFIED. `NowContextMenu.Begin(NowResolvedId)` / `Item(label, NowId id, …)` / `End()` (`Controls/NowContextMenu.cs:304`, `:390`, `:614`), begin/end kept inside the bridge. Returns the index of the item clicked, or `-1`. **Two frames late** |
 
 `ui.contextMenu` is the one place a `NowResolvedId` is required rather than a `NowId`: `NowContextMenu.Begin` takes
 one, `Begin(int)` is `[Obsolete(…, true)]` (`:337`), and the type has no public value constructor. The bridge obtains
@@ -351,6 +441,57 @@ only when the underlying C# builder has the matching setter, and the generator r
 | `onSubmit`, `onRemove` | function | invoked synchronously at the point of the call when the previous frame's result carries the flag. Handlers run inside the draw function, so a handler's state change is visible to every control drawn after it — the same ordering `if (ui.button(...))` already has |
 
 `{ disabled }` is the fifth and last composite. The count is capped deliberately (§7.3).
+
+#### The styling options — bits 16-27 of the same mask
+
+Added for the shapes of §2.3b, in place in the option mask's free high bits, so no existing field moved a byte.
+Each is accepted only by the functions whose decoder reads it; the allowed sets are tabled at the end of §2.3b.
+
+| Option | Type | Setter |
+|---|---|---|
+| `color` | token name \| `'#rrggbb'` \| `[r,g,b,a]` | `SetColor` on every shape; the fill of a rect. See §2.3b |
+| `stroke` | number | `SetOutline(w)` on a shape, `SetWidth(w)` on a line |
+| `strokeColor` | the same three forms as `color` | `SetOutlineColor`. **Defaults to the fill colour** when a stroke was asked for and no style supplied an outline — every shape builder leaves `outlineColor` at `default`, which is *transparent black, not unset*, so `{ color: 'danger', fill: false, stroke: 6 }` drew a ring nobody could see until this fallback existed |
+| `radius` | number \| `[tl, tr, br, bl]` | `SetRadius(f,f,f,f)` in **human** corner order. `ui.rect` and `ui.gradient` |
+| `blur` | number | `SetBlur` |
+| `cap` | `'butt'\|'round'\|'square'` | `SetCap(NowLineCap)` — 1-based in the C# enum, and the table says so rather than assuming |
+| `dash` | `[length, gap]` \| `[length, gap, offset]` | `SetDash(l, g, o)` |
+| `segments` | number | `SetSegments` — circle tessellation |
+| `fill` | boolean | `SetFill`. A payload slot rather than a flag bit, deliberately: a flag can only say *true*, and `fill: false` — an unfilled ring, an outlined polygon — is the thing an author most wants to say. Applied AFTER `color`, because `SetColor` sets `fill = true` as a side effect (`NowShape.cs:59`) |
+| `spread` | `'clamp'\|'repeat'\|'mirror'` | `SetSpread(NowGradientSpread)` |
+| `angle` | number | `SetLinear(angle)` / the conic start angle. CSS convention |
+| `axis` | `'horizontal'\|'vertical'` | `ui.split` only; the op's own argument rather than an option bit |
+| `kind` | `'linear'\|'radial'\|'conic'` | `ui.gradient` only; likewise the op's own argument |
+
+`fontSize` is **reserved on the wire and applied by nothing.** It holds bit 21 so the bits either side keep their
+numbers, but NowUI's label path takes a resolved `NowTextStyle` rather than a size, so there is nothing to set.
+Asking for it is an error naming `textStyle` as the answer — not a value that silently vanishes.
+
+### 2.8 Arguments — one rule, everywhere
+
+| What arrives | What happens |
+|---|---|
+| **absent** — `undefined` or `null` | the documented zero: `false`, `0`, `''`. **Legal**, and it has to stay legal: `ui.checkbox('a', state.notYetSet)` on frame one is normal and correct |
+| **the wrong type** | `NowUIAuthorError` naming the function, the parameter and what actually arrived |
+| **`NaN` or `±Infinity`** | `NowUIAuthorError` |
+
+This is uniform as of W10 and was not before, which is worth stating because the change is **breaking**: code
+that passed `'50'` to a slider used to draw a silent zero and now throws. What it replaced was three rules and an
+accident — `value === true` turned `'yes'` into `false`; `typeof value === 'number' ? value : 0` turned `'50'`
+into `0`; and both sat two lines from a helper that threw a well-written named error for exactly that mistake.
+
+`NaN` is the case the rule exists for. `typeof NaN` is `'number'`, so it passed every guard, reached the wire as
+an f32 and poisoned a layout with no message anywhere — a coordinate that is not a number is not a coordinate,
+and refusing it here costs one comparison where diagnosing it there costs an afternoon.
+
+A related invariant that is invisible from the outside but is what makes the rule safe: **every argument is
+validated before its op header is written.** `W.op(record, n)` writes a header PROMISING `n` argument slots, so a
+throw between the header and the nth slot would leave a stream one op short of its own claim — a corrupt frame
+that the managed validator rejects wholesale, with the author's name nowhere in the message. Instead a bad
+argument throws with nothing emitted, the recorder's `finally` closes the open scopes, and §4.4's partial frame
+still validates.
+
+
 
 ---
 
@@ -680,7 +821,8 @@ updated per op. `using` unwinds every open scope correctly — that is what `usi
 held in `using` rather than in a bridge-managed stack. The frame finishes clean, `StartUI` disposes normally, and the
 next frame does not hit `Now.cs:1279-1286`. The failing rid is added to a skip set, reported to JavaScript as a fault
 record in the result table, and its subtree is skipped on subsequent frames; the cost is one bad frame, then a stable
-UI with a hole in it and a message naming the hole. The skip set is cleared by `ui.reset()`.
+UI with a hole in it and a message naming the hole. The skip set would be cleared by `ui.reset()`, which is
+not in this release (§2.0) - so today a skipped subtree stays skipped for the life of the page.
 
 Per-op `try`/`catch` was considered and rejected: it costs an exception filter per op for a case that should never
 happen, and it would let a broken control silently do nothing forever.
@@ -1140,7 +1282,7 @@ Taken from M3-SurfaceScout §4.5 and not argued with:
         ├─→ Standalone/NowUI.Bridge/Generated/Replay.g.cs        the decode switch
         ├─→ Standalone/NowUI.Bridge/Generated/Ops.g.cs           opcode + signature tables
         ├─→ Standalone/NowUI.Bridge.Tests/Generated/GateFive.g.cs the JS-shaped half of the op-log diff
-        ├─→ Standalone/Web/NowUI.Web/wwwroot/nowui/nowui.js      the recorder and the 41 functions
+        ├─→ Standalone/Web/NowUI.Web/wwwroot/nowui/nowui.js      the recorder and the 50 functions
         ├─→ Standalone/Web/NowUI.Web/wwwroot/nowui/nowui.d.ts    types, with the C# XML docs carried over
         ├─→ Standalone/Surface/nowui.surface.json                the opcode manifest        (checked in)
         ├─→ Standalone/Surface/nowui.unsupported.json            exclusions with reasons    (checked in)
@@ -1212,7 +1354,7 @@ set of things that can drift is enumerable, capped, and each has a test that a C
 
 ### 7.5 Tier 2, and below it C#
 
-Tier 1 will not cover something; 41 functions against 184 factories and 830 setters, and the gap is by design. So
+Tier 1 will not cover something; 50 functions against 184 factories and 830 setters, and the gap is by design. So
 `SurfaceGen` also emits **tier 2**, mechanically, from assembly metadata, with no hand-written spec:
 
 ```js
@@ -1284,10 +1426,12 @@ Stated as decisions, not as gaps to be discovered.
     `NowTreeViewState` reference type (`NowControlFactories.cs:335`), and `NowFilePicker` is a host-integration
     question in a browser. There is no image control in `NowUI.Runtime` at all; images are drawn through the
     texture-carrying draw primitives, which need the managed-handle mechanism.
-12. **No custom themes or fonts beyond names.** `NowThemeAsset` (91 parameter occurrences) and `NowFontAsset` (21) are
-    managed reference types. `ui.theme('dark', body)` selects from what the host's resource manifest already provides.
-    Authoring a theme from JavaScript is not offered, and that is a real limitation for the "an AI writes an app"
-    story.
+12. **No custom themes or fonts, and no theme by asset name.** `NowThemeAsset` (91 parameter occurrences) and
+    `NowFontAsset` (21) are managed reference types. `ui.theme('light' | 'dark', body)` works and is the whole of
+    what is offered: the bridge builds those two assets itself, the way `NowTheme` builds its own defaults, so no
+    resource manifest is involved. A theme by ASSET NAME does need one and is absent. Authoring a theme from
+    JavaScript is not offered either, and that is a real limitation for the "an AI writes an app" story — an
+    author can colour any individual shape with `{ color }` (§2.3b), but cannot change what `accent` means.
 13. **No custom SDF material, no model preview, no IMGUI.** `NowSdfBuilder.SetMaterial` already cannot work in this
     host — the browser backend throws on any program outside the ten hand-ported ones (`M2-FeatureMatrix.md:78-82`).
     `Now.Model`/`NowModelPreview` is excluded from the standalone build entirely (`StandaloneCoreDesign.md:1675`) and
@@ -1324,6 +1468,36 @@ Stated as decisions, not as gaps to be discovered.
     2026-09-08; that carry has since been deleted, and item 2 above records what replaced it.
 24. **The C# escape hatch is not available to a JavaScript-only author.** `ui.host` requires somebody to write and
     compile C#. This is the price of a curated surface, and it is charged in exactly the places listed as items 7-13.
+
+### What the DRAWING surface cannot do
+
+Added with §2.3b, and stated the same way: decisions, not gaps to be discovered.
+
+25. **A canvas that GROWS is one frame stale in its size.** The origin is always exact — the decoder adds it — so
+    nothing ever lands in the wrong place; but a responsive chart is drawn at the old size for one frame after a
+    resize, and at 0 × 0 on its very first frame. Declaring `width` and `height` removes the lag entirely and
+    `box.stale` says which you got. It cannot be removed in general without doing layout in JavaScript.
+26. **No textures or images on a drawing.** `NowRectangle.SetTexture` exists and no `texture` option is exposed: a
+    texture is a HANDLE, and handles need the host resource manifest that item 12 also lacks. When that lands, a
+    texture is one option bit carrying a handle and nothing in §2.3b moves.
+27. **No transforms, no rotation.** Available rather than absent — `Now` has a transform stack — but a transform is
+    a SCOPE carrying a matrix, and it interacts with mask bounds and with hit testing. Deferred rather than
+    specified badly; it is the first thing the option mask's reserved bits should buy.
+28. **No hit testing on a drawing, and no text measurement read-back.** Both need a result channel keyed to
+    something that is not a control rid, which is a §6 redesign rather than an addition. A drawing has no
+    identity (§2.3b) and therefore nothing to key a result to. Put a `ui.button` over the shape instead.
+29. **No SDF shapes, node graph, markdown or code editor from JavaScript.** Each is a sub-surface rather than an
+    op: the node graph needs a graph model with per-node identity ancestry, markdown needs a document model plus
+    link callbacks, the code editor needs a text buffer that would cross the boundary on every keystroke — which
+    the volatile-string channel is not sized for — and SDF needs shape assets, i.e. item 26's manifest again.
+    None is expressible as "one op with arguments", which is the unit this ABI is built from.
+30. **No line gradients or arrowheads.** `NowLine.colorEnd` and `NowLine.arrows` are real NowUI features, omitted
+    only to keep option bits in reserve. Reachable later with no wire break.
+31. **`fontSize` is reserved and does nothing.** It holds a bit on the wire; NowUI's label path takes a resolved
+    `NowTextStyle` rather than a size, so there is nothing to set. Asking for it throws, naming `textStyle`.
+32. **Wrapping existing controls in a `ui.mask` resets their keyed state once.** A mask opens an identity scope
+    like every other scope, so it changes the canonical path of everything inside it — scroll offset, caret and
+    foldout state reset on the frame the mask is introduced. Same cost as wrapping them in a `ui.column`.
 
 ---
 

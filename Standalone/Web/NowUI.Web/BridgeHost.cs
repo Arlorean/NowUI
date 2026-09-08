@@ -45,8 +45,23 @@ namespace NowUI.Web
         /// useless as evidence. The theme decides both colours, so letting it decide the ground too is what makes
         /// them agree.
         /// </remarks>
-        internal static UnityEngine.Color ground =>
-            NowTheme.themeAsset.GetColor(NowColorToken.Background);
+        /// <remarks>
+        /// <para>It is the ground the LAST frame ended on, not the one the current theme reports right now, and
+        /// that one word is the whole of a defect. The clear runs BEFORE the author's draw function
+        /// (WebApp.Frame), so at clear time an <c>ui.theme('dark')</c> scope has not opened yet and
+        /// <c>NowTheme.themeAsset</c> is still whatever the frame ended on last time. Reading it live therefore
+        /// cleared to the DEFAULT theme's background forever, while everything inside the scope drew in the dark
+        /// theme's colours: light text on a light ground, present and invisible. Text inside a
+        /// <c>ui.card</c> survived, because a card paints its own background, which is exactly the shape that
+        /// made it look like a text bug rather than a clear bug.</para>
+        /// <para>Sampling at the end of the frame instead costs one frame of lag when the author SWITCHES theme,
+        /// which is invisible at 60 Hz and self-correcting, and costs nothing at all in the ordinary case where
+        /// the theme is the same every frame.</para>
+        /// </remarks>
+        internal static UnityEngine.Color ground => s_Ground;
+
+        /// <summary>Seeded from the default theme so frame 1 clears to something sane before any frame has run.</summary>
+        private static UnityEngine.Color s_Ground = NowTheme.themeAsset.GetColor(NowColorToken.Background);
 
         private static BridgeRecorder s_Recorder;
         private static BridgeReplay s_Replay;
@@ -173,6 +188,10 @@ namespace NowUI.Web
                 // The result table is written by the last pass and sealed when RunFrame returns, so the table
                 // that crosses at the START of the next frame describes the pixels drawn at the end of this one.
                 s_Replay.RunFrame();
+
+                // The replay recorded this while the author's theme scope was still open; it closes before
+                // RunFrame returns, so sampling NowTheme here would read the default back. See `ground`.
+                s_Ground = s_Replay.frameGround ?? NowTheme.themeAsset.GetColor(NowColorToken.Background);
             }
 
             // The report is what a headless run reads. Written every frame while the count is small, so a capture

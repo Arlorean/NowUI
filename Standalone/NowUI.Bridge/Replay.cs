@@ -96,6 +96,16 @@ namespace NowUI.Bridge
         /// <summary>How many ops the last replay decoded. Evidence, and a test's cheapest assertion.</summary>
         public int decodedOps { get; private set; }
 
+        /// <summary>
+        /// The background colour of the outermost <c>ui.theme</c> scope this frame, or null when the author
+        /// opened none. A host clears BEFORE the author's draw function runs, so this is the only way for the
+        /// clear to agree with the theme the frame actually drew in. Reset every frame by RunFrame.
+        /// </summary>
+        public UnityEngine.Color? frameGround { get; private set; }
+
+        /// <summary>Cleared at the top of each frame; set by OpenTheme.</summary>
+        private void ResetFrameGround() => frameGround = null;
+
         private int m_Faults;
 
         private readonly HashSet<string> m_Reported = new HashSet<string>();
@@ -154,6 +164,7 @@ namespace NowUI.Bridge
         public void RunFrame()
         {
             passes = 0;
+            ResetFrameGround();
             m_Results.BeginFrame();
 
             try
@@ -520,7 +531,16 @@ namespace NowUI.Bridge
                 return;
             }
 
-            m_Scopes[--m_Depth].Close();
+            // W9. The drawing origin is restored AFTER the scope closes, and the kind bit has to be read before
+            // Close() zeroes it. A canvas nested in a canvas therefore unwinds to the enclosing canvas's origin
+            // rather than to the screen, which is what makes canvas-local coordinates compose.
+            ref BridgeScopeFrame frame = ref m_Scopes[--m_Depth];
+            bool restoresOrigin = (frame.kinds & BridgeScopeFrame.HasOrigin) != 0;
+            Vector2 saved = frame.savedOrigin;
+
+            frame.Close();
+
+            if (restoresOrigin) m_Origin = saved;
         }
 
         private void Report(string message)

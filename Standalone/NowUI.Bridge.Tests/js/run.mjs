@@ -202,7 +202,17 @@ const failures = [];
 
 function test(name, body) {
     try {
-        body();
+        const returned = body();
+
+        // An async body is refused rather than awaited. Awaiting would make every check in this file
+        // order-dependent on a promise queue; refusing keeps them synchronous, and either way the failure this
+        // guards against is real: an async body's throw becomes an unhandled rejection and the check silently
+        // counts as passed. That is exactly what happened to the spec/runtime cross-check, which was green
+        // against a specification deliberately corrupted to disagree with it.
+        if (returned !== undefined && typeof returned.then === 'function')
+            throw new Error('this check has an async body, whose throws would be invisible. Hoist the awaits ' +
+                'to module scope - top-level await works here - and make the body synchronous.');
+
         passed++;
         console.log('  PASS  ' + name);
     } catch (e) {
@@ -1047,6 +1057,433 @@ test('a throw mid-draw leaves a balanced prefix with the faulted flag set', () =
         assert(depth >= 0, 'never unbalanced');
     }
     assertEqual(depth, 0, 'and balanced at the end');
+});
+
+// ================================================================================================ W10
+console.log('\nW10 - the author-facing surface: drawing, styling, and the one argument rule');
+
+// The REAL nowui.js, bound to a bare recorder. `install` is nowui.js's own surface factory - the same one
+// bridge.js hands the recorder in a browser - so these checks drive the code an author calls, not a stub of it.
+const surface = await import(`file://${nowui}/nowui.js`);
+
+const SCOPE_OPS = new Set([
+    'COLUMN', 'ROW', 'CARD', 'IDSCOPE', 'SCROLL', 'FOLDOUT', 'LIST_ITEM', 'CANVAS', 'MASK', 'SPLIT', 'PANE',
+    'THEME',
+]);
+
+/// A recorder with the real surface installed and an empty result table loaded, ready to record frame 1.
+function newSurface() {
+    const W = new Recorder({});
+    const u = surface.install(W);
+    W.results.load(null, new Uint8Array(0), 1);
+
+    // The frame number the next drawUi will use. It ADVANCES, because the trie's duplicate-key check is
+    // per frame (section 3.6 check 1) and several checks below record the same keys twice.
+    W.testFrame = 0;
+    return { W, ui: u };
+}
+
+/// Records one frame and returns its decoded ops. An author error propagates rather than being folded into the
+/// fault path, which is what lets assertThrows see it.
+function drawUi(W, body) {
+    W.reset(++W.testFrame);
+    try { body(); } finally { W.closeAll(); }
+    W.flush();
+    return decode(W);
+}
+
+/// Records a frame that is EXPECTED to throw, and returns the decoded ops anyway - so a check can assert that
+/// the throw left a stream the managed validator would still accept.
+function drawUiFaulting(W, body) {
+    W.reset(++W.testFrame);
+    let threw = null;
+    try { body(); } catch (e) { threw = e; W.fault(e); } finally { W.closeAll(); }
+    W.flush();
+    const frame = decode(W);
+    frame.threw = threw;
+    return frame;
+}
+
+/// Section 5.5 rule 4, applied on this side: the walk over argSlots must land exactly on opEnd, and rule 5's
+/// bracket count must come back to zero. A short op - a throw between W.op and its last argument slot - fails
+/// the first; an unclosed scope fails the second.
+function assertWalkable(W, what) {
+    const out = W.out;
+    const end = out[abi.HDR_OP_END];
+    let i = out[abi.HDR_OP_START];
+    let depth = 0;
+
+    while (i < end) {
+        const opcode = out[i] & 0xffff;
+        const slots = (out[i] >> 16) & 0xffff;
+        const record = abi.OPS_BY_OPCODE.get(opcode);
+
+        if (opcode === abi.OP_SCOPE_CLOSE) depth--;
+        else if (record !== undefined && SCOPE_OPS.has(record.name)) depth++;
+
+        assert(depth >= 0, what + ': a scope closed before it opened');
+
+        if (record !== undefined) {
+            const variable = record.args.some(a => a === 'opts' || a === 'strlist' || a === 'vec2list');
+            if (variable) assert(slots >= record.slots, what + ': ' + record.name + ' is under its minimum width');
+            else assertEqual(slots, record.slots, what + ': ' + record.name + ' argSlots');
+        }
+
+        i += 1 + slots;
+    }
+
+    assertEqual(i, end, what + ': the argSlots walk landed exactly on opEnd');
+    assertEqual(depth, 0, what + ': brackets balanced');
+}
+
+function opNames(frame) {
+    return frame.ops.map(op => op.opcode === abi.OP_SCOPE_CLOSE
+        ? '/'
+        : (abi.OPS_BY_OPCODE.has(op.opcode) ? abi.OPS_BY_OPCODE.get(op.opcode).name : '?' + op.opcode));
+}
+
+/// The OPTS op immediately before the op named, as { mask, payload }. The decoder consumes it the same way.
+function optsBefore(frame, name) {
+    const target = abi.OPS[name].opcode;
+    for (let i = 1; i < frame.ops.length; i++) {
+        if (frame.ops[i].opcode === target && frame.ops[i - 1].opcode === abi.OPS.OPTS.opcode)
+            return { mask: frame.ops[i - 1].args[0], payload: frame.ops[i - 1].args.slice(1) };
+    }
+    throw new Error('no OPTS immediately before ' + name);
+}
+
+/// The f32 view of an op's argument slots, for the checks that assert coordinates rather than op shapes.
+function floats(args) {
+    return Array.from(new Float32Array(Int32Array.from(args).buffer));
+}
+
+test('every drawing op reaches the stream, and the whole frame is walkable and balanced', () => {
+    const { W, ui } = newSurface();
+
+    const frame = drawUi(W, () => {
+        ui.canvas('plate', { width: 300, height: 200 }, () => {
+            ui.rect([0, 0, 40, 40], { style: 'accent' });
+            ui.circle([100, 50], 20, { color: 'danger', fill: false, stroke: 3 });
+            ui.line([0, 0], [50, 50], { color: 'text', stroke: 2, cap: 'round', dash: [6, 4] });
+            ui.bezier([0, 0], [10, 0], [20, 10], [30, 10], { color: 'success' });
+            ui.triangle([0, 0], [10, 0], [5, 10], { color: 'warning' });
+            ui.polygon([[0, 0], [10, 0], [5, 10]], { color: 'accentMuted' });
+            ui.gradient([0, 0, 50, 50], 'surface', 'accent', { kind: 'radial' });
+            ui.mask({ circle: [25, 25], radius: 20 }, () => ui.rect([0, 0, 100, 100]));
+            ui.text('a canvas holds controls too');
+        });
+    });
+
+    assertWalkable(W, 'one of everything');
+
+    const names = opNames(frame).filter(n => n !== 'OPTS' && n !== '/');
+    assertEqual(names.join(' '),
+        'CANVAS RECT CIRCLE LINE BEZIER TRIANGLE POLYGON GRADIENT MASK RECT TEXT',
+        'the ops, in the order they were written');
+});
+
+test('a coordinate is emitted raw: the decoder adds the canvas origin, not this side', () => {
+    const { W, ui } = newSurface();
+
+    // The rect's four slots must be exactly what the author wrote. If this side ever started adding an origin
+    // of its own the drawing would land twice-translated, and the only symptom would be a wrong picture.
+    const frame = drawUi(W, () => {
+        ui.canvas('plate', { width: 300, height: 200 }, () => ui.rect([10, 20, 30, 40]));
+    });
+
+    const rect = frame.ops.find(op => op.opcode === abi.OPS.RECT.opcode);
+    assertEqual(floats(rect.args).join(','), '10,20,30,40', 'the coordinates as written');
+});
+
+test('a split is SPLIT{ PANE(0){} PANE(1){} } - three ops, and no new kind of bracket', () => {
+    const { W, ui } = newSurface();
+
+    const frame = drawUi(W, () => {
+        ui.split('main', 0.4, { axis: 'vertical' }, () => ui.text('top'), () => ui.text('bottom'));
+    });
+
+    assertWalkable(W, 'a split');
+    assertEqual(opNames(frame).join(' '), 'SPLIT PANE TEXT / PANE TEXT / /', 'the bracket shape');
+
+    assertEqual(frame.ops[0].args[3], abi.SPLIT_AXIS.vertical, 'the axis argument');
+    assertEqual(frame.ops[1].args[0], 0, 'the first pane carries index 0');
+    assertEqual(frame.ops[4].args[0], 1, 'the second carries index 1');
+});
+
+test('the two panes of a split are distinct identity parents', () => {
+    const { W, ui } = newSurface();
+
+    // The same key in both panes must resolve to two different rids. If the panes shared a path they would
+    // share focus, caret and scroll state - the exact failure the identity model exists to prevent.
+    const rids = [];
+
+    drawUi(W, () => {
+        ui.split('main', 0.5,
+            () => { ui.button('go'); rids.push(W.trie.control('probe').rid); },
+            () => { ui.button('go'); rids.push(W.trie.control('probe').rid); });
+    });
+
+    assertEqual(rids.length, 2, 'both panes ran');
+    assert(rids[0] !== rids[1], "the same key in the two panes is two different controls");
+});
+
+test('ui.theme names light or dark and refuses anything else', () => {
+    const { W, ui } = newSurface();
+
+    const frame = drawUi(W, () => ui.theme('dark', () => ui.text('inside')));
+    assertEqual(opNames(frame).join(' '), 'THEME TEXT /', 'the theme scope');
+    assertEqual(frame.ops[0].args[2], abi.THEME_MODE.dark, 'the mode argument');
+
+    assertThrows(() => drawUi(W, () => ui.theme('sepia', () => {})), 'is not a theme name');
+});
+
+test('a colour is a token, a hex literal or RGBA floats, and a literal packs like COLOR_FIELD', () => {
+    const { W, ui } = newSurface();
+
+    const token = drawUi(W, () => ui.rect([0, 0, 1, 1], { color: 'accent' }));
+    let opts = optsBefore(token, 'RECT');
+    assert((opts.mask & abi.OPT_COLOR) !== 0, 'the colour bit is set');
+    assertEqual(opts.payload[0], abi.PAINT_TOKEN, 'tag 1 is a theme token');
+    assertEqual(opts.payload[1], abi.COLOR_TOKEN.accent, 'and the token is accent');
+
+    const hex = drawUi(W, () => ui.rect([0, 0, 1, 1], { color: '#3B82F6' }));
+    opts = optsBefore(hex, 'RECT');
+    assertEqual(opts.payload[0], abi.PAINT_LITERAL, 'tag 0 is a literal');
+
+    // Red in the LOW byte: 0xFF F6 82 3B, which is what the COLOR_FIELD op already packs.
+    assertEqual(opts.payload[1] >>> 0, 0xFFF6823B, 'red in the low byte, alpha in the high one');
+
+    const short = optsBefore(drawUi(W, () => ui.rect([0, 0, 1, 1], { color: '#f00' })), 'RECT');
+    assertEqual(short.payload[1] >>> 0, 0xFF0000FF, "'#f00' is opaque red");
+
+    const floatsForm = optsBefore(drawUi(W, () => ui.rect([0, 0, 1, 1], { color: [1, 0, 0, 1] })), 'RECT');
+    assertEqual(floatsForm.payload[1] >>> 0, 0xFF0000FF, 'and so is [1, 0, 0, 1]');
+});
+
+test('the option payload follows the mask in ascending bit order, W10 bits included', () => {
+    const { W, ui } = newSurface();
+
+    const frame = drawUi(W, () => ui.circle([0, 0], 5, { color: 'danger', stroke: 3, fill: false, segments: 48 }));
+    const { mask, payload } = optsBefore(frame, 'CIRCLE');
+
+    assertEqual(mask, abi.OPT_COLOR | abi.OPT_STROKE | abi.OPT_SEGMENTS | abi.OPT_FILL, 'the four bits');
+
+    // colour (2 slots, bit 16), stroke (1, bit 17), segments (1, bit 24), fill (1, bit 25) - in that order and
+    // no other. The decoder walks the same table; a payload out of order is a silently wrong picture.
+    assertEqual(payload.length, 5, 'five payload slots');
+    assertEqual(payload[0], abi.PAINT_TOKEN, 'colour tag');
+    assertEqual(payload[1], abi.COLOR_TOKEN.danger, 'colour value');
+    assertEqual(floats(payload)[2], 3, 'stroke');
+    assertEqual(payload[3], 48, 'segments');
+    assertEqual(payload[4], 0, 'fill: false, which a flag-only bit could not have said');
+});
+
+test('a canvas hands back its declared size this frame, and a measured one is marked stale', () => {
+    const { W, ui } = newSurface();
+
+    let declared = null;
+    let grown = null;
+
+    drawUi(W, () => {
+        declared = ui.canvas('exact', { width: 300, height: 200 }, () => {});
+        grown = ui.canvas('grown', { grow: 1 }, () => {});
+    });
+
+    assertEqual(declared.width, 300, 'the declared width is used verbatim');
+    assertEqual(declared.height, 200, 'and so is the height');
+    assertEqual(declared.stale, false, 'a declared canvas is not stale');
+
+    assertEqual(grown.width, 0, 'a grown canvas has no size on frame one');
+    assertEqual(grown.height, 0, 'nor a height');
+    assertEqual(grown.stale, true, 'and it says so');
+});
+
+test('a canvas with no height source is an error, not a silent zero-height nothing', () => {
+    const { W, ui } = newSurface();
+
+    const e = assertThrows(() => drawUi(W, () => ui.canvas('flat', {}, () => {})), 'needs a height');
+    assert(String(e.message).indexOf('minHeight') > 0, 'the message names the three ways to give it one');
+
+    // A fresh recorder per accepted form: the throw above left this frame with no scope where the next one has
+    // one, and reusing W here would trip section 3.6's shape-change warning on the test's own doing.
+    for (const opts of [{ height: 10 }, { minHeight: 10 }, { grow: 1 }]) {
+        const fresh = newSurface();
+        drawUi(fresh.W, () => fresh.ui.canvas('ok', opts, () => {}));
+    }
+});
+
+test("a canvas's body always runs, so an empty one cannot renumber its siblings", () => {
+    const { W, ui } = newSurface();
+
+    let ran = 0;
+    drawUi(W, () => ui.canvas('c', { height: 10 }, () => { ran++; }));
+    assertEqual(ran, 1, 'the body ran at a size nothing had measured yet');
+});
+
+test('ui.mask accepts five shapes and names the mistake for anything else', () => {
+    const { W, ui } = newSurface();
+
+    const shapes = [
+        { rect: [0, 0, 10, 10] },
+        { rect: [0, 0, 10, 10], radius: 4 },
+        { ellipse: [0, 0, 10, 10] },
+        { circle: [5, 5], radius: 4 },
+        { capsule: [[0, 0], [10, 10]], radius: 3 },
+    ];
+
+    for (let i = 0; i < shapes.length; i++) {
+        const frame = drawUi(W, () => ui.mask(shapes[i], () => ui.text('x')));
+        assertWalkable(W, 'mask ' + i);
+        assertEqual(frame.ops[0].args[2], i, 'the shape kind enum, in MASK_KIND order');
+        assertEqual(frame.ops[0].slots, abi.OPS.MASK.slots, 'twelve slots either way');
+    }
+
+    assertThrows(() => drawUi(W, () => ui.mask({ blob: 1 }, () => {})), 'not one this build knows');
+    assertThrows(() => drawUi(W, () => ui.mask({ circle: [0, 0] }, () => {})), 'needs a radius');
+});
+
+test('every wrong argument is a named error rather than a zero', () => {
+    const cases = [
+        ['a string where a number goes', u => u.slider('s', '50', 0, 100), 'must be a number'],
+        ['a string where a boolean goes', u => u.checkbox('c', 'yes'), 'must be true or false'],
+        ['NaN', u => u.slider('s', NaN, 0, 100), 'is NaN'],
+        ['Infinity', u => u.progress(Infinity), 'is Infinity'],
+        ['an object where text goes', u => u.text({}), 'must be text'],
+        ['a flag asked wrongly', u => u.button('b', { disabled: 1 }), 'must be true or false'],
+        ['segments on a line', u => u.line([0, 0], [1, 1], { segments: 8 }), 'not an option for ui.line'],
+        ['style on a circle', u => u.circle([0, 0], 5, { style: 'accent' }), 'does not take `style`'],
+        ['a colour that is not one', u => u.rect([0, 0, 1, 1], { color: 'purple' }), 'is not a colour'],
+        ['a malformed hex', u => u.rect([0, 0, 1, 1], { color: '#GG0000' }), 'is not a colour'],
+        ['a three-number box', u => u.rect([0, 0, 1], {}), 'is a box'],
+        ['an odd flat point list', u => u.polygon([0, 0, 1]), 'even length'],
+        ['fontSize, which is reserved', u => u.rect([0, 0, 1, 1], { fontSize: 12 }), 'reserved on the wire'],
+    ];
+
+    for (const entry of cases) {
+        const { W, ui } = newSurface();
+        assertThrows(() => drawUi(W, () => entry[1](ui)), entry[2]);
+    }
+});
+
+test('absence is still the documented zero, because frame one depends on it', () => {
+    const { W, ui } = newSurface();
+
+    // `ui.checkbox('a', state.notYetSet)` is normal and correct on the first frame, and must not throw.
+    drawUi(W, () => {
+        assertEqual(ui.checkbox('c', undefined), false, 'undefined is false');
+        assertEqual(ui.slider('s', null, 0, 10), 0, 'null is 0');
+        assertEqual(ui.textField('t', undefined), '', 'undefined is the empty string');
+        ui.space(undefined);
+        ui.progress(null);
+    });
+
+    assertWalkable(W, 'absent arguments');
+});
+
+test('a throw mid-drawing leaves a stream the managed validator would still accept', () => {
+    // The trap this exists to catch: W.op writes a header PROMISING n argument slots, so a throw between the
+    // header and the nth slot is a corrupt frame rather than a caught author error - and it would surface as a
+    // validator rejection with no author's name anywhere in it.
+    const bodies = [
+        u => { u.text('before'); u.text({}); },
+        u => { u.text('before'); u.badge([1]); },
+        u => { u.text('before'); u.rect([0, 0, 1, 1], { color: 'nope' }); },
+        u => { u.text('before'); u.polygon([[0, 0], [1, 'x'], [2, 2]]); },
+        u => { u.text('before'); u.gradient([0, 0, 1, 1], 'accent', 42); },
+        u => { u.canvas('c', { height: 10 }, () => u.circle([0, 0], NaN)); },
+    ];
+
+    for (let i = 0; i < bodies.length; i++) {
+        const { W, ui } = newSurface();
+        const frame = drawUiFaulting(W, () => bodies[i](ui));
+
+        assert(frame.threw !== null, 'case ' + i + ' threw');
+        assertEqual(frame.threw.name, 'NowUIAuthorError', 'case ' + i + ' threw an AUTHOR error');
+        assertWalkable(W, 'case ' + i);
+    }
+});
+
+test('NOT_IMPLEMENTED is the single source of truth, and the three still throw by name', () => {
+    assertEqual(surface.NOT_IMPLEMENTED.join(','), 'reset,overlay,contextMenu', 'the three absences');
+
+    const { ui } = newSurface();
+    for (const name of surface.NOT_IMPLEMENTED)
+        assertThrows(() => ui[name](), 'ui.' + name + ' is not in this build');
+
+    // The other two were on that list until W10 and are now real. A regression that put either back would be
+    // invisible in the specification, whose section 2.0 is generated from the array above.
+    for (const name of ['theme', 'split'])
+        assert(surface.NOT_IMPLEMENTED.indexOf(name) < 0, 'ui.' + name + ' is implemented, not absent');
+});
+
+test('every function section 2 documents as present is present', () => {
+    // The other half of the same guarantee: the spec's tables and this list must name the same functions, so an
+    // AI reading the document cannot write a call that does not exist.
+    const { ui } = newSurface();
+
+    const documented = [
+        'frame', 'debugPath', 'theme', 'reset',
+        'column', 'row', 'card', 'when', 'list', 'scroll', 'foldout', 'split', 'overlay', 'canvas', 'mask',
+        'text', 'heading', 'subheading', 'caption', 'space', 'flexSpace', 'rule', 'badge',
+        'rect', 'circle', 'line', 'bezier', 'triangle', 'polygon', 'gradient',
+        'button', 'selectable', 'chip',
+        'textField', 'textArea', 'numberField', 'checkbox', 'switch', 'radio', 'slider', 'intSlider',
+        'dropdown', 'combo', 'colorField', 'datePicker', 'timePicker', 'tabs',
+        'progress', 'contextMenu',
+    ];
+
+    for (const name of documented)
+        assert(ui[name] !== undefined, 'ui.' + name + ' is documented and must exist');
+});
+
+const { readFileSync } = await import('node:fs');
+
+test('the specification and the runtime name the same functions, and mark the same ones absent', () => {
+    // THE CHECK THAT STOPS THIS HAPPENING AGAIN. Section 2 of M3-Spec.md tabled five functions with no absence
+    // marker while nowui.js threw for all five, so code written from the document threw on its first call. Prose
+    // cannot be trusted to stay in step with a runtime; a test can.
+    //
+    // It reads the specification's own tables and compares three things against the live `ui` object:
+    //   1. every function section 2 documents exists;
+    //   2. every row marked with the not-in-this-release marker throws by that name;
+    //   3. every name in NOT_IMPLEMENTED carries the marker in the document.
+    const spec = readFileSync(resolve(here, '../../../Docs/Standalone/M3-Spec.md'), 'utf8');
+
+    const section = spec.slice(spec.indexOf('\n## 2. '), spec.indexOf('\n## 3. '));
+    assert(section.length > 1000, 'section 2 was found');
+
+    // A table row: | `ui.name` markers | signature | ... - the markers are whatever sits between the closing
+    // backtick and the next pipe.
+    const rows = new Map();
+    const pattern = /^\| `ui\.([A-Za-z]+)`([^|]*)\|/gm;
+    let match;
+    while ((match = pattern.exec(section)) !== null) rows.set(match[1], match[2]);
+
+    assert(rows.size >= 45, 'the tables were parsed: ' + rows.size + ' rows');
+
+    const { ui } = newSurface();
+    const absentInSpec = [];
+
+    for (const [name, markers] of rows) {
+        assert(ui[name] !== undefined, 'ui.' + name + ' is documented in section 2 and must exist');
+        if (markers.indexOf('✗') >= 0) absentInSpec.push(name);
+    }
+
+    assertEqual(absentInSpec.slice().sort().join(','), surface.NOT_IMPLEMENTED.slice().sort().join(','),
+        'the rows marked absent and NOT_IMPLEMENTED are the same set');
+
+    // And the marker means what it says: every one of them throws, by its own name.
+    for (const name of absentInSpec)
+        assertThrows(() => ui[name](), 'ui.' + name + ' is not in this build');
+
+    // The other side of it: nothing the document leaves unmarked may throw a not-in-this-release error. This is
+    // the direction that actually failed, so it is checked directly rather than inferred from the set equality
+    // above.
+    for (const name of rows.keys()) {
+        if (absentInSpec.indexOf(name) >= 0) continue;
+        assert(surface.NOT_IMPLEMENTED.indexOf(name) < 0,
+            'ui.' + name + ' throws not-in-this-release but section 2 does not mark it');
+    }
 });
 
 // ================================================================================================ done

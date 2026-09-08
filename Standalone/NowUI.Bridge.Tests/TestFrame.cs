@@ -65,6 +65,43 @@ namespace NowUI.Bridge.Tests
             return RawOp(spec.Opcode, args.Length, args);
         }
 
+        /// <summary>
+        /// One f32 argument slot, as the int it is on the wire. W9's drawing ops are almost all coordinates, and
+        /// writing <c>F(12.5f)</c> inline is what lets an op stay one readable call.
+        /// </summary>
+        public static int F(float value)
+        {
+            return BitConverter.SingleToInt32Bits(value);
+        }
+
+        /// <summary>Two f32 slots: section 5.3's <c>vec2</c>.</summary>
+        public static int[] V2(float x, float y)
+        {
+            return new[] { F(x), F(y) };
+        }
+
+        /// <summary>Four f32 slots: section 5.3's <c>rect</c> or <c>vec4</c>.</summary>
+        public static int[] V4(float x, float y, float z, float w)
+        {
+            return new[] { F(x), F(y), F(z), F(w) };
+        }
+
+        /// <summary>Concatenates argument groups, so an op with mixed kinds reads as its kinds.</summary>
+        public static int[] Args(params object[] parts)
+        {
+            var flat = new List<int>();
+
+            foreach (object part in parts)
+            {
+                if (part is int[] many) flat.AddRange(many);
+                else if (part is int one) flat.Add(one);
+                else if (part is float f) flat.Add(F(f));
+                else throw new ArgumentException("TestFrame.Args takes int, float and int[] only, not " + part);
+            }
+
+            return flat.ToArray();
+        }
+
         /// <summary>An op whose declared argSlots can be made to disagree with what follows it.</summary>
         public TestFrame RawOp(int opcode, int declaredArgSlots, params int[] args)
         {

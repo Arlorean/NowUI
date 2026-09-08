@@ -25,6 +25,7 @@
 using System;
 using System.Collections.Generic;
 using NowUI;
+using UnityEngine;
 
 namespace NowUI.Bridge
 {
@@ -115,25 +116,75 @@ namespace NowUI.Bridge
     /// </remarks>
     internal struct BridgeScopeFrame
     {
-        internal const byte HasIdScope = 1 << 0;
-        internal const byte HasItemScope = 1 << 1;
-        internal const byte HasLayout = 1 << 2;
+        internal const int HasIdScope = 1 << 0;
+        internal const int HasItemScope = 1 << 1;
+        internal const int HasLayout = 1 << 2;
 
         /// <summary>W6. <c>ui.scroll</c> opens a NowScrollScope where a container opens a NowLayoutScope.</summary>
-        internal const byte HasScroll = 1 << 3;
+        internal const int HasScroll = 1 << 3;
 
-        public byte kinds;
+        // --- W9 ------------------------------------------------------------------------------------------------
+
+        /// <summary>An ambient mask: <c>ui.canvas</c>'s own box, or <c>ui.mask</c>'s analytic shape.</summary>
+        internal const int HasMask = 1 << 4;
+
+        /// <summary>One pane of a split - a NowSplitPaneScope, which is itself a mask plus a layout area.</summary>
+        internal const int HasPane = 1 << 5;
+
+        /// <summary>A theme override.</summary>
+        internal const int HasTheme = 1 << 6;
+
+        /// <summary>
+        /// This scope changed the drawing origin and must put it back. Carried as a kind rather than restored
+        /// unconditionally so that the common scope pays one bit test rather than a Vector2 copy.
+        /// </summary>
+        internal const int HasOrigin = 1 << 7;
+
+        /// <summary>
+        /// A split view whose <see cref="split"/> the two PANE ops inside it read. Nothing to dispose - a
+        /// NowSplitViewResult is a value - but the flag is what lets PANE say "my parent is not a split" rather
+        /// than open a pane on a default-constructed result.
+        /// </summary>
+        internal const int HasSplit = 1 << 8;
+
+        /// <summary>
+        /// Nine kinds, so this cannot be the byte it was through W6. Widened rather than packed: the frames live
+        /// in one array that is grown, never enumerated per op, and three bytes per open scope is not a cost
+        /// anything can measure.
+        /// </summary>
+        public int kinds;
+
         public ControlIdScope id;
         public NowKeyedItemScope item;
         public NowLayoutScope layout;
         public NowScrollScope scroll;
+        public NowMaskScope mask;
+        public NowSplitPaneScope pane;
+        public ThemeScope theme;
+        public NowSplitViewResult split;
+
+        /// <summary>The drawing origin this scope replaced, restored by <c>CloseScope</c> after <see cref="Close"/>.</summary>
+        public Vector2 savedOrigin;
 
         /// <summary>The rid the op carried, so a diagnostic can name a path rather than a hash.</summary>
         public int rid;
 
         public void Close()
         {
-            // Layout first: the container was opened INSIDE the identity scope, so it has to close inside it too.
+            // REVERSE ORDER, and it is load-bearing rather than tidy: NowScopeGuard throws "scopes must be
+            // disposed in reverse order" on a mistake here, which is a runtime failure in wasm with the worst
+            // available stack trace. The order below is the exact reverse of the order the openers push in:
+            //
+            //   CANVAS   id, layout, mask          ->  mask, layout, id
+            //   MASK     id, mask                  ->  mask, id
+            //   PANE     pane                      ->  pane
+            //   THEME    id, theme                 ->  theme, id
+            //   SPLIT    id                        ->  id            (the result is a value, not a scope)
+            //
+            // A mask or a pane opened INSIDE a layout therefore closes before it.
+            if ((kinds & HasMask) != 0) mask.Dispose();
+            if ((kinds & HasPane) != 0) pane.Dispose();
+            if ((kinds & HasTheme) != 0) theme.Dispose();
             if ((kinds & HasLayout) != 0) layout.Dispose();
             if ((kinds & HasScroll) != 0) scroll.Dispose();
             if ((kinds & HasItemScope) != 0) item.Dispose();

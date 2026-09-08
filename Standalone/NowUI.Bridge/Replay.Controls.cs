@@ -44,9 +44,47 @@ namespace NowUI.Bridge
     {
         public int mask;
 
+        /// <summary>
+        /// W9. The SECOND mask word, present only when <see cref="Abi.OptMore"/> is set in the first - which
+        /// nothing sets today. Read and carried so that a nowui.js from a later build does not desynchronise this
+        /// decode; the fields its bits name sit past every field this build knows, at the end of the op, where
+        /// the header's argSlots already accounts for them.
+        /// </summary>
+        public int mask2;
+
         public float width, height, minWidth, maxWidth, minHeight, maxHeight, grow, gap, step;
         public Vector4 padding;
         public int align, justify, style, textStyle;
+
+        // --- W9: styling -------------------------------------------------------------------------------------
+
+        /// <summary>The fill paint: <c>[tag, value]</c>. See <see cref="BridgePaint"/>.</summary>
+        public int colorTag, colorValue;
+
+        /// <summary>The outline paint: <c>[tag, value]</c>.</summary>
+        public int strokeColorTag, strokeColorValue;
+
+        public float stroke, blur, fontSize, angle;
+
+        /// <summary>Corner radii in HUMAN order - topLeft, topRight, bottomRight, bottomLeft.</summary>
+        /// <remarks>
+        /// Deliberately not the renderer-packed order. <c>NowMaskShape.RoundedRect(NowRect, Vector4)</c> takes
+        /// top-right, bottom-right, top-left, bottom-left (NowMaskShape.cs:105-111) and would silently rotate a
+        /// three-different-corners radius, so this value goes through <c>NowCornerRadius</c> or the four-float
+        /// setters everywhere it is used, never through a raw Vector4.
+        /// </remarks>
+        public Vector4 radius;
+
+        /// <summary>Dash length, gap, offset.</summary>
+        public Vector3 dash;
+
+        public int cap, segments, spread;
+
+        /// <summary>
+        /// Whether a shape is filled. NOT a flag-only option, which is the whole point of spending a payload slot
+        /// on a boolean: <c>fill: false</c> has to be sayable, and a flag-only bit can only say <c>true</c>.
+        /// </summary>
+        public bool fill;
 
         public bool Has(int bit) => (mask & bit) != 0;
 
@@ -65,6 +103,16 @@ namespace NowUI.Bridge
             o.mask = recorder.Slot(args);
 
             int slot = args + 1;
+
+            // W9. The continuation word, if any, comes BEFORE the payload - so a decoder that does not know the
+            // second word's bits still knows where the first word's fields start. Nothing sets OptMore today; the
+            // branch exists so that the day something does, this build skips it rather than mis-reading the whole
+            // options object. `Has` is a `!= 0` test, so the sign of bit 31 is not a problem on either side.
+            if (o.Has(Abi.OptMore))
+            {
+                o.mask2 = recorder.Slot(slot);
+                ++slot;
+            }
 
             // Ascending bit order, and the payload width per bit comes from Abi.OptSlots so the walk cannot
             // disagree with the recorder about where the next field starts. An unknown high bit (a nowui.js
@@ -93,8 +141,91 @@ namespace NowUI.Bridge
             if (o.Has(Abi.OptTextStyle)) o.textStyle = recorder.Slot(slot++);
             if (o.Has(Abi.OptStep)) o.step = recorder.SlotF32(slot++);
 
+            // Bits 14 and 15 are flag-only and carry nothing. Bits 16-27 are W9's, still in ascending bit order.
+
+            if (o.Has(Abi.OptColor))
+            {
+                o.colorTag = recorder.Slot(slot);
+                o.colorValue = recorder.Slot(slot + 1);
+                slot += 2;
+            }
+
+            if (o.Has(Abi.OptStroke)) o.stroke = recorder.SlotF32(slot++);
+
+            if (o.Has(Abi.OptStrokeColor))
+            {
+                o.strokeColorTag = recorder.Slot(slot);
+                o.strokeColorValue = recorder.Slot(slot + 1);
+                slot += 2;
+            }
+
+            if (o.Has(Abi.OptRadius))
+            {
+                o.radius = new Vector4(
+                    recorder.SlotF32(slot), recorder.SlotF32(slot + 1),
+                    recorder.SlotF32(slot + 2), recorder.SlotF32(slot + 3));
+                slot += 4;
+            }
+
+            if (o.Has(Abi.OptBlur)) o.blur = recorder.SlotF32(slot++);
+            if (o.Has(Abi.OptFontSize)) o.fontSize = recorder.SlotF32(slot++);
+            if (o.Has(Abi.OptCap)) o.cap = recorder.Slot(slot++);
+
+            if (o.Has(Abi.OptDash))
+            {
+                o.dash = new Vector3(
+                    recorder.SlotF32(slot), recorder.SlotF32(slot + 1), recorder.SlotF32(slot + 2));
+                slot += 3;
+            }
+
+            if (o.Has(Abi.OptSegments)) o.segments = recorder.Slot(slot++);
+            if (o.Has(Abi.OptFill)) o.fill = recorder.Slot(slot++) != 0;
+            if (o.Has(Abi.OptSpread)) o.spread = recorder.Slot(slot++);
+            if (o.Has(Abi.OptAngle)) o.angle = recorder.SlotF32(slot++);
+
             return o;
         }
+
+        /// <summary>
+        /// The fill colour: the author's <c>color</c> when there is one, otherwise the theme's
+        /// <paramref name="fallback"/> token.
+        /// </summary>
+        /// <remarks>
+        /// The fallback is a TOKEN rather than a literal on purpose. A shape with no colour drawn in
+        /// <c>Vector4.one</c> - which is what every shape builder's constructor defaults to - is white, and white
+        /// on the light theme's white ground is the same invisible-and-correct failure W2 hit with its first
+        /// label. Falling back to <c>NowColorToken.Text</c> means an uncoloured shape is visible in both themes.
+        /// </remarks>
+        public Color FillColor(NowThemeAsset theme, NowColorToken fallback)
+        {
+            return Has(Abi.OptColor)
+                ? BridgePaint.Resolve(theme, colorTag, colorValue, fallback)
+                : theme.GetColor(fallback);
+        }
+
+        /// <summary>
+        /// The outline colour: the author's <c>strokeColor</c> when there is one, and otherwise the FILL colour.
+        /// </summary>
+        /// <remarks>
+        /// FALLING BACK TO THE FILL COLOUR IS A BUG FIX, found in the browser and worth writing down because
+        /// nothing about it is visible from the C# side. Every shape builder's constructor leaves
+        /// <c>outlineColor</c> at <c>default</c> - which is transparent black, not "unset" (NowShape.cs:20-30) -
+        /// and <c>SetColor</c> does not touch it. So <c>{ color: 'danger', fill: false, stroke: 6 }</c>, which
+        /// reads as "a danger-coloured ring", produced a ring drawn in transparent black: no error, no warning,
+        /// nothing on screen. It was the one shape missing from W9's first browser capture.
+        /// <para>Defaulting the outline to the fill colour makes an outline the author asked for visible, and an
+        /// explicit <c>strokeColor</c> still wins. A filled shape whose outline matches its fill is invisible in
+        /// the harmless direction.</para>
+        /// </remarks>
+        public Color StrokeColor(NowThemeAsset theme, NowColorToken fallback)
+        {
+            return Has(Abi.OptStrokeColor)
+                ? BridgePaint.Resolve(theme, strokeColorTag, strokeColorValue, fallback)
+                : FillColor(theme, fallback);
+        }
+
+        /// <summary>Whether an outline colour has to be set at all: the author named a stroke, or a shape's fill off.</summary>
+        public bool NeedsStrokeColor => Has(Abi.OptStrokeColor) || Has(Abi.OptStroke) || (Has(Abi.OptFill) && !fill);
 
         /// <summary>
         /// The sizing half, as one <see cref="NowLayoutOptions"/>. Every tier-1 builder takes one through
@@ -164,6 +295,43 @@ namespace NowUI.Bridge
         public bool Disable(bool interaction) => disabled ? false : interaction;
     }
 
+    /// <summary>
+    /// Section 5.3's <c>paint</c> kind: two slots, a tag and a value.
+    /// </summary>
+    /// <remarks>
+    /// Tag 0's packing is byte-identical to the <c>color</c> kind's - it goes through the very same
+    /// <see cref="BridgeReplay.UnpackColor"/> the COLOR_FIELD op uses - so <c>ui.colorField</c>'s value composes
+    /// into <c>{ color: ... }</c> with no conversion at either end. That is one pair of functions rather than two
+    /// that merely happen to agree today.
+    /// </remarks>
+    public static class BridgePaint
+    {
+        public const int TagLiteral = 0;
+        public const int TagToken = 1;
+
+        /// <summary>
+        /// The colour a paint names. An unknown tag falls back rather than throwing: a paint arrives from a
+        /// nowui.js the surface hash has already agreed with, so an unknown tag means the two halves agree on the
+        /// manifest and disagree on this value - a bridge bug, and one a blank frame would hide.
+        /// </summary>
+        public static Color Resolve(NowThemeAsset theme, int tag, int value, NowColorToken fallback)
+        {
+            switch (tag)
+            {
+                case TagLiteral:
+                    return BridgeReplay.UnpackColor(value);
+
+                case TagToken:
+                    return value >= 0 && value <= (int)NowColorToken.Scrim
+                        ? theme.GetColor((NowColorToken)value)
+                        : theme.GetColor(fallback);
+
+                default:
+                    return theme.GetColor(fallback);
+            }
+        }
+    }
+
     public sealed partial class BridgeReplay
     {
         /// <summary>Section 2.7's options object, waiting for the op it modifies. See the file header.</summary>
@@ -176,11 +344,60 @@ namespace NowUI.Bridge
         /// </summary>
         private readonly List<string> m_Strings = new List<string>(16);
 
+        /// <summary>
+        /// W9's POLYGON points, decoded. One reusable list for the same reason <see cref="m_Strings"/> is one:
+        /// <c>Now.Polygon</c> reads it inside the call and keeps no reference, and a 500-point chart must not cost
+        /// an allocation per pass - and there are two passes under exactLayout.
+        /// </summary>
+        private readonly List<Vector2> m_Points = new List<Vector2>(64);
+
+        /// <summary>
+        /// W9. The top-left of the innermost enclosing CANVAS, in screen space; (0,0) when there is none.
+        /// </summary>
+        /// <remarks>
+        /// <para>Every drawing coordinate on the wire is CANVAS-LOCAL and this is what makes it absolute. Putting
+        /// the translation here rather than in JavaScript is the whole point of the design: the ORIGIN is exact on
+        /// every frame, because it comes from the layout pass that is running right now, so a drawing is never in
+        /// the wrong place. Only the canvas's SIZE can be one frame stale, and only when the author sized it by
+        /// growing rather than by declaring - a resized chart is briefly drawn at the old size, never in the wrong
+        /// corner.</para>
+        /// <para>It is reset in <see cref="BeginControlsPass"/> beside <c>m_Pending</c>, which is what keeps the
+        /// two exactLayout passes identical (section 5.6).</para>
+        /// </remarks>
+        private Vector2 m_Origin;
+
         /// <summary>Reset at the top of every decode pass, beside the scope depth. See the file header.</summary>
         private void BeginControlsPass()
         {
             m_Pending = default;
             m_RuleOrdinal = 0;
+            m_Origin = default;
+        }
+
+        // ---------------------------------------------------------------------------------------- geometry
+
+        /// <summary>One f32 slot.</summary>
+        private float Flt(int slot) => m_Recorder.SlotF32(slot);
+
+        /// <summary>Section 5.3's <c>vec2</c>, translated out of canvas-local space into screen space.</summary>
+        private Vector2 PointAt(int slot)
+        {
+            return new Vector2(m_Origin.x + Flt(slot), m_Origin.y + Flt(slot + 1));
+        }
+
+        /// <summary>
+        /// Section 5.3's <c>rect</c>: x, y, width, height. The POSITION is translated; the SIZE is not, because a
+        /// size is not a place.
+        /// </summary>
+        private NowRect RectAt(int slot)
+        {
+            return new NowRect(m_Origin.x + Flt(slot), m_Origin.y + Flt(slot + 1), Flt(slot + 2), Flt(slot + 3));
+        }
+
+        /// <summary>Section 5.3's <c>vec4</c>. Never translated: it is always parameters, never a position.</summary>
+        private Vector4 Vec4At(int slot)
+        {
+            return new Vector4(Flt(slot), Flt(slot + 1), Flt(slot + 2), Flt(slot + 3));
         }
 
         /// <summary>Consumes the pending options, leaving the field empty for the next op.</summary>
@@ -329,6 +546,58 @@ namespace NowUI.Bridge
                 // ---- feedback (section 2.6) ----------------------------------------------------------------
                 case "PROGRESS":
                     DrawProgress(m_Recorder.SlotF32(args));
+                    return true;
+
+                // ---- W9: drawing scopes --------------------------------------------------------------------
+                case "CANVAS":
+                    OpenCanvas(m_Recorder.Slot(args), m_Recorder.Slot(args + 1));
+                    return true;
+
+                case "MASK":
+                    OpenMask(args);
+                    return true;
+
+                case "SPLIT":
+                    OpenSplit(
+                        m_Recorder.Slot(args), m_Recorder.Slot(args + 1),
+                        m_Recorder.SlotF32(args + 2), m_Recorder.Slot(args + 3));
+                    return true;
+
+                case "PANE":
+                    OpenPane(m_Recorder.Slot(args));
+                    return true;
+
+                case "THEME":
+                    OpenTheme(m_Recorder.Slot(args), m_Recorder.Slot(args + 1), m_Recorder.Slot(args + 2));
+                    return true;
+
+                // ---- W9: drawings --------------------------------------------------------------------------
+                case "RECT":
+                    DrawRect(args);
+                    return true;
+
+                case "CIRCLE":
+                    DrawCircle(args);
+                    return true;
+
+                case "LINE":
+                    DrawLine(args, cubic: false);
+                    return true;
+
+                case "BEZIER":
+                    DrawLine(args, cubic: true);
+                    return true;
+
+                case "TRIANGLE":
+                    DrawTriangle(args);
+                    return true;
+
+                case "POLYGON":
+                    DrawPolygon(args);
+                    return true;
+
+                case "GRADIENT":
+                    DrawGradient(args);
                     return true;
 
                 default:
@@ -726,7 +995,7 @@ namespace NowUI.Bridge
             ++decodedControls;
             Identify(rid, segment);
 
-            Color color = Unpack(packed);
+            Color color = UnpackColor(packed);
             bool changed = NowLayout.ColorPicker()
                 .SetId(new NowId(segment))
                 .SetOptions(o.ToLayout())
@@ -738,7 +1007,9 @@ namespace NowUI.Bridge
         }
 
         /// <summary>Section 5.3's <c>color</c> kind: RGBA8 packed, red in the low byte.</summary>
-        private static Color Unpack(int packed)
+        /// <remarks>Internal rather than private because W9's <see cref="BridgePaint"/> resolves a literal paint
+        /// through this exact function - see its remarks for why sharing it is the point.</remarks>
+        internal static Color UnpackColor(int packed)
         {
             uint v = unchecked((uint)packed);
             return new Color(
@@ -825,6 +1096,425 @@ namespace NowUI.Bridge
             NowLayout.ProgressBar(value01)
                 .SetOptions(o.ToLayout())
                 .Draw();
+        }
+
+        // ------------------------------------------------------------------------------- W9: drawing scopes
+
+        /// <summary>
+        /// <c>ui.canvas</c>: one layout box, a coordinate origin, and a mask.
+        /// </summary>
+        /// <remarks>
+        /// <para>Three things happen here and each earns its line. The COLUMN reserves the box - a canvas is a
+        /// real container, so it may also hold controls, which flow normally while drawings paint at absolute
+        /// coordinates; a chart with a legend row is one canvas. The ORIGIN makes every coordinate inside it
+        /// local. The MASK means a drawing cannot escape its box, which is also what makes a canvas nest
+        /// correctly inside a scroll view.</para>
+        /// <para>The measured rect goes into the result table so the author can size next frame's drawing to it.
+        /// It is one frame old, which is section 6.2's R6 - "everything a control returns is one frame old" -
+        /// rather than a new exception: a canvas that declared numeric width and height has no lag at all, and one
+        /// that grew is stale in its SIZE only, never in its position.</para>
+        /// <para>The rid rather than the segment goes to SetId, for the reason OpenContainer records at
+        /// length.</para>
+        /// </remarks>
+        private void OpenCanvas(int rid, int segment)
+        {
+            BridgeOptions o = TakeOptions();
+            ref BridgeScopeFrame frame = ref Push(rid);
+
+            frame.id = BridgeIdentity.Scope(segment);
+            frame.kinds |= BridgeScopeFrame.HasIdScope;
+
+            NowLayoutScope scope = NowLayout.Column().SetId(new NowId(rid)).Options(o.ToLayout(container: true)).Begin();
+
+            frame.layout = scope;
+            frame.kinds |= BridgeScopeFrame.HasLayout;
+
+            frame.savedOrigin = m_Origin;
+            frame.kinds |= BridgeScopeFrame.HasOrigin;
+            m_Origin = new Vector2(scope.rect.x, scope.rect.y);
+
+            frame.mask = Now.Mask(scope.rect);
+            frame.kinds |= BridgeScopeFrame.HasMask;
+
+            // A presence-only record plus the rect. WriteEvent is exactly the "no value, flags only" write the
+            // design asked for under the name WriteNone - Results.cs has had it since W3 (BridgeValueKind.None),
+            // so no new method is needed. The rect follows immediately, which is the only order AppendRect
+            // supports.
+            m_Results.WriteEvent(rid, BridgeFlags.None);
+            m_Results.AppendRect(scope.rect);
+        }
+
+        /// <summary>
+        /// <c>ui.mask</c>: an analytic mask over a SUBSET of the enclosing canvas. A canvas already masks to its
+        /// own box, so this is for the cases that box cannot express - a circular avatar clip, a capsule, a
+        /// rounded panel.
+        /// </summary>
+        /// <remarks>
+        /// It opens an identity scope like every other scope in this surface, which has a consequence worth
+        /// stating in the docs rather than leaving to be discovered: wrapping EXISTING controls in a mask changes
+        /// their canonical path, so their keyed state - a scroll offset, a caret - resets once. That is the same
+        /// cost as wrapping them in a <c>ui.column</c> and is the price of uniform scope identity.
+        /// </remarks>
+        private void OpenMask(int args)
+        {
+            TakeOptions();
+
+            int rid = m_Recorder.Slot(args);
+            int segment = m_Recorder.Slot(args + 1);
+            int kind = m_Recorder.Slot(args + 2);
+            Vector4 extra = Vec4At(args + 7);
+            float feather = Flt(args + 11);
+
+            NowMaskShape shape;
+
+            switch (kind)
+            {
+                case 0:
+                    shape = NowMaskShape.Rectangle(RectAt(args + 3));
+                    break;
+
+                case 1:
+                    // Through NowCornerRadius, NOT the raw Vector4 overload: that one takes the renderer's packed
+                    // order (top-right, bottom-right, top-left, bottom-left, NowMaskShape.cs:105-111) and would
+                    // silently rotate a mask whose four corners differ.
+                    shape = NowMaskShape.RoundedRect(
+                        RectAt(args + 3), new NowCornerRadius(extra.x, extra.y, extra.z, extra.w));
+                    break;
+
+                case 2:
+                    shape = NowMaskShape.Ellipse(RectAt(args + 3));
+                    break;
+
+                case 3:
+                    // The rect slot carries cx, cy, r for this kind: a circle has no width and height to send.
+                    shape = NowMaskShape.Circle(PointAt(args + 3), Flt(args + 5));
+                    break;
+
+                case 4:
+                    // Two POINTS, so both are translated. RectAt would translate the first and not the second,
+                    // which is exactly the bug this branch exists to not have.
+                    shape = NowMaskShape.Capsule(PointAt(args + 3), PointAt(args + 5), extra.x);
+                    break;
+
+                default:
+                    Report("NowUI bridge: MASK carried shape kind " + kind + ", which this build does not know. " +
+                           "The surface hash matched, so abi.js and Abi.cs agree on the manifest and disagree on " +
+                           "this enum. Falling back to a rectangular mask.");
+                    shape = NowMaskShape.Rectangle(RectAt(args + 3));
+                    break;
+            }
+
+            if (feather > 0f) shape = shape.SetFeather(feather);
+
+            ref BridgeScopeFrame frame = ref Push(rid);
+
+            frame.id = BridgeIdentity.Scope(segment);
+            frame.kinds |= BridgeScopeFrame.HasIdScope;
+
+            frame.mask = Now.Mask(shape);
+            frame.kinds |= BridgeScopeFrame.HasMask;
+        }
+
+        /// <summary>
+        /// <c>ui.split</c>: two resizable panes and a draggable divider. It needs no second kind of scope bracket
+        /// because brackets NEST - a split is SPLIT{ PANE(0){..} PANE(1){..} }, three ops and one structural rule
+        /// that already existed.
+        /// </summary>
+        /// <remarks>
+        /// The control draws FIRST and the identity scope opens after it, which is <see cref="OpenFoldout"/>'s
+        /// shape: the split's own id resolves under the enclosing scope, and the panes' contents resolve under the
+        /// split's. The ratio comes back through the result table so a drag reaches the author's state.
+        /// </remarks>
+        private void OpenSplit(int rid, int segment, float ratio, int axis)
+        {
+            BridgeOptions o = TakeOptions();
+            ++decodedControls;
+            Identify(rid, segment);
+
+            float value = ratio;
+            NowSplitViewResult result = NowLayout.SplitView((NowSplitAxis)axis)
+                .SetId(new NowId(segment))
+                .SetOptions(o.ToLayout())
+                .Begin(ref value);
+
+            m_Results.WriteF32(rid, result.dragging ? BridgeFlags.Changed : BridgeFlags.None, value);
+
+            ref BridgeScopeFrame frame = ref Push(rid);
+            frame.id = BridgeIdentity.Scope(segment);
+            frame.kinds |= BridgeScopeFrame.HasIdScope;
+            frame.split = result;
+            frame.kinds |= BridgeScopeFrame.HasSplit;
+        }
+
+        /// <summary>
+        /// One pane of the enclosing split. <c>NowSplitPaneScope</c> already bundles a mask and a layout area
+        /// (NowSplitView.cs:199-215), so a pane clips and lays out for free.
+        /// </summary>
+        /// <remarks>
+        /// No identity scope of its own, and that is a decision rather than an omission: <c>NowLayout.Area</c> is
+        /// opened with the split's own per-pane resolved key, so the two panes are already distinct identity
+        /// parents derived from the split's id. Adding a bridge-invented segment on top would be structure the C#
+        /// API does not have.
+        /// </remarks>
+        private void OpenPane(int index)
+        {
+            TakeOptions();
+
+            if (m_Depth == 0 || (m_Scopes[m_Depth - 1].kinds & BridgeScopeFrame.HasSplit) == 0)
+            {
+                // The validator balances brackets but does not type them, so this is reachable from a malformed
+                // stream. A frame is still pushed: the matching OP_SCOPE_CLOSE is coming either way, and popping
+                // a scope that was never pushed is the worse failure.
+                Report("NowUI bridge: PANE appeared outside a SPLIT. The pane was skipped and its body will draw " +
+                       "in the enclosing container.");
+                Push(m_Depth > 0 ? m_Scopes[m_Depth - 1].rid : 0);
+                return;
+            }
+
+            NowSplitViewResult split = m_Scopes[m_Depth - 1].split;
+            int parentRid = m_Scopes[m_Depth - 1].rid;
+
+            ref BridgeScopeFrame frame = ref Push(parentRid);
+            frame.pane = index == 0 ? split.BeginFirst() : split.BeginSecond();
+            frame.kinds |= BridgeScopeFrame.HasPane;
+        }
+
+        /// <summary>
+        /// <c>ui.theme</c>, in the only form a browser host can serve: light or dark.
+        /// </summary>
+        /// <remarks>
+        /// The general form - a theme by asset NAME - does need a host resource manifest, which is the same
+        /// missing piece that blocks textures. Light and dark do not: <see cref="ThemeAssets"/> builds them the
+        /// way NowTheme builds its own defaults, so the "manifest" is a two-entry table.
+        /// </remarks>
+        private void OpenTheme(int rid, int segment, int mode)
+        {
+            TakeOptions();
+
+            NowThemeAsset asset = ThemeAssets(dark: mode == 1);
+
+            ref BridgeScopeFrame frame = ref Push(rid);
+
+            frame.id = BridgeIdentity.Scope(segment);
+            frame.kinds |= BridgeScopeFrame.HasIdScope;
+
+            frame.theme = NowControls.Theme(asset);
+            frame.kinds |= BridgeScopeFrame.HasTheme;
+
+            // The ground a host should clear to, recorded HERE because this is the only moment the author's theme
+            // is knowable: the scope closes before RunFrame returns, and a host that samples the theme after the
+            // frame - or before it, which is when a clear actually runs - sees the default instead. The outermost
+            // scope wins, because it is the one that owns the page. See BridgeHost.ground.
+            if (!frameGround.HasValue)
+                frameGround = asset.GetColor(NowColorToken.Background);
+        }
+
+        private static NowThemeAsset s_Light;
+        private static NowThemeAsset s_Dark;
+
+        /// <summary>
+        /// The bridge's own light and dark assets, built once and cached for the session.
+        /// </summary>
+        /// <remarks>
+        /// Built here rather than borrowed from <c>NowTheme</c>, and the difference matters. NowTheme's cached
+        /// defaults are reached by TOGGLING the global <c>NowTheme.preferDark</c> and reading <c>themeAsset</c>
+        /// back - and <c>themeAsset</c> resolves against the theme STACK, so inside another theme scope that
+        /// returns the enclosing asset's counterpart rather than the default. Constructing the two assets the same
+        /// way NowTheme constructs its own (NowTheme.cs:79-96) makes <c>ui.theme('dark')</c> mean the dark theme
+        /// wherever it appears, with no global state poked on the way.
+        /// </remarks>
+        private static NowThemeAsset ThemeAssets(bool dark)
+        {
+            if (dark)
+            {
+                if (s_Dark == null)
+                {
+                    s_Dark = ScriptableObject.CreateInstance<NowThemeAsset>();
+                    s_Dark.name = "NowUI Bridge Dark Theme";
+                    s_Dark.hideFlags = HideFlags.HideAndDontSave;
+                    s_Dark.ResetToDefaults(dark: true);
+                }
+
+                return s_Dark;
+            }
+
+            if (s_Light == null)
+            {
+                s_Light = ScriptableObject.CreateInstance<NowThemeAsset>();
+                s_Light.name = "NowUI Bridge Light Theme";
+                s_Light.hideFlags = HideFlags.HideAndDontSave;
+                s_Light.ResetToDefaults(dark: false);
+            }
+
+            return s_Light;
+        }
+
+        // ------------------------------------------------------------------------------------ W9: drawings
+
+        /// <summary>
+        /// <c>ui.rect</c>. The one drawing that has a semantic style, because it is the one NowUI shape with a
+        /// <c>SetStyle</c>.
+        /// </summary>
+        /// <remarks>
+        /// STYLE FIRST, THEN EXPLICIT. <c>SetStyle</c> sets colour, radius and outline together, so semantic-then-
+        /// explicit is the only layering in which <c>{ style: 'accent', radius: 0 }</c> means what it reads as. And
+        /// a rect with NEITHER a colour nor a style takes the Surface style rather than a raw white: this is the
+        /// same white-on-white failure the RULE op's comment already records, and the same fix.
+        /// </remarks>
+        private void DrawRect(int args)
+        {
+            BridgeOptions o = TakeOptions();
+            NowThemeAsset theme = NowTheme.themeAsset;
+
+            NowRectangle rect = Now.Rectangle(RectAt(args));
+
+            bool styled = o.Has(Abi.OptStyle) || o.disabled || !o.Has(Abi.OptColor);
+            if (styled) rect = rect.SetStyle(theme, o.RectStyle(NowRectangleStyle.Surface));
+
+            if (o.Has(Abi.OptColor)) rect = rect.SetColor(o.FillColor(theme, NowColorToken.Text));
+
+            // The four-float overload, in human order. SetRadius(Vector4) is the renderer's packed order.
+            if (o.Has(Abi.OptRadius)) rect = rect.SetRadius(o.radius.x, o.radius.y, o.radius.z, o.radius.w);
+
+            if (o.Has(Abi.OptStroke)) rect = rect.SetOutline(o.stroke);
+
+            // An explicit strokeColor always wins. Without one, the outline is filled in from the fill colour
+            // ONLY when no style supplied one - SetStyle sets colour, radius and outline together, and
+            // { style: 'accent', stroke: 3 } must keep the accent style's own outline.
+            if (o.Has(Abi.OptStrokeColor) || (o.Has(Abi.OptStroke) && !styled))
+                rect = rect.SetOutlineColor(o.StrokeColor(theme, NowColorToken.Border));
+            if (o.Has(Abi.OptBlur)) rect = rect.SetBlur(o.blur);
+
+            rect.Draw();
+        }
+
+        /// <summary>
+        /// <c>ui.circle</c>, on <c>Now.Ellipse(center, radius)</c> so that one op serves both a circle and an
+        /// ellipse - the author broadcasts a scalar radius, or names two.
+        /// </summary>
+        /// <remarks>
+        /// The RADIUS is not translated by the origin. It is a size, and a size is not a place; only the centre
+        /// moves with the canvas.
+        /// </remarks>
+        private void DrawCircle(int args)
+        {
+            BridgeOptions o = TakeOptions();
+            NowThemeAsset theme = NowTheme.themeAsset;
+
+            NowCircle circle = Now.Ellipse(PointAt(args), new Vector2(Flt(args + 2), Flt(args + 3)))
+                .SetColor(o.FillColor(theme, NowColorToken.Text));
+
+            if (o.Has(Abi.OptSegments)) circle = circle.SetSegments(o.segments);
+            if (o.Has(Abi.OptStroke)) circle = circle.SetOutline(o.stroke);
+            if (o.NeedsStrokeColor) circle = circle.SetOutlineColor(o.StrokeColor(theme, NowColorToken.Text));
+
+            // AFTER SetColor, and this is not stylistic: SetColor sets fill = true as a side effect
+            // (NowShape.cs:59), so an explicit `fill: false` applied before it would be silently undone.
+            if (o.Has(Abi.OptFill)) circle = circle.SetFill(o.fill);
+
+            circle.Draw();
+        }
+
+        /// <summary><c>ui.line</c> and <c>ui.bezier</c>: the same NowLine, straight or cubic.</summary>
+        private void DrawLine(int args, bool cubic)
+        {
+            BridgeOptions o = TakeOptions();
+            NowThemeAsset theme = NowTheme.themeAsset;
+
+            NowLine line = cubic
+                ? Now.Bezier(PointAt(args), PointAt(args + 2), PointAt(args + 4), PointAt(args + 6))
+                : Now.Line(PointAt(args), PointAt(args + 2));
+
+            line = line.SetColor(o.FillColor(theme, NowColorToken.Text));
+
+            if (o.Has(Abi.OptStroke)) line = line.SetWidth(o.stroke);
+            if (o.Has(Abi.OptCap)) line = line.SetCap((NowLineCap)o.cap);
+            if (o.Has(Abi.OptDash)) line = line.SetDash(o.dash.x, o.dash.y, o.dash.z);
+
+            line.Draw();
+        }
+
+        private void DrawTriangle(int args)
+        {
+            BridgeOptions o = TakeOptions();
+            NowThemeAsset theme = NowTheme.themeAsset;
+
+            NowTriangle triangle = Now.Triangle(PointAt(args), PointAt(args + 2), PointAt(args + 4))
+                .SetColor(o.FillColor(theme, NowColorToken.Text));
+
+            if (o.Has(Abi.OptStroke)) triangle = triangle.SetOutline(o.stroke);
+            if (o.NeedsStrokeColor) triangle = triangle.SetOutlineColor(o.StrokeColor(theme, NowColorToken.Text));
+            if (o.Has(Abi.OptFill)) triangle = triangle.SetFill(o.fill);
+
+            triangle.Draw();
+        }
+
+        /// <summary>Section 5.3's <c>vec2list</c>: one count slot, then 2 * count f32.</summary>
+        private void DrawPolygon(int args)
+        {
+            BridgeOptions o = TakeOptions();
+            NowThemeAsset theme = NowTheme.themeAsset;
+
+            int count = m_Recorder.Slot(args);
+            m_Points.Clear();
+            for (int i = 0; i < count; ++i) m_Points.Add(PointAt(args + 1 + i * 2));
+
+            // Fewer than three points is not a polygon. Silently drawing nothing is right here rather than a
+            // diagnostic: a chart whose data is still loading legitimately has none, and NowPolygon's own path
+            // would do the same thing without saying so either.
+            if (m_Points.Count < 3) return;
+
+            NowPolygon polygon = Now.Polygon(m_Points, 0, m_Points.Count)
+                .SetColor(o.FillColor(theme, NowColorToken.Text));
+
+            if (o.Has(Abi.OptStroke)) polygon = polygon.SetOutline(o.stroke);
+            if (o.NeedsStrokeColor) polygon = polygon.SetOutlineColor(o.StrokeColor(theme, NowColorToken.Text));
+            if (o.Has(Abi.OptFill)) polygon = polygon.SetFill(o.fill);
+
+            polygon.Draw();
+        }
+
+        /// <summary>
+        /// <c>ui.gradient</c>. The two ramp ends are <c>paint</c> arguments rather than options, because a
+        /// gradient with one colour is not a gradient - they are required, not decoration.
+        /// </summary>
+        private void DrawGradient(int args)
+        {
+            BridgeOptions o = TakeOptions();
+            NowThemeAsset theme = NowTheme.themeAsset;
+
+            NowRect rect = RectAt(args);
+            Color from = BridgePaint.Resolve(
+                theme, m_Recorder.Slot(args + 4), m_Recorder.Slot(args + 5), NowColorToken.Surface);
+            Color to = BridgePaint.Resolve(
+                theme, m_Recorder.Slot(args + 6), m_Recorder.Slot(args + 7), NowColorToken.Accent);
+
+            NowGradient gradient = Now.Gradient(rect, from, to);
+
+            switch ((NowGradientKind)m_Recorder.Slot(args + 8))
+            {
+                case NowGradientKind.Radial:
+                    gradient = gradient.SetRadial();
+                    break;
+
+                case NowGradientKind.Conic:
+                    gradient = gradient.SetConic();
+                    break;
+
+                default:
+                    // SetLinear(angle) is CSS's convention - 0 points up, 90 right, clockwise - and NowGradient
+                    // says so (NowGradient.cs:271-273), so `angle` needs no conversion on either side.
+                    gradient = o.Has(Abi.OptAngle) ? gradient.SetLinear(o.angle) : gradient.SetLinear();
+                    break;
+            }
+
+            if (o.Has(Abi.OptSpread)) gradient = gradient.SetSpread((NowGradientSpread)o.spread);
+            if (o.Has(Abi.OptRadius)) gradient = gradient.SetRadius(o.radius.x, o.radius.y, o.radius.z, o.radius.w);
+            if (o.Has(Abi.OptBlur)) gradient = gradient.SetBlur(o.blur);
+            if (o.Has(Abi.OptStroke)) gradient = gradient.SetOutline(o.stroke);
+            if (o.NeedsStrokeColor) gradient = gradient.SetOutlineColor(o.StrokeColor(theme, NowColorToken.Border));
+
+            gradient.Draw();
         }
     }
 }

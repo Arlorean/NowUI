@@ -277,7 +277,7 @@
     </ItemGroup>
 
     <CheckInvariantI1 Files="@(InvariantI1File)"
-                      Factories="NowLayout.Column;NowLayout.Row;NowLayout.Vertical;NowLayout.Horizontal;NowLayout.Button;NowLayout.Checkbox;NowLayout.Radio;NowLayout.Slider;NowLayout.TextField;NowLayout.TextArea;NowLayout.Dropdown;NowLayout.ComboBox;NowLayout.Foldout;NowLayout.SelectableRow;NowLayout.Toggle;NowLayout.ScrollView;NowLayout.Switch;NowLayout.Chip;NowLayout.TabBar;NowLayout.ColorPicker;NowLayout.DatePicker;NowLayout.TimePicker"
+                      Factories="NowLayout.Column;NowLayout.Row;NowLayout.Vertical;NowLayout.Horizontal;NowLayout.Button;NowLayout.Checkbox;NowLayout.Radio;NowLayout.Slider;NowLayout.TextField;NowLayout.TextArea;NowLayout.Dropdown;NowLayout.ComboBox;NowLayout.Foldout;NowLayout.SelectableRow;NowLayout.Toggle;NowLayout.ScrollView;NowLayout.Switch;NowLayout.Chip;NowLayout.TabBar;NowLayout.ColorPicker;NowLayout.DatePicker;NowLayout.TimePicker;NowLayout.SplitView"
                       IdFirstFactories="NowLayout.Area;NowLayout.RunMeasured" />
   </Target>
 </Project>

@@ -99,3 +99,7 @@ crashlytics-build.properties
 # Python benchmark-report tooling
 __pycache__/
 *.py[cod]
+
+# The NowUI web preview seeds the user's own JavaScript apps here, outside the package so a
+# package upgrade cannot overwrite them. They are the user's files, not the repository's.
+/NowUI/

@@ -49,8 +49,26 @@ namespace NowUI.Bridge
         /// <summary>Two slots of f32.</summary>
         Vec2,
 
+        /// <summary>
+        /// Four slots of f32: x, y, width, height.
+        /// </summary>
+        /// <remarks>
+        /// This member is a DEFECT FIX as much as an addition. abi.js has declared <c>rect: 4</c> in its
+        /// KIND_SLOTS since W2 and this enum has never had a matching member, so the two halves have carried
+        /// different kind tables the whole time. It was invisible because no op used the kind and the surface
+        /// hash only folds the kinds ops actually name - the first op to use it (RECT, below) would simply not
+        /// have compiled. Fixed here rather than left for the next reader to rediscover.
+        /// </remarks>
+        Rect,
+
         /// <summary>Four slots of f32.</summary>
         Vec4,
+
+        /// <summary>
+        /// Two slots: a tag and a value. Tag 0 is a literal RGBA8 with red in the low byte, packed exactly as
+        /// <see cref="Color"/> is; tag 1 is a <c>NowColorToken</c> resolved against the ambient theme.
+        /// </summary>
+        Paint,
 
         /// <summary>Two slots, low word first. A 64-bit value that does not survive an f32.</summary>
         I64,
@@ -66,6 +84,12 @@ namespace NowUI.Bridge
         /// number carried in <see cref="OpSpec.Slots"/> is the op's size with an empty options object.
         /// </summary>
         Opts,
+
+        /// <summary>
+        /// Variable width: one count slot, then 2 * count slots of f32 - x, y, x, y. The number carried in
+        /// <see cref="OpSpec.Slots"/> is the MINIMUM, the op's size with an empty point list.
+        /// </summary>
+        Vec2List,
     }
 
     /// <summary>One op: what it is called, which NowUI member it replays into, and its wire shape.</summary>
@@ -84,7 +108,8 @@ namespace NowUI.Bridge
             for (int i = 0; i < args.Length; ++i)
             {
                 slots += Abi.SlotsFor(args[i]);
-                if (args[i] == ArgKind.Strlist || args[i] == ArgKind.Opts) variable = true;
+                if (args[i] == ArgKind.Strlist || args[i] == ArgKind.Opts || args[i] == ArgKind.Vec2List)
+                    variable = true;
             }
             Slots = slots;
             Variable = variable;
@@ -202,25 +227,78 @@ namespace NowUI.Bridge
         public const int OptRect = 1 << 14;        // flag only
         public const int OptDisabled = 1 << 15;    // flag only
 
-        /// <summary>The highest option bit this build knows.</summary>
-        public const int OptKnownMask = (1 << 16) - 1;
+        // --- W9: styling. Bits 16-30 of the SAME slot, and the twin of abi.js's second OPT_* block.
+        //
+        // The mask was already a full i32 both on the wire and in BridgeOptions.mask, and OptKnownMask below
+        // existed without anything validating against it - so bits 16-30 were free, cost nothing to take, and
+        // move no existing payload. Fields still follow in ascending bit order, so every new one appends behind
+        // the fourteen that were already there and W2-W6's frames are byte-identical.
 
-        /// <summary>Payload slots per option bit, in ascending bit order. The two zeroes are the flag-only ones.</summary>
-        public static readonly int[] OptSlots = { 1, 1, 1, 1, 1, 1, 1, 1, 4, 1, 1, 1, 1, 1, 0, 0 };
+        public const int OptColor = 1 << 16;         // paint  [tag, value]
+        public const int OptStroke = 1 << 17;        // f32    outline / line width
+        public const int OptStrokeColor = 1 << 18;   // paint  [tag, value]
+        public const int OptRadius = 1 << 19;        // 4 x f32  topLeft, topRight, bottomRight, bottomLeft
+        public const int OptBlur = 1 << 20;          // f32
+
+        /// <summary>
+        /// RESERVED, and decoded by nothing. It holds bit 21 so that the eleven bits either side of it keep the
+        /// numbers abi.js and this file were written with; the op that would consume it (a text draw with an
+        /// explicit size) is not in this unit, and NowUI's label path takes a resolved <c>NowTextStyle</c> rather
+        /// than a size. Wired when there is something to wire it to; documented as absent until then.
+        /// </summary>
+        public const int OptFontSize = 1 << 21;      // f32
+
+        public const int OptCap = 1 << 22;           // NowLineCap
+        public const int OptDash = 1 << 23;          // 3 x f32  length, gap, offset
+        public const int OptSegments = 1 << 24;      // i32
+        public const int OptFill = 1 << 25;          // bool, NOT flag-only, so `fill: false` is sayable
+        public const int OptSpread = 1 << 26;        // NowGradientSpread
+        public const int OptAngle = 1 << 27;         // f32
+        // 28-30 reserved.
+
+        /// <summary>
+        /// A continuation flag: a SECOND mask slot follows the first, before any payload. Nothing sets it today.
+        /// </summary>
+        /// <remarks>
+        /// <para>Specified now, while the bits are still free, so that the day they run out is a documented
+        /// extension rather than a wire break. <see cref="BridgeOptions.Decode"/> already reads and skips a
+        /// second word when this bit is set: the fields of an unknown high bit sit at the very end of the op,
+        /// past every field this build knows, where the op header's <c>argSlots</c> already accounts for them.</para>
+        /// <para>The corresponding trap is on the other side, not this one: <c>1 &lt;&lt; 31</c> makes the mask a
+        /// NEGATIVE JavaScript number. Every mask test in both halves is <c>== 0</c> / <c>!= 0</c> and stays
+        /// correct; a <c>&gt; 0</c> anywhere would be a silent bug.</para>
+        /// </remarks>
+        public const int OptMore = 1 << 31;
+
+        /// <summary>Every option bit this build knows: 0-27, plus <see cref="OptMore"/>. 28-30 are reserved.</summary>
+        public const int OptKnownMask = unchecked((int)0x8FFFFFFFu);
+
+        /// <summary>
+        /// Payload slots per option bit, in ascending bit order. The zeroes are the flag-only options and the
+        /// reserved bits; OptMore's own payload is the second mask slot, read before this table applies.
+        /// </summary>
+        public static readonly int[] OptSlots =
+        {
+            1, 1, 1, 1, 1, 1, 1, 1, 4, 1, 1, 1, 1, 1, 0, 0,
+            2, 1, 2, 4, 1, 1, 1, 3, 1, 1, 1, 1, 0, 0, 0, 0,
+        };
 
         internal static int SlotsFor(ArgKind kind)
         {
             switch (kind)
             {
                 case ArgKind.Vec2: return 2;
+                case ArgKind.Rect: return 4;
                 case ArgKind.Vec4: return 4;
                 case ArgKind.I64: return 2;
+                case ArgKind.Paint: return 2;
 
-                // The MINIMUM width of the two variable kinds: one count slot, one bitmask slot. The recorder
-                // writes the real total into the op header's high 16 bits and the validator walks that, so a
-                // variable-width op is skippable by a decoder that has never heard of it.
+                // The MINIMUM width of the three variable kinds: one count slot, one bitmask slot, one count
+                // slot. The recorder writes the real total into the op header's high 16 bits and the validator
+                // walks that, so a variable-width op is skippable by a decoder that has never heard of it.
                 case ArgKind.Strlist: return 1;
                 case ArgKind.Opts: return 1;
+                case ArgKind.Vec2List: return 1;
 
                 default: return 1;
             }
@@ -362,6 +440,57 @@ namespace NowUI.Bridge
                 // Feedback (section 2.6).
                 new OpSpec("PROGRESS", "NowUI.NowProgressBar.Draw()", 0,
                     new[] { ArgKind.F32 }),
+
+                // --- W9: drawing and styling ------------------------------------------------------------------
+                //
+                // THE COORDINATE MODEL. Only Now.Rectangle takes a NowRect a layout scope can supply; Now.Ellipse,
+                // Now.Line, Now.Bezier, Now.Triangle and Now.Polygon take raw Vector2 and cannot be laid out at
+                // all. So CANVAS answers "where is the drawing area" once, and the coordinates on the drawing ops
+                // answer "where in it" - canvas-local, with the DECODER adding the origin (see
+                // BridgeReplay.PointAt). That is what puts a drawing in the right place even when JavaScript's
+                // idea of the canvas SIZE is one frame stale.
+                //
+                // Every one of these replays into a public NowUI member that exists today, so nothing under
+                // Assets/NowUI moves and the Unity suites are untouched.
+
+                new OpSpec("CANVAS", "NowUI.NowLayout.Column(NowUI.NowId)+NowUI.Now.Mask(NowUI.NowRect)", 0,
+                    new[] { ArgKind.Rid, ArgKind.Seg }, opensScope: true),
+                new OpSpec("MASK", "NowUI.Now.Mask(NowUI.NowMaskShape)", 0,
+                    new[] { ArgKind.Rid, ArgKind.Seg, ArgKind.Enum, ArgKind.Rect, ArgKind.Vec4, ArgKind.F32 },
+                    opensScope: true),
+
+                new OpSpec("RECT", "NowUI.Now.Rectangle(NowUI.NowRect)", 0,
+                    new[] { ArgKind.Rect }),
+                new OpSpec("CIRCLE", "NowUI.Now.Ellipse(UnityEngine.Vector2,UnityEngine.Vector2)", 0,
+                    new[] { ArgKind.Vec2, ArgKind.Vec2 }),
+                new OpSpec("LINE", "NowUI.Now.Line(UnityEngine.Vector2,UnityEngine.Vector2)", 0,
+                    new[] { ArgKind.Vec2, ArgKind.Vec2 }),
+                new OpSpec("BEZIER",
+                    "NowUI.Now.Bezier(UnityEngine.Vector2,UnityEngine.Vector2,UnityEngine.Vector2,UnityEngine.Vector2)", 0,
+                    new[] { ArgKind.Vec2, ArgKind.Vec2, ArgKind.Vec2, ArgKind.Vec2 }),
+                new OpSpec("TRIANGLE",
+                    "NowUI.Now.Triangle(UnityEngine.Vector2,UnityEngine.Vector2,UnityEngine.Vector2)", 0,
+                    new[] { ArgKind.Vec2, ArgKind.Vec2, ArgKind.Vec2 }),
+
+                // The List overload, not the array one, and the hash names the member the decode actually calls.
+                // An array overload would mean one allocation per polygon per PASS - and there are two passes
+                // under exactLayout - where a reusable List<Vector2> costs none.
+                new OpSpec("POLYGON",
+                    "NowUI.Now.Polygon(System.Collections.Generic.List<UnityEngine.Vector2>,System.Int32,System.Int32)", 0,
+                    new[] { ArgKind.Vec2List }),
+
+                new OpSpec("GRADIENT", "NowUI.Now.Gradient(NowUI.NowRect,UnityEngine.Color,UnityEngine.Color)", 0,
+                    new[] { ArgKind.Rect, ArgKind.Paint, ArgKind.Paint, ArgKind.Enum }),
+
+                // A split needs no new structural opcode: scope brackets NEST, so it is
+                // SPLIT{ PANE(0){..} PANE(1){..} }.
+                new OpSpec("SPLIT", "NowUI.NowSplitView.Begin(System.Single&)", 0,
+                    new[] { ArgKind.Rid, ArgKind.Seg, ArgKind.F32, ArgKind.Enum }, opensScope: true),
+                new OpSpec("PANE", "NowUI.NowSplitViewResult.BeginFirst()", 0,
+                    new[] { ArgKind.I32 }, opensScope: true),
+
+                new OpSpec("THEME", "NowUI.NowControls.Theme(NowUI.NowThemeAsset)", 0,
+                    new[] { ArgKind.Rid, ArgKind.Seg, ArgKind.Enum }, opensScope: true),
             };
         }
 
@@ -453,10 +582,13 @@ namespace NowUI.Bridge
                 case ArgKind.Rid: return "rid";
                 case ArgKind.Color: return "color";
                 case ArgKind.Vec2: return "vec2";
+                case ArgKind.Rect: return "rect";
                 case ArgKind.Vec4: return "vec4";
+                case ArgKind.Paint: return "paint";
                 case ArgKind.I64: return "i64";
                 case ArgKind.Strlist: return "strlist";
                 case ArgKind.Opts: return "opts";
+                case ArgKind.Vec2List: return "vec2list";
                 default: return kind.ToString().ToLowerInvariant();
             }
         }

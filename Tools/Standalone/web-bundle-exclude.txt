@@ -1,0 +1,18 @@
+# Paths, relative to the published wwwroot, that never ship inside the package's WebBundle~.
+# One per line. Matched case-insensitively with PowerShell -like, so wildcards work.
+# Blank lines and lines beginning with '#' are ignored.
+#
+# NOTHING UNDER _framework/ MAY EVER BE LISTED HERE. _framework/blazor.boot.json carries SHA-256 SRI hashes for
+# dotnet.js, dotnet.native.js, dotnet.runtime.js, dotnet.native.wasm and every assembly; removing or editing a
+# file under it produces an integrity refusal in the browser with no useful message. The script enforces this.
+
+# 1,296,705 B - a 640x640 PNG whose only consumers are the two 64 KB byte-cap probe rows of the gallery's
+# ?area=remote (Standalone/Web/NowUI.Web/GalleryAreas.Remote.cs, the 'cap-stream' and 'cap-declared' probes).
+# That is 15% of the whole bundle to serve a diagnostic, so in the shipped bundle those two rows report a 404,
+# by design. Recorded in bundle.json's "excluded" list and in the Editor window.
+nowui-test-large.png
+
+# 12,828 B - an untracked scratch app left in wwwroot by an earlier session (git status shows it as '??').
+# It is not referenced by index.html, main.js or the gallery, and nothing in the package documents it. Kept
+# out of the shipped tree rather than deleted, so whoever owns it still has it on disk.
+w9-draw.js
