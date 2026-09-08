@@ -18,6 +18,7 @@ namespace NowUI.Editor
         const int MIN_TEXT_PREVIEW_GLYPHS = 24;
         const int GLYPH_PREVIEW_LINE_LENGTH = 24;
         const int GLYPH_PREVIEW_MAX_GLYPHS = 72;
+        const float BAKED_CHARACTERS_MIN_HEIGHT = 48f;
         static readonly Color PREVIEW_TEXT_COLOR = Color.white;
         static readonly Color PREVIEW_BACKGROUND_COLOR = new Color(0.22f, 0.22f, 0.22f, 1f);
 
@@ -27,6 +28,8 @@ namespace NowUI.Editor
         SerializedProperty _dynamicMaxAtlasSize;
         SerializedProperty _dynamicMaxAtlasBytes;
         SerializedProperty _fallbacks;
+        SerializedProperty _bakedCharacters;
+        static bool s_bakedPagesExpanded;
 
         readonly NowFontGlyphPickerControl _glyphPicker = new NowFontGlyphPickerControl();
         NowFont _previewFont;
@@ -44,6 +47,7 @@ namespace NowUI.Editor
             _dynamicMaxAtlasSize = serializedObject.FindProperty("dynamicMaxAtlasSize");
             _dynamicMaxAtlasBytes = serializedObject.FindProperty("dynamicMaxAtlasBytes");
             _fallbacks = serializedObject.FindProperty("_fallbacks");
+            _bakedCharacters = serializedObject.FindProperty("_bakedCharacters");
         }
 
         public override void OnInspectorGUI()
@@ -55,6 +59,8 @@ namespace NowUI.Editor
             EditorGUI.BeginChangeCheck();
             DrawSettings();
             bool settingsChanged = EditorGUI.EndChangeCheck();
+            EditorGUILayout.Space(8f);
+            DrawBakedPages();
             EditorGUILayout.Space(8f);
             DrawGlyphExplorer();
 
@@ -149,12 +155,19 @@ namespace NowUI.Editor
                 x += ATLAS_THUMBNAIL_SIZE + ATLAS_THUMBNAIL_GAP;
             }
 
+            int bakedCount = 0;
+            int cachedCount = 0;
+
             for (int i = 0; i < _dynamicAtlasTextures.Count; ++i)
             {
+                var texture = _dynamicAtlasTextures[i];
+                string label = font.IsBakedAtlasTexture(texture)
+                    ? $"Baked {++bakedCount}"
+                    : $"Cache {++cachedCount}";
                 DrawAtlasThumbnail(
                     new Rect(x, 0f, ATLAS_THUMBNAIL_SIZE, ATLAS_THUMBNAIL_SIZE),
-                    _dynamicAtlasTextures[i],
-                    $"Cache {i + 1}");
+                    texture,
+                    label);
                 x += ATLAS_THUMBNAIL_SIZE + ATLAS_THUMBNAIL_GAP;
             }
 
@@ -208,6 +221,228 @@ namespace NowUI.Editor
 
             if (GUILayout.Button("Clear Preview Cache"))
                 ClearTargetCaches();
+        }
+
+        void DrawBakedPages()
+        {
+            if (_bakedCharacters == null)
+                return;
+
+            NowFont single = targets.Length == 1 ? target as NowFont : null;
+            s_bakedPagesExpanded = EditorGUILayout.Foldout(
+                s_bakedPagesExpanded,
+                BakedPagesHeader(single),
+                true,
+                EditorStyles.foldoutHeader);
+
+            if (!s_bakedPagesExpanded)
+                return;
+
+            if (single != null)
+                DrawBakedStatus(single);
+
+            int bakedFonts = 0;
+
+            for (int i = 0; i < targets.Length; ++i)
+            {
+                if (targets[i] is NowFont font && font.bakedPageCount > 0)
+                    ++bakedFonts;
+            }
+
+            if (GUILayout.Button("Bake All Glyphs"))
+                BakeAllTargets();
+
+            EditorGUILayout.Space(4f);
+            EditorGUILayout.LabelField(
+                $"Characters (subset instead of all glyphs): {CountCodepoints(_bakedCharacters.stringValue)}",
+                EditorStyles.miniLabel);
+            EditorGUI.showMixedValue = _bakedCharacters.hasMultipleDifferentValues;
+            EditorGUI.BeginChangeCheck();
+            string characters = EditorGUILayout.TextArea(
+                _bakedCharacters.stringValue,
+                GUILayout.MinHeight(BAKED_CHARACTERS_MIN_HEIGHT));
+
+            if (EditorGUI.EndChangeCheck())
+                _bakedCharacters.stringValue = characters;
+
+            EditorGUI.showMixedValue = false;
+
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                if (GUILayout.Button("ASCII"))
+                    AppendBakedPreset(NowFontBaker.ASCII);
+
+                if (GUILayout.Button("Latin-1"))
+                    AppendBakedPreset(NowFontBaker.LATIN_1);
+
+                if (GUILayout.Button("Latin Ext-A"))
+                    AppendBakedPreset(NowFontBaker.LATIN_EXTENDED_A);
+
+                if (GUILayout.Button("Clear"))
+                    SetBakedCharacters(string.Empty);
+            }
+
+            bool hasCharacters = _bakedCharacters.hasMultipleDifferentValues ||
+                !string.IsNullOrEmpty(_bakedCharacters.stringValue);
+
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                using (new EditorGUI.DisabledScope(!hasCharacters))
+                {
+                    if (GUILayout.Button("Bake Characters"))
+                        BakeCharacterTargets();
+                }
+
+                using (new EditorGUI.DisabledScope(bakedFonts == 0))
+                {
+                    if (GUILayout.Button("Remove Baked Pages"))
+                        ClearTargetBakes();
+                }
+            }
+        }
+
+        void AppendBakedPreset(string preset)
+        {
+            SetBakedCharacters(NowFontBaker.Merge(_bakedCharacters.stringValue, preset));
+        }
+
+        void SetBakedCharacters(string characters)
+        {
+            GUI.FocusControl(null);
+            EditorGUIUtility.editingTextField = false;
+            _bakedCharacters.stringValue = characters;
+        }
+
+        static string CountCodepoints(string characters)
+        {
+            if (string.IsNullOrEmpty(characters))
+                return "empty";
+
+            int count = 0;
+
+            for (int i = 0; i < characters.Length; ++i)
+            {
+                if (NowFont.ReadCodepoint(characters, ref i) > 0)
+                    ++count;
+            }
+
+            return count == 1 ? "1 character" : $"{count} characters";
+        }
+
+        static string BakedPagesHeader(NowFont font)
+        {
+            if (font == null || font.bakedPageCount == 0)
+                return "Baked Pages";
+
+            return $"Baked Pages ({font.bakedPageCount} page(s), {BakedBytes(font) / (1024f * 1024f):0.0} MB)";
+        }
+
+        static long BakedBytes(NowFont font)
+        {
+            long bytes = 0;
+            var pages = font.GetBakedPages();
+
+            if (pages == null)
+                return 0;
+
+            for (int i = 0; i < pages.Length; ++i)
+            {
+                var texture = pages[i].texture;
+
+                if (texture != null)
+                    bytes += (long)texture.width * texture.height * 4;
+            }
+
+            return bytes;
+        }
+
+        static void DrawBakedStatus(NowFont font)
+        {
+            if (font.bakedPageCount == 0)
+            {
+                EditorGUILayout.LabelField("No baked pages; glyphs bake on first use.", EditorStyles.miniLabel);
+                return;
+            }
+
+            string coverage = font.bakedAllGlyphs ? "All glyphs" : "Characters";
+            EditorGUILayout.LabelField(
+                $"{coverage}: {font.bakedPageCount} page(s), {font.bakedGlyphCount} glyph record(s), {BakedBytes(font) / (1024f * 1024f):0.0} MB",
+                EditorStyles.miniLabel);
+
+            if (font.bakedPagesStale)
+            {
+                EditorGUILayout.HelpBox(
+                    "The baked pages were made for a different glyph size or pixel range and are ignored at runtime. Bake again to match the current settings.",
+                    MessageType.Warning);
+            }
+        }
+
+        void BakeAllTargets()
+        {
+            var fonts = new List<NowFont>();
+
+            for (int i = 0; i < targets.Length; ++i)
+            {
+                if (targets[i] is NowFont font)
+                    fonts.Add(font);
+            }
+
+            if (!NowFontBaker.ConfirmBakeAll(fonts))
+                return;
+
+            BakeTargets(fonts, true);
+        }
+
+        void BakeCharacterTargets()
+        {
+            serializedObject.ApplyModifiedProperties();
+            var fonts = new List<NowFont>();
+
+            for (int i = 0; i < targets.Length; ++i)
+            {
+                if (targets[i] is NowFont font)
+                    fonts.Add(font);
+            }
+
+            BakeTargets(fonts, false);
+        }
+
+        void BakeTargets(List<NowFont> fonts, bool allGlyphs)
+        {
+            try
+            {
+                for (int i = 0; i < fonts.Count; ++i)
+                {
+                    var font = fonts[i];
+                    EditorUtility.DisplayProgressBar("Bake Font Glyphs", font.name, i / (float)fonts.Count);
+
+                    bool baked = allGlyphs
+                        ? NowFontBaker.TryBakeAll(font, out string error)
+                        : NowFontBaker.TryBake(font, font.bakedCharacters, out error);
+
+                    if (!baked)
+                        Debug.LogError($"NowUI: failed to bake {font.name}\n{error}");
+                }
+            }
+            finally
+            {
+                EditorUtility.ClearProgressBar();
+            }
+
+            serializedObject.Update();
+            Repaint();
+        }
+
+        void ClearTargetBakes()
+        {
+            for (int i = 0; i < targets.Length; ++i)
+            {
+                if (targets[i] is NowFont font)
+                    NowFontBaker.Clear(font);
+            }
+
+            serializedObject.Update();
+            Repaint();
         }
 
         void DrawGlyphExplorer()
