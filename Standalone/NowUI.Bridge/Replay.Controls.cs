@@ -367,8 +367,12 @@ namespace NowUI.Bridge
         private Vector2 m_Origin;
 
         /// <summary>Reset at the top of every decode pass, beside the scope depth. See the file header.</summary>
+        /// <summary>Whether anything has put ink on the surface yet this frame. See OpenTheme.</summary>
+        private bool m_Painted;
+
         private void BeginControlsPass()
         {
+            m_Painted = false;
             m_Pending = default;
             m_RuleOrdinal = 0;
             m_Origin = default;
@@ -721,6 +725,7 @@ namespace NowUI.Bridge
         /// </remarks>
         private void DrawLabel(string content)
         {
+            m_Painted = true;
             BridgeOptions o = TakeOptions();
             NowThemeAsset theme = NowTheme.themeAsset;
 
@@ -743,6 +748,7 @@ namespace NowUI.Bridge
         /// </summary>
         private void DrawRule()
         {
+            m_Painted = true;
             BridgeOptions o = TakeOptions();
             NowLayoutOptions layout = o.ToLayout(container: true);
 
@@ -773,6 +779,7 @@ namespace NowUI.Bridge
 
         private void DrawBadge(string label)
         {
+            m_Painted = true;
             BridgeOptions o = TakeOptions();
 
             NowLayout.Badge(label)
@@ -1091,6 +1098,7 @@ namespace NowUI.Bridge
 
         private void DrawProgress(float value01)
         {
+            m_Painted = true;
             BridgeOptions o = TakeOptions();
 
             NowLayout.ProgressBar(value01)
@@ -1303,9 +1311,16 @@ namespace NowUI.Bridge
 
             // The ground a host should clear to, recorded HERE because this is the only moment the author's theme
             // is knowable: the scope closes before RunFrame returns, and a host that samples the theme after the
-            // frame - or before it, which is when a clear actually runs - sees the default instead. The outermost
-            // scope wins, because it is the one that owns the page. See BridgeHost.ground.
-            if (!frameGround.HasValue)
+            // frame - or before it, which is when a clear actually runs - sees the default instead.
+            //
+            // ONLY a theme that owns the whole page may set the ground, and "owns the whole page" means nothing
+            // had been painted yet when it opened. The first version of this took the outermost theme scope
+            // instead, which is wrong for the common shape of theming ONE PANE: draw.js draws a full column of
+            // controls and then wraps only its right-hand canvas in ui.theme('dark'). Taking that scope's
+            // background cleared the page dark while the left pane was still drawing the default theme's dark
+            // text, and the controls went invisible - the same invisible-but-correct failure this whole surface
+            // keeps trying to design out, reintroduced by the fix for it.
+            if (!frameGround.HasValue && !m_Painted && decodedControls == 0)
                 frameGround = asset.GetColor(NowColorToken.Background);
         }
 
@@ -1363,6 +1378,7 @@ namespace NowUI.Bridge
         /// </remarks>
         private void DrawRect(int args)
         {
+            m_Painted = true;
             BridgeOptions o = TakeOptions();
             NowThemeAsset theme = NowTheme.themeAsset;
 
@@ -1398,6 +1414,7 @@ namespace NowUI.Bridge
         /// </remarks>
         private void DrawCircle(int args)
         {
+            m_Painted = true;
             BridgeOptions o = TakeOptions();
             NowThemeAsset theme = NowTheme.themeAsset;
 
@@ -1418,6 +1435,7 @@ namespace NowUI.Bridge
         /// <summary><c>ui.line</c> and <c>ui.bezier</c>: the same NowLine, straight or cubic.</summary>
         private void DrawLine(int args, bool cubic)
         {
+            m_Painted = true;
             BridgeOptions o = TakeOptions();
             NowThemeAsset theme = NowTheme.themeAsset;
 
@@ -1436,6 +1454,7 @@ namespace NowUI.Bridge
 
         private void DrawTriangle(int args)
         {
+            m_Painted = true;
             BridgeOptions o = TakeOptions();
             NowThemeAsset theme = NowTheme.themeAsset;
 
@@ -1452,6 +1471,7 @@ namespace NowUI.Bridge
         /// <summary>Section 5.3's <c>vec2list</c>: one count slot, then 2 * count f32.</summary>
         private void DrawPolygon(int args)
         {
+            m_Painted = true;
             BridgeOptions o = TakeOptions();
             NowThemeAsset theme = NowTheme.themeAsset;
 
@@ -1480,6 +1500,7 @@ namespace NowUI.Bridge
         /// </summary>
         private void DrawGradient(int args)
         {
+            m_Painted = true;
             BridgeOptions o = TakeOptions();
             NowThemeAsset theme = NowTheme.themeAsset;
 

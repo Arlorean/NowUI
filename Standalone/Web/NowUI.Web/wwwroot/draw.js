@@ -218,13 +218,19 @@ start(() => {
                     state.tab = ui.tabs('view', state.tab, ['Chart', 'Shapes', 'Masks']);
                     ui.rule();
 
-                    state.points = ui.intSlider('points', state.points, 3, 40, { label: 'Samples' });
+                    ui.row({ gap: 8, align: 'center' }, () => {
+                        ui.text('Samples');
+                        state.points = ui.intSlider('points', state.points, 3, 40, { grow: 1 });
+                    });
                     ui.caption(state.points + ' samples');
 
                     state.thickness = ui.slider('thickness', state.thickness, 1, 12, { step: 0.5 });
                     ui.caption('stroke ' + state.thickness.toFixed(1) + ' px');
 
-                    state.tint = ui.dropdown('tint', state.tint, TINTS, { label: 'Tint' });
+                    ui.row({ gap: 8, align: 'center' }, () => {
+                        ui.text('Tint');
+                        state.tint = ui.dropdown('tint', state.tint, TINTS, { grow: 1 });
+                    });
                     state.custom = ui.colorField('custom', state.custom);
 
                     state.filled = ui.switch('filled', state.filled, { label: 'Filled' });
