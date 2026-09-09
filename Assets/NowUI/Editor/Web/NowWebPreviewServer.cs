@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.IO.Compression;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
@@ -448,7 +449,13 @@ namespace NowUI.Editor.Web
             if (s_BundleRoot == null) return null;
 
             string bundled = Path.Combine(s_BundleRoot, relative.Replace('/', Path.DirectorySeparatorChar));
-            if (IsInside(s_BundleRoot, bundled) && File.Exists(bundled)) return bundled;
+            if (IsInside(s_BundleRoot, bundled))
+            {
+                // The LOGICAL path either way. The shipped bundle stores most files only as NAME.br to keep the
+                // committed tree a third of its raw size; ServeFile is what knows about that, so that everything
+                // upstream - the app shadowing, the mtime watch, the 404 text - keeps working in real names.
+                if (File.Exists(bundled) || File.Exists(bundled + ".br")) return bundled;
+            }
 
             // A request for /apps/NAME.js against a bundle that still keeps its samples at the root.
             if (appCandidate != null && relative.StartsWith("apps/", StringComparison.OrdinalIgnoreCase))
@@ -520,9 +527,37 @@ namespace NowUI.Editor.Web
 
         // ------------------------------------------------------------------------------------------------ i/o
 
+        /// <summary>
+        /// Serves one file, transparently un-brotli-ing a bundle that ships compressed.
+        /// </summary>
+        /// <remarks>
+        /// <para>The shipped bundle stores its compressible files as <c>NAME.br</c> and does NOT keep the raw
+        /// original, because that is what took the committed tree from 8,570,227 B to 2,845,658 B - a third of
+        /// the size, losslessly, in a folder that lives in git forever. The saving is real on disk and in every
+        /// clone; it is not a transfer optimisation, and it is worth doing even though this server runs on
+        /// loopback where transfer is free.</para>
+        /// <para>Two ways out, and the second is why this is safe. When the client sends
+        /// <c>Accept-Encoding: br</c> - every browser released this decade does - the compressed bytes go out
+        /// under <c>Content-Encoding: br</c> and the browser inflates them. When it does not, this inflates them
+        /// here, so a client with no brotli still gets the file rather than a broken page.</para>
+        /// <para>Integrity survives either way, which is the part worth stating plainly:
+        /// <c>_framework/blazor.boot.json</c> carries SHA-256 SRI hashes of the RAW assemblies, and a browser
+        /// checks integrity AFTER decoding a content encoding. So the hashes still match, and nothing under
+        /// <c>_framework/</c> has to be excluded, rewritten or re-hashed.</para>
+        /// </remarks>
         private static void ServeFile(HttpListenerContext context, string path, bool fromUserFolder)
         {
-            var info = new FileInfo(path);
+            // `path` is the logical name. The bundle may hold only the compressed sibling.
+            string onDisk = path;
+            bool brotli = false;
+
+            if (!File.Exists(onDisk) && File.Exists(path + ".br"))
+            {
+                onDisk = path + ".br";
+                brotli = true;
+            }
+
+            var info = new FileInfo(onDisk);
 
             if (fromUserFolder)
             {
@@ -551,25 +586,78 @@ namespace NowUI.Editor.Web
             }
 
             context.Response.StatusCode = 200;
+
+            // From the LOGICAL name: a .wasm stored as .wasm.br is still application/wasm, and calling it
+            // application/brotli would stop the streaming instantiation the loader depends on.
             context.Response.ContentType = MimeFor(path);
+
+            bool passThrough = brotli && AcceptsBrotli(context.Request.Headers["Accept-Encoding"]);
+            if (passThrough)
+                context.Response.Headers["Content-Encoding"] = "br";
 
             if (context.Request.HttpMethod == "HEAD")
             {
-                context.Response.ContentLength64 = info.Length;
+                // Only meaningful when the length on the wire is knowable, which for the inflate path it is not.
+                if (!brotli || passThrough) context.Response.ContentLength64 = info.Length;
                 context.Response.Close();
                 return;
             }
 
-            context.Response.ContentLength64 = info.Length;
-            using (var source = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+            using (var source = new FileStream(onDisk, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
             {
-                var buffer = new byte[64 * 1024];
-                int read;
-                while ((read = source.Read(buffer, 0, buffer.Length)) > 0)
-                    context.Response.OutputStream.Write(buffer, 0, read);
+                if (brotli && !passThrough)
+                {
+                    // No Content-Length: the inflated size is not known without inflating twice, and a chunked
+                    // response is correct and costs nothing here.
+                    using (var inflate = new BrotliStream(source, CompressionMode.Decompress))
+                        Pump(inflate, context.Response.OutputStream);
+                }
+                else
+                {
+                    context.Response.ContentLength64 = info.Length;
+                    Pump(source, context.Response.OutputStream);
+                }
             }
 
             context.Response.Close();
+        }
+
+        private static void Pump(Stream from, Stream to)
+        {
+            var buffer = new byte[64 * 1024];
+            int read;
+            while ((read = from.Read(buffer, 0, buffer.Length)) > 0)
+                to.Write(buffer, 0, read);
+        }
+
+        /// <summary>
+        /// Whether the client named brotli in Accept-Encoding, without matching a q=0 refusal.
+        /// </summary>
+        private static bool AcceptsBrotli(string header)
+        {
+            if (string.IsNullOrEmpty(header)) return false;
+
+            foreach (string part in header.Split(','))
+            {
+                string token = part.Trim();
+                if (token.Length == 0) continue;
+
+                int semi = token.IndexOf(';');
+                string name = (semi < 0 ? token : token.Substring(0, semi)).Trim();
+
+                if (!string.Equals(name, "br", StringComparison.OrdinalIgnoreCase)) continue;
+
+                // "br;q=0" is a refusal, and it is the one case where the name being present means the opposite.
+                if (semi >= 0 && token.Substring(semi + 1).Replace(" ", string.Empty)
+                        .StartsWith("q=0", StringComparison.OrdinalIgnoreCase) &&
+                    !token.Substring(semi + 1).Replace(" ", string.Empty)
+                        .StartsWith("q=0.", StringComparison.OrdinalIgnoreCase))
+                    return false;
+
+                return true;
+            }
+
+            return false;
         }
 
         private static void WriteText(HttpListenerContext context, int status, string contentType, string body)

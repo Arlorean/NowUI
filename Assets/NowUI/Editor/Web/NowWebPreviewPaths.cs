@@ -66,7 +66,13 @@ namespace NowUI.Editor.Web
             foreach (string candidate in BundleCandidates())
             {
                 if (string.IsNullOrEmpty(candidate)) continue;
-                if (File.Exists(Path.Combine(candidate, BundleMarker.Replace('/', Path.DirectorySeparatorChar))))
+                string marker = Path.Combine(candidate, BundleMarker.Replace('/', Path.DirectorySeparatorChar));
+
+                // Or its compressed sibling. The shipped bundle stores most files as NAME.br and drops the raw
+                // original; this marker is deliberately kept raw, but a folder is still a bundle either way, and
+                // a detector that only knew one spelling is what turned the first compressed bundle into
+                // "no bundle found".
+                if (File.Exists(marker) || File.Exists(marker + ".br"))
                     return Path.GetFullPath(candidate);
             }
 

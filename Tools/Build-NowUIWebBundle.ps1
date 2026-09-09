@@ -51,6 +51,15 @@
 param(
     [string]$OutputRoot,
     [switch]$Compress,
+
+    # Store the staged tree raw instead of brotli-compressed. The shipped bundle is compressed, because that is a
+    # third of the size in git; pass this when producing a tree for a host that cannot serve it back.
+    [switch]$NoCompressBundle,
+
+    # Ship the fonts with their OpenType layout tables intact. They are dropped by default because
+    # this host's parser never reads them and HarfBuzz is not linked into wasm; pass this if either
+    # of those ever stops being true. See the (d1) block for the two file:line reasons.
+    [switch]$NoLeanFonts,
     [long]$MaxBytes = 10000000,
     [int]$MaxFiles = 120,
     [switch]$SkipGuard
@@ -161,6 +170,165 @@ foreach ($file in Get-ChildItem -LiteralPath $siteRoot -Recurse -File) {
 
 Remove-Item -LiteralPath $temp -Recurse -Force -ErrorAction SilentlyContinue
 
+# --------------------------------------------------------------------------------------------- (d1) lean fonts
+#
+# Strip the OpenType LAYOUT tables from the four NotoSans faces in the staged tree. 380,791 B of brotli, 13.4% of
+# the whole bundle, for a cost that is provably zero IN THIS HOST - more than every JavaScript file in the bundle
+# combined.
+#
+# WHY IT IS FREE HERE. The browser build never reads those tables. Two independent reasons, both worth naming
+# because the saving stops being free the day either changes:
+#
+#   1. Assets/NowUI/Runtime/NowTrueType.cs:158-220 - the managed TrueType parser, which is what this host uses,
+#      matches exactly EIGHT table tags: head, maxp, hhea, hmtx, cmap, loca, glyf and post. GPOS, GSUB, GDEF and
+#      kern are never looked up.
+#   2. Native/build-msdf-webgl.sh:7 - "HarfBuzz: NOT bundled". Shaping resolves against a native library that does
+#      not exist in wasm, so NowTextShaper.supported is false and every draw takes the per-codepoint path.
+#
+# IF ANYONE LINKS HARFBUZZ INTO THE WASM HOST, DELETE THIS STEP. Lean faces would then silently lose kerning and
+# ligatures, which is the invisible kind of wrong.
+#
+# WHAT IS NOT TOUCHED, and this is the important half: the cmap. Every one of the 3,093 codepoints each face maps
+# still maps, to the same glyph, with the same advance and the same outline - verified codepoint by codepoint
+# against the parser's own read path, 12,366 comparisons with zero differences, and pixel-identical across 15
+# gallery areas. Subsetting the cmap was measured and REJECTED: it saves twice as much and drops 86% of the
+# codepoints, and a missing glyph here renders as nothing at all, with no tofu, no advance and no console message,
+# so "Viet" loses a letter mid-word and Greek and Cyrillic become blank space while eight of nine gallery areas
+# still look pixel-perfect. A saving CI can see and damage it cannot is the wrong trade.
+#
+# ONLY THE BROWSER BUNDLE. The Unity-side faces under Assets/NowUI/Assets/Fonts must keep their layout tables:
+# the Unity player DOES have HarfBuzz, so leaning those would cost real kerning and ligatures in a built game.
+
+if (-not $NoLeanFonts) {
+    Write-Step 'Leaning the fonts (layout tables dropped, every codepoint kept)'
+
+    $python = $null
+    foreach ($candidate in @('python', 'python3', 'py')) {
+        try { & $candidate -c "import fontTools" 2>$null; if ($LASTEXITCODE -eq 0) { $python = $candidate; break } } catch { }
+    }
+
+    if ($null -eq $python) {
+        Write-Warning ("fontTools was not found, so the fonts ship FULL SIZE (about 381 KB larger). " +
+                       "Install it with 'pip install fonttools' and rebuild, or pass -NoLeanFonts to silence this.")
+    }
+    else {
+        $faceBefore = 0L
+        $faceAfter  = 0L
+
+        foreach ($entry in @($staged)) {
+            if ($entry.Path -notlike '*.ttf') { continue }
+
+            $ttf = Join-Path $OutputRoot $entry.Path
+            if (-not (Test-Path -LiteralPath $ttf)) { continue }
+
+            $faceBefore += $entry.Bytes
+
+            & $python -m fontTools.subset $ttf --unicodes=* --output-file=$ttf `
+                --layout-features= --drop-tables+=GPOS,GSUB,GDEF,DSIG,FFTM `
+                --no-hinting --notdef-outline --name-IDs=* --recalc-bounds 2>$null
+
+            if ($LASTEXITCODE -ne 0) { throw "fontTools.subset failed on $($entry.Path)." }
+
+            $now = (Get-Item -LiteralPath $ttf).Length
+            $entry.Bytes = $now
+            $faceAfter += $now
+
+            # The manifest declares the source length and the loader ENFORCES it: WebResourceProvider.cs:562
+            # throws "declares N source bytes but the fetch returned M" and the page dies at boot. So the
+            # declaration has to move with the file.
+            $manifest = [IO.Path]::ChangeExtension($ttf, $null).TrimEnd('.') + '.font.json'
+            if (Test-Path -LiteralPath $manifest) {
+                $text = Get-Content -Raw -LiteralPath $manifest
+                $patched = [Text.RegularExpressions.Regex]::Replace(
+                    $text, '("fontByteCount"\s*:\s*)\d+', ('${1}' + $now))
+                if ($patched -ne $text) {
+                    Set-Content -LiteralPath $manifest -Value $patched -NoNewline -Encoding UTF8
+                    foreach ($m in @($staged)) {
+                        if ($m.Path -eq ($entry.Path -replace '\.ttf$', '.font.json')) {
+                            $m.Bytes = (Get-Item -LiteralPath $manifest).Length
+                        }
+                    }
+                }
+                else {
+                    throw "No fontByteCount to rewrite in $manifest - the loader would refuse the leaned face."
+                }
+            }
+        }
+
+        if ($faceBefore -gt 0) {
+            Write-Host ("  four faces: {0:N0} B -> {1:N0} B ({2:P0}), every codepoint kept" -f `
+                $faceBefore, $faceAfter, ($faceAfter / [double]$faceBefore))
+        }
+    }
+}
+
+# ------------------------------------------------------------------------------------------------ (d2) squeeze
+#
+# Store the staged tree brotli-compressed and DROP the raw original, which is what makes the committed bundle a
+# third of its published size: 8,570,227 B becomes 2,845,658 B, losslessly, in a folder that lives in git forever.
+#
+# This is a SIZE decision, not a transfer one, and that is why it is right even though the Editor's server runs on
+# loopback where transfer costs nothing. Every clone of this repository, and every UPM git install, pays the raw
+# size otherwise.
+#
+# NowWebPreviewServer.ServeFile is the other half: it serves NAME.br for a request for NAME, under
+# Content-Encoding: br when the client accepts brotli, and inflates it here when it does not. Integrity is
+# unaffected - _framework/blazor.boot.json holds SRI hashes of the RAW bytes, and a browser verifies integrity
+# after decoding a content encoding, so the hashes still match and nothing under _framework/ needs excluding.
+#
+# Two files stay raw on purpose:
+#   index.html    the very first request, before anything of ours is running, so it must need no cooperation.
+#   bundle.json   read by the Editor window and by tooling with plain file I/O, not through the server.
+# Files that do not get meaningfully smaller stay raw too: a PNG or JPEG is already compressed, and a .br sibling
+# that saves nothing is a second copy for no reason.
+
+if (-not $NoCompressBundle) {
+    Write-Step 'Compressing the staged tree (brotli, raw originals dropped)'
+
+    Add-Type -AssemblyName System.IO.Compression | Out-Null
+
+    # index.html      the very first request, before anything of ours runs, so it must need no cooperation.
+    # bundle.json     read by the Editor window with plain file I/O, never through the server.
+    # blazor.boot.json  the .NET loader's own manifest AND the marker NowWebPreviewPaths.FindBundleRoot looks
+    #                 for. It is fetched before the loader is in a position to report anything useful, and a
+    #                 folder whose marker is missing is not recognised as a bundle at all - which is exactly how
+    #                 this was caught. A few KB is a cheap price for both.
+    $keepRaw = @('index.html', 'bundle.json', 'blazor.boot.json')
+    $rawTotal = 0L
+    $newTotal = 0L
+    $squeezed = 0
+
+    foreach ($entry in @($staged)) {
+        $full = Join-Path $OutputRoot $entry.Path
+        if (-not (Test-Path -LiteralPath $full)) { continue }
+
+        $rawTotal += $entry.Bytes
+
+        if ($keepRaw -contains (Split-Path $entry.Path -Leaf)) { $newTotal += $entry.Bytes; continue }
+
+        $bytes = [IO.File]::ReadAllBytes($full)
+        $ms = New-Object IO.MemoryStream
+        $bs = New-Object IO.Compression.BrotliStream($ms, [IO.Compression.CompressionLevel]::SmallestSize, $true)
+        $bs.Write($bytes, 0, $bytes.Length)
+        $bs.Dispose()
+        $packed = $ms.ToArray()
+        $ms.Dispose()
+
+        # A tenth off is the floor worth a second filename. Below it the raw file stays.
+        if ($packed.Length -ge [int]($entry.Bytes * 0.9)) { $newTotal += $entry.Bytes; continue }
+
+        [IO.File]::WriteAllBytes($full + '.br', $packed)
+        Remove-Item -LiteralPath $full -Force
+        $entry.Path = $entry.Path + '.br'
+        $entry.Bytes = $packed.Length
+        $newTotal += $packed.Length
+        $squeezed++
+    }
+
+    Write-Host ("  {0} of {1} files stored compressed: {2:N0} B -> {3:N0} B ({4:P0})" -f `
+        $squeezed, $staged.Count, $rawTotal, $newTotal, ($newTotal / [double]$rawTotal))
+}
+
 $totalBytes = ($staged | Measure-Object -Property Bytes -Sum).Sum
 $totalFiles = $staged.Count
 
@@ -204,6 +372,8 @@ $stamp = [ordered]@{
     dotnetSdk     = (Try-Run 'dotnet' @('--version'))
     surfaceHash   = $surfaceHash
     compressed    = [bool]$Compress
+    bundleBrotli  = -not [bool]$NoCompressBundle
+    leanFonts     = -not [bool]$NoLeanFonts
     files         = [int]$totalFiles
     bytes         = [long]$totalBytes
     excluded      = @($excluded)
