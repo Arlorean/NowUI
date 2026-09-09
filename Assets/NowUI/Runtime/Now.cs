@@ -2279,8 +2279,23 @@ namespace NowUI
             if (hasTexture && rectangle.preserveAspect && !rectangle.sliced &&
                 position.width > 0f && position.height > 0f)
             {
-                float sourceAspect = rectangle.uvRect.z * rectangle.texture.width /
-                    Mathf.Max(rectangle.uvRect.w * rectangle.texture.height, 1f);
+                // THE FLOOR IS AN EPSILON, NOT A PIXEL, and the difference is a real defect rather than a
+                // rounding preference. This division only needs the denominator kept away from zero; clamping it
+                // to a whole texel instead means any window shorter than one texel is divided by 1 rather than by
+                // its own height, and because raising a denominator lowers the quotient, the source is reported
+                // as far SQUARER than it is and the fitted quad comes out too tall. A 64x64 texture windowed to
+                // uvRect.w = 0.01 is 0.64 texels tall - a true aspect of 100 - and read as an aspect of 64, so a
+                // 1000x1000 box contained it at 1000x15.6 where 1000x10 is correct.
+                //
+                // A degenerate window - zero or negative extent on either axis - yields an aspect of 0, which
+                // takes the first branch below and collapses the quad's width to nothing. That is the same
+                // outcome a zero-width window already had through the numerator, so both degenerate directions
+                // agree: a window with no area draws nothing, rather than drawing something at a fabricated
+                // aspect or propagating a 0/0 NaN into the vertex positions.
+                float sourceHeight = rectangle.uvRect.w * rectangle.texture.height;
+                float sourceAspect = sourceHeight > 1e-6f
+                    ? rectangle.uvRect.z * rectangle.texture.width / sourceHeight
+                    : 0f;
                 float rectAspect = position.width / position.height;
 
                 if (rectAspect > sourceAspect)
