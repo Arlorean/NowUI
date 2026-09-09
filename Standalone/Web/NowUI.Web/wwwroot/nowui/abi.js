@@ -238,6 +238,14 @@ const SPEC = [
     // `enum` is the NowGradientKind; the ramp geometry it needs beyond that (angle, spread) rides in the options.
     { name: 'GRADIENT', sig: 'NowUI.Now.Gradient(NowUI.NowRect,UnityEngine.Color,UnityEngine.Color)', args: ['rect', 'paint', 'paint', 'enum'] },
 
+    // A rect with a picture in it. The second argument is a URL, resolved on the C# side by the project's image
+    // cache; see the matching entry in Abi.cs for why that cache is the markdown one.
+    { name: 'IMAGE', sig: 'NowUI.Now.Rectangle(NowUI.NowRect)+NowUI.Markdown.NowMarkdownImages.GetState(System.String,UnityEngine.Texture2D&)', args: ['rect', 'str'] },
+
+    // A Lottie animation from a URL. The third argument is the playback position in seconds - see the matching
+    // entry in Abi.cs for why the time is sent rather than read from a clock on the other side.
+    { name: 'LOTTIE', sig: 'NowUI.NowLottie.Draw()+NowUI.NowLottieCache.GetState(System.String,NowUI.NowLottieAsset&,System.String&)', args: ['rect', 'str', 'f32'] },
+
     // Two panes and a draggable divider. `f32` is the ratio the author holds; it comes back in the result table
     // so a drag reaches the author's state. `enum` is the NowSplitAxis.
     //

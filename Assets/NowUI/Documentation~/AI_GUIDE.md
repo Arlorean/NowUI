@@ -66,6 +66,16 @@ gamepad navigation requires the Input System because legacy mappings are
 project-defined. `KeyBindingField`, `NowKeyInput`, and `NowKeyNames` require
 resolved `com.unity.inputsystem`; their public API uses its `Key` type.
 
+The browser is not one of these hosts. The package also ships a WebAssembly
+build of NowUI with a JavaScript surface, for prototypes a person can open and
+click; it is a strict subset with no arbitrary transforms, SDF, node graph,
+markdown or code editor, and it is never a substitute for the Unity work a task
+asked for. Pictures and Lottie animations DO work there, from a URL rather than
+from the bundle: `ui.image(box, url)` and `ui.lottie(box, url)` fetch at runtime
+and cache by URL, and the preview serves the project's own `Assets` folder under
+`/assets/`, so a prototype can use the art the project already has. See
+[Web Preview](WebPreview.md).
+
 Read [Render Pipeline Integrations](RenderPipelines.md) before creating UGUI,
 UI Toolkit, URP, or HDRP integration. Read [World Space](WorldSpace.md) for
 mesh surfaces and ray-mapped input, and [IMGUI](EditorGUI.md) for `OnGUI`.
@@ -132,6 +142,7 @@ Host lifecycle rules:
 | Runtime or editor `OnGUI` | `NowGUI`, `NowEditorGUI` | [IMGUI](EditorGUI.md) |
 | Inspector preview of a UI host | `NowPreviewEditor`, `INowPreviewHost` | [IMGUI](EditorGUI.md) |
 | Warmup and allocation expectations | Warmup APIs | [Performance](Performance.md) |
+| Showing a user a running prototype, a still, or a short animation | Web Preview and its capture flags | [Web Preview](WebPreview.md) |
 
 ## Correctness rules
 

@@ -38,6 +38,12 @@ namespace NowUI.Editor.Web
         internal const int DefaultPort = 8973;
         internal const int LastProbedPort = 8982;
 
+        /// <summary>Where the page posts a still or a clip it recorded of itself. The only POST this server takes.</summary>
+        internal const string CapturePath = "/__nowui/capture";
+
+        /// <summary>Where the page reads the capability that lets it post one. Same-origin script only.</summary>
+        internal const string TokenPath = "/__nowui/token";
+
         /// <summary>
         /// Total budget for the "is someone else on this port, and are they me?" sweep. Ten ports times a
         /// 250 ms timeout would be 2.5 s of frozen Editor in the pathological case where every port accepts a
@@ -119,6 +125,11 @@ namespace NowUI.Editor.Web
                 lastError = "The NowUI web bundle is not installed.";
                 return false;
             }
+
+            // Main thread, before the accept loop exists: caches the captures folder (its source reads
+            // Application.dataPath, which the accept loop would rather not touch) and rolls a fresh capture token,
+            // so a token that leaked into a log stops working the moment the server is restarted.
+            NowWebPreviewCapture.Prepare();
 
             int preferred = EditorPrefs.GetInt(PortPrefKey, DefaultPort);
             if (preferred < 1024 || preferred > 65535) preferred = DefaultPort;
@@ -347,20 +358,48 @@ namespace NowUI.Editor.Web
         private static void Handle(HttpListenerContext context)
         {
             string method = context.Request.HttpMethod;
-            if (method != "GET" && method != "HEAD")
-            {
-                WriteText(context, 405, "text/plain", "The NowUI Web Preview serves GET only.");
-                return;
-            }
 
             string rawPath = context.Request.RawUrl ?? "/";
             int query = rawPath.IndexOf('?');
             if (query >= 0) rawPath = rawPath.Substring(0, query);
             rawPath = Uri.UnescapeDataString(rawPath);
 
+            // The one route that is not a read. Checked before the method gate because it is the only POST the
+            // server accepts, and after it the gate stays as strict as it was.
+            if (rawPath == CapturePath)
+            {
+                if (method != "POST")
+                {
+                    // Including OPTIONS, deliberately: a cross-origin fetch carrying the capture header must
+                    // preflight, and a preflight that gets 405 with no CORS headers ends the attempt there.
+                    WriteText(context, 405, "text/plain", "POST a capture to " + CapturePath + ".");
+                    return;
+                }
+
+                HandleCapture(context);
+                return;
+            }
+
+            if (method != "GET" && method != "HEAD")
+            {
+                WriteText(context, 405, "text/plain", "The NowUI Web Preview serves GET only.");
+                return;
+            }
+
             if (rawPath == "/__nowui/id")
             {
                 WriteText(context, 200, "text/plain", NowWebPreviewPaths.ProjectRoot);
+                return;
+            }
+
+            if (rawPath == TokenPath)
+            {
+                // No Access-Control-Allow-Origin, and that omission is the mechanism rather than an oversight: a
+                // page on another origin may issue this request but the browser will not let it read the answer,
+                // so only script this server itself served can learn the token. nosniff so no content-type
+                // guess can turn a hex string into something a <script> tag would execute.
+                context.Response.Headers["X-Content-Type-Options"] = "nosniff";
+                WriteText(context, 200, "text/plain", NowWebPreviewCapture.Token);
                 return;
             }
 
@@ -389,6 +428,111 @@ namespace NowUI.Editor.Web
             }
 
             ServeFile(context, resolved, fromUserFolder);
+        }
+
+        /// <summary>
+        /// <c>POST /__nowui/capture?name=NAME</c> - the browser handing back a still or a clip it recorded of
+        /// itself, so the picture lands in the user's project instead of in their Downloads folder.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// Five things are checked, and each one closes a way this route could be turned against the user by a
+        /// page they did not open. The server is on loopback, but a browser will happily let any site issue a
+        /// request to 127.0.0.1, so "loopback" is not by itself a boundary.
+        /// </para>
+        /// <list type="number">
+        /// <item>The <b>token</b>, minted per server start and readable only by same-origin script (see
+        /// <see cref="NowWebPreviewCapture.Token"/>). Being a custom header, it also forces a preflight that this
+        /// server refuses.</item>
+        /// <item>The <b>Origin</b>, when the browser sent one: anything but this server's own is refused.</item>
+        /// <item>The <b>size</b>, refused before a byte is read, from a Content-Length that must be present.</item>
+        /// <item>The <b>destination</b>, computed here and never received - only one sanitized name segment comes
+        /// from the client.</item>
+        /// <item>The <b>extension</b>, chosen from the content type through a closed list of six.</item>
+        /// </list>
+        /// </remarks>
+        private static void HandleCapture(HttpListenerContext context)
+        {
+            string offered = context.Request.Headers[NowWebPreviewCapture.TokenHeader];
+            if (!string.Equals(offered, NowWebPreviewCapture.Token, StringComparison.Ordinal))
+            {
+                WriteText(context, 403, "text/plain",
+                    "This request did not carry the NowUI Web Preview's capture token. A capture can only be " +
+                    "posted by a page this server served.");
+                return;
+            }
+
+            // BOTH SPELLINGS OF LOOPBACK, because they name the same host and a user who types one of them into
+            // the address bar should not get a silent refusal. The menu item and the window's copy buttons all
+            // emit 127.0.0.1, so this only rescues a hand-typed URL - but it rescued it into a red banner and a
+            // download prompt, which reads as a broken feature rather than as a boundary. Accepting "localhost"
+            // gives nothing away: a page served from anywhere else carries ITS OWN origin here, never this one,
+            // and the token above is what actually decides.
+            string origin = context.Request.Headers["Origin"];
+            if (!string.IsNullOrEmpty(origin) &&
+                !string.Equals(origin, "http://127.0.0.1:" + s_Port, StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(origin, "http://localhost:" + s_Port, StringComparison.OrdinalIgnoreCase))
+            {
+                WriteText(context, 403, "text/plain", "Captures are accepted from this preview's own pages only.");
+                return;
+            }
+
+            long declared = context.Request.ContentLength64;
+            if (declared <= 0)
+            {
+                WriteText(context, 411, "text/plain", "A capture must declare a Content-Length.");
+                return;
+            }
+
+            if (declared > NowWebPreviewCapture.MaxBytes)
+            {
+                WriteText(context, 413, "text/plain",
+                    "That capture is " + declared + " bytes; the limit is " + NowWebPreviewCapture.MaxBytes + ".");
+                return;
+            }
+
+            byte[] body;
+            try
+            {
+                body = ReadBody(context.Request.InputStream, declared);
+            }
+            catch (Exception e)
+            {
+                WriteText(context, 400, "text/plain", "The capture did not arrive in full: " + e.Message);
+                return;
+            }
+
+            string name = context.Request.QueryString["name"];
+            string written = NowWebPreviewCapture.Write(
+                NowWebPreviewCapture.CapturesRoot, name, context.Request.ContentType, body, out string error);
+
+            if (written == null)
+            {
+                WriteText(context, 400, "text/plain", error);
+                return;
+            }
+
+            // The absolute path, as the whole of the response body: the page prints it and an agent reads it, and
+            // neither of them can guess it. This is the only thing the browser learns about the user's disk.
+            WriteText(context, 200, "text/plain", written);
+        }
+
+        /// <summary>
+        /// Reads exactly <paramref name="declared"/> bytes, and one more than the cap allows is a refusal rather
+        /// than an allocation: a hostile Content-Length is a number, and only the bytes that follow it are a cost.
+        /// </summary>
+        private static byte[] ReadBody(Stream input, long declared)
+        {
+            var body = new byte[declared];
+            int filled = 0;
+            while (filled < body.Length)
+            {
+                int read = input.Read(body, filled, body.Length - filled);
+                if (read <= 0) throw new IOException("the connection ended after " + filled + " of " + declared + " bytes");
+                filled += read;
+            }
+
+            return body;
         }
 
         /// <summary>
@@ -425,6 +569,38 @@ namespace NowUI.Editor.Web
         private static string Resolve(string relative, out bool fromUserFolder)
         {
             fromUserFolder = false;
+
+            // /assets/... - the project's own Assets folder, so ui.image and ui.lottie can name a file that is
+            // already in the project instead of one embedded in the bundle. This is the whole reason a preview
+            // can show real art: the file stays on disk, the browser fetches and caches it, and the WebAssembly
+            // payload does not grow by a single byte.
+            //
+            // MEDIA ONLY, and that restriction is the point rather than tidiness. Any page in the user's browser
+            // can issue a request to loopback. It cannot READ a cross-origin response - this server sends no
+            // Access-Control-Allow-Origin, so the bytes never reach the requesting script - but serving a whole
+            // source tree over a socket to earn an image is a trade nobody asked for. An allowlist of things a
+            // picture or an animation can actually be keeps the widening to exactly what the feature needs.
+            //
+            // A miss here returns null rather than falling through to the bundle: the prefix says where the file
+            // was meant to come from, and a 404 naming that folder is worth more than a surprise hit elsewhere.
+            if (relative.StartsWith("assets/", StringComparison.OrdinalIgnoreCase))
+            {
+                string tail = relative.Substring("assets/".Length);
+                if (tail.Length == 0 || !IsServableAsset(tail)) return null;
+
+                string root = Path.Combine(NowWebPreviewPaths.ProjectRoot, "Assets");
+                string candidate = Path.Combine(root, tail.Replace('/', Path.DirectorySeparatorChar));
+
+                if (IsInside(root, candidate) && File.Exists(candidate))
+                {
+                    // Treated as the author's own file, because it is: no-store, so replacing the art and
+                    // reloading shows the new art rather than the browser's copy of the old one.
+                    fromUserFolder = true;
+                    return candidate;
+                }
+
+                return null;
+            }
 
             string appCandidate = null;
             if (relative.EndsWith(".js", StringComparison.OrdinalIgnoreCase))
@@ -471,6 +647,19 @@ namespace NowUI.Editor.Web
         {
             var text = new StringBuilder();
             text.Append("NowUI Web Preview: '").Append(relative).Append("' was not found.\n\nLooked in:\n");
+
+            // The /assets/ prefix names exactly one folder, so a miss there should say which one rather than
+            // list the two places every other request is looked in and mention neither of them.
+            if (relative.StartsWith("assets/", StringComparison.OrdinalIgnoreCase))
+            {
+                text.Append("  ")
+                    .Append(Path.Combine(Path.Combine(NowWebPreviewPaths.ProjectRoot, "Assets"),
+                        relative.Substring("assets/".Length).Replace('/', Path.DirectorySeparatorChar)))
+                    .Append("\n\n/assets/ serves pictures, Lottie documents and fonts out of the project's ")
+                    .Append("Assets folder. Source files, .meta files and Unity assets are never served.");
+                return text.ToString();
+            }
+
             if (relative.EndsWith(".js", StringComparison.OrdinalIgnoreCase))
                 text.Append("  ").Append(Path.Combine(NowWebPreviewPaths.AppsRoot, Path.GetFileName(relative))).Append('\n');
             text.Append("  ").Append(Path.Combine(s_BundleRoot ?? "<no bundle>", relative.Replace('/', Path.DirectorySeparatorChar)));
@@ -508,6 +697,39 @@ namespace NowUI.Editor.Web
             }
 
             return app.Length > 0;
+        }
+
+        /// <summary>
+        /// Whether a path under <c>/assets/</c> names something a picture or an animation can be.
+        /// </summary>
+        /// <remarks>
+        /// Extension only, and deliberately not content sniffing: the question is not "is this really a PNG" -
+        /// the decoder answers that, and answers it safely - but "did the author mean to publish this file over
+        /// a socket". A .cs, a .meta, an .asset or a .unity never means that, whatever is inside it.
+        /// </remarks>
+        internal static bool IsServableAsset(string relative)
+        {
+            switch (Path.GetExtension(relative).ToLowerInvariant())
+            {
+                case ".png":
+                case ".jpg":
+                case ".jpeg":
+                case ".gif":
+                case ".webp":
+                case ".bmp":
+                case ".svg":
+                case ".ico":
+                // Lottie is a JSON document, and .lottie is the zipped form the dotLottie tooling emits.
+                case ".json":
+                case ".lottie":
+                case ".ttf":
+                case ".otf":
+                case ".woff":
+                case ".woff2":
+                    return true;
+                default:
+                    return false;
+            }
         }
 
         private static bool IsInside(string root, string candidate)
@@ -685,7 +907,11 @@ namespace NowUI.Editor.Web
                 case ".wasm": return "application/wasm";
                 case ".js":
                 case ".mjs":  return "text/javascript";
-                case ".json": return "application/json";
+                case ".json":
+                // A Lottie document is JSON that happens to carry an animation, and the .lottie name is
+                // what the tooling emits. Served as octet-stream it still parsed - the loader reads bytes -
+                // but nothing else on the machine would know what it was.
+                case ".lottie": return "application/json";
                 case ".html":
                 case ".htm":  return "text/html; charset=utf-8";
                 case ".css":  return "text/css";

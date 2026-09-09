@@ -36,6 +36,14 @@ Consumer code belongs under the project's `Assets` directory; PackageCache is
 read-only. For package contributions, also read `<package-root>/AGENTS.md`.
 An embedded or local dependency does not imply that it should be modified.
 
+## Showing a prototype
+
+The package can also run NowUI in the user's browser and record a still or a
+short animation of a running page. Read
+`<package-root>/Documentation~/WebPreview.md` before using either. Offer a
+browser prototype alongside Unity work, never as a substitute for it, and report
+only captures that exist on disk.
+
 ## Verify the change
 
 For code changes, compile against the installed package, address `NOWUI001` and

@@ -117,6 +117,14 @@ itself and documents every function in comments beside it; the longer written
 specification is `Docs/Standalone/M3-Spec.md` in the source repository, which a
 package install does not carry.
 
+[Web Preview](Documentation~/WebPreview.md) covers the rest: writing an
+application, the mistakes the surface refuses by name, and how to record a still
+or a short animation of a running page into `<ProjectRoot>/NowUI/captures/` so it
+can be shown to someone who is not at the machine. Add `&shot=1` or
+`&clip=SECONDS` to a preview URL, and keep the browser window in front — a
+hidden tab draws nothing, and NowUI writes an explanation rather than a blank
+picture when that happens.
+
 The browser surface is a subset of the C# API. It covers layout, containers,
 controls, values and the drawing primitives — `ui.canvas`, `ui.rect`,
 `ui.circle`, `ui.line`, `ui.bezier`, `ui.triangle`, `ui.polygon`, `ui.gradient`

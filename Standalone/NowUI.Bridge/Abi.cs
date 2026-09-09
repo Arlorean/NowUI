@@ -482,6 +482,32 @@ namespace NowUI.Bridge
                 new OpSpec("GRADIENT", "NowUI.Now.Gradient(NowUI.NowRect,UnityEngine.Color,UnityEngine.Color)", 0,
                     new[] { ArgKind.Rect, ArgKind.Paint, ArgKind.Paint, ArgKind.Enum }),
 
+                // IMAGE is a RECT with a picture in it, and that is not a simplification - it replays into
+                // Now.Rectangle(rect).SetTexture(texture), the same call every other rect makes, because the
+                // core's rectangle shader has always sampled _MainTex. So an image costs no new shader, no new
+                // draw path and no new batching rule; it costs a texture bind, exactly like a font atlas page.
+                //
+                // The URL is the only new argument. Resolving it to a Texture2D is NOT this layer's job and
+                // deliberately so: NowMarkdownImages already owns a URL-keyed cache with a redirect limit, a byte
+                // cap, a pixel cap and an overridable host policy, in both the Unity and the engine-free build.
+                // Its name says "markdown" and its behaviour says "the project's image cache"; reusing it keeps
+                // one download policy in the codebase, where a second one would eventually disagree with it.
+                new OpSpec("IMAGE",
+                    "NowUI.Now.Rectangle(NowUI.NowRect)+NowUI.Markdown.NowMarkdownImages.GetState(System.String,UnityEngine.Texture2D&)", 0,
+                    new[] { ArgKind.Rect, ArgKind.Str }),
+
+                // A Lottie plays the same way an image draws: name a URL, get a cache entry, draw what is there
+                // this frame. NowLottieCache is the core's own asset cache - not an extension's - and it already
+                // has an engine-free half, so the browser needs nothing that Unity does not already have.
+                //
+                // THE TIME IS AN ARGUMENT, not a clock this side reads. An immediate-mode frame is drawn by an
+                // author who already owns a clock, and a Lottie whose position came from somewhere else could not
+                // be scrubbed, paused or synchronised with anything the author is animating. The surface fills in
+                // the page's own elapsed seconds when nobody says otherwise, so the common case still just plays.
+                new OpSpec("LOTTIE",
+                    "NowUI.NowLottie.Draw()+NowUI.NowLottieCache.GetState(System.String,NowUI.NowLottieAsset&,System.String&)", 0,
+                    new[] { ArgKind.Rect, ArgKind.Str, ArgKind.F32 }),
+
                 // A split needs no new structural opcode: scope brackets NEST, so it is
                 // SPLIT{ PANE(0){..} PANE(1){..} }.
                 new OpSpec("SPLIT", "NowUI.NowSplitView.Begin(System.Single&)", 0,

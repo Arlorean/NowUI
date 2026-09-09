@@ -231,10 +231,23 @@ start(() => {
 `./nowui/nowui.js` is served by the same local server, out of the package's bundle. Do not copy it here - both
 halves of the bridge have to reach the same module instance, and they only do that if the URL is the shared one.
 
+## Showing it to someone
+
+Add `&shot=1` for a still, or `&clip=5` for a five-second animation, and the page records ITSELF and hands the
+bytes back to the Editor, which writes them to `captures/` beside this file. `&name=NAME` chooses the file name.
+
+**Keep the browser window visible and in front while it records.** A browser stops drawing entirely in a tab that
+is hidden, minimised or behind another window, so a capture taken there would be blank. NowUI counts the frames
+and writes a `.txt` saying what happened rather than an empty picture.
+
+A clip is an animated WebP by default, which is the format that renders inline in a chat or a pull request.
+`&format=webm` records with the browser's own video encoder instead: a much smaller file that has to be opened.
+
 ## No network
 
 Everything is served from `http://127.0.0.1` by the Unity Editor, out of files already on your disk. Nothing is
-fetched, uploaded or phoned home, and the preview works with the network cable out.
+fetched, uploaded or phoned home, and the preview works with the network cable out. A capture goes from the page
+to the Editor on that same loopback socket and no further.
 ";
     }
 }

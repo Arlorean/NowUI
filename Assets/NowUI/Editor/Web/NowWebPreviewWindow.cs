@@ -88,6 +88,8 @@ namespace NowUI.Editor.Web
             EditorGUILayout.Space();
             DrawApp();
             EditorGUILayout.Space();
+            DrawCaptures();
+            EditorGUILayout.Space();
             DrawBundle();
             DrawProblems();
 
@@ -179,6 +181,60 @@ namespace NowUI.Editor.Web
             }
         }
 
+        // -------------------------------------------------------------------------------------------- captures
+
+        /// <summary>
+        /// The picture half of the feature: the browser records itself and the Editor writes the file here.
+        /// </summary>
+        /// <remarks>
+        /// Two buttons rather than a recorder UI, because the browser is the recorder. They copy a URL - the same
+        /// URL an AI agent would compose - so "show me what you built" is a paste into the address bar, and the
+        /// file lands in a folder this window can open. Nothing captures on its own: a preview that wrote files
+        /// nobody asked for would be a preview that filled a repository.
+        /// </remarks>
+        private void DrawCaptures()
+        {
+            EditorGUILayout.LabelField("Captures", EditorStyles.boldLabel);
+
+            using (new EditorGUI.DisabledScope(!NowWebPreviewServer.IsRunning))
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                if (GUILayout.Button("Copy a still URL"))
+                    EditorGUIUtility.systemCopyBuffer = BuildCaptureUrl("&shot=1&name=" + m_App + "-shot");
+                if (GUILayout.Button("Copy a 5s clip URL"))
+                    EditorGUIUtility.systemCopyBuffer =
+                        BuildCaptureUrl("&clip=5&fps=12&scale=0.5&name=" + m_App + "-clip");
+            }
+
+            EditorGUILayout.SelectableLabel(NowWebPreviewCapture.CapturesRoot, EditorStyles.miniLabel,
+                GUILayout.Height(EditorGUIUtility.singleLineHeight));
+
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                if (GUILayout.Button("Reveal", GUILayout.Width(70f)))
+                {
+                    string folder = NowWebPreviewCapture.CapturesRoot;
+                    try { Directory.CreateDirectory(folder); } catch (Exception) { }
+                    EditorUtility.RevealInFinder(
+                        File.Exists(NowWebPreviewCapture.lastCapture) ? NowWebPreviewCapture.lastCapture : folder);
+                }
+
+                string last = NowWebPreviewCapture.lastCapture;
+                EditorGUILayout.LabelField(
+                    last == null
+                        ? "Nothing captured yet."
+                        : Path.GetFileName(last) + "  ·  " + NowWebPreviewCapture.lastCaptureAt.ToString("HH:mm:ss"),
+                    EditorStyles.miniLabel);
+            }
+
+            EditorGUILayout.HelpBox(
+                "Open one of those URLs and keep the browser window visible and in front. A browser suspends " +
+                "drawing entirely in a hidden or minimised tab, so a capture taken there would be blank - NowUI " +
+                "counts the frames and writes a .txt saying so rather than an empty picture.\n\n" +
+                "Documentation~/WebPreview.md has the flags and what each browser can record.",
+                MessageType.None);
+        }
+
         // ---------------------------------------------------------------------------------------------- bundle
 
         private void DrawBundle()
@@ -245,6 +301,24 @@ namespace NowUI.Editor.Web
             url.Append("?app=").Append(m_App);
             url.Append(m_ShowReport ? "&report=1" : "&report=0");
             if (m_Watch) url.Append("&watch=1");
+            url.Append("&v=").Append(DateTime.UtcNow.Ticks.ToString("x"));
+            return url.ToString();
+        }
+
+        /// <summary>
+        /// <see cref="BuildUrl"/> plus capture flags, minus the watch poll: a page that reloaded itself halfway
+        /// through a recording would produce a clip of its own start-up.
+        /// </summary>
+        private string BuildCaptureUrl(string flags)
+        {
+            var url = new StringBuilder(NowWebPreviewServer.url ??
+                ("http://127.0.0.1:" + NowWebPreviewServer.DefaultPort + "/"));
+            url.Append("?app=").Append(m_App);
+            url.Append("&report=0");
+            // Pinned rather than inherited: on a 2x display the drawing buffer is four times the pixels, and a
+            // capture whose size depends on which monitor the browser happened to open on is not reproducible.
+            url.Append("&dpr=1");
+            url.Append(flags);
             url.Append("&v=").Append(DateTime.UtcNow.Ticks.ToString("x"));
             return url.ToString();
         }

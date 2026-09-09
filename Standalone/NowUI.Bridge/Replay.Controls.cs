@@ -27,6 +27,7 @@
 using System;
 using System.Collections.Generic;
 using NowUI;
+using NowUI.Markdown;
 using UnityEngine;
 
 namespace NowUI.Bridge
@@ -578,6 +579,14 @@ namespace NowUI.Bridge
                 // ---- W9: drawings --------------------------------------------------------------------------
                 case "RECT":
                     DrawRect(args);
+                    return true;
+
+                case "IMAGE":
+                    DrawImage(args);
+                    return true;
+
+                case "LOTTIE":
+                    DrawLottie(args);
                     return true;
 
                 case "CIRCLE":
@@ -1402,6 +1411,94 @@ namespace NowUI.Bridge
             if (o.Has(Abi.OptBlur)) rect = rect.SetBlur(o.blur);
 
             rect.Draw();
+        }
+
+        /// <summary>
+        /// <c>ui.image</c>: a rectangle with a picture in it, fetched by URL and drawn as soon as it arrives.
+        /// </summary>
+        /// <remarks>
+        /// <para>THE DEFAULT COLOUR IS WHITE, and that is the difference between this and <see cref="DrawRect"/>
+        /// rather than an oversight. A rect with no colour takes a theme STYLE, which tints whatever it draws; a
+        /// photograph tinted by the surface colour is a photograph the author did not ask for. So an image starts
+        /// at white - the identity tint - and honours <c>color</c> only when one is named, which is then a real
+        /// tint and not an accident.</para>
+        /// <para>NOTHING BLOCKS. The first frame that names a URL starts a download and draws the placeholder;
+        /// later frames find the texture in the cache and draw it. That works because the browser host runs frames
+        /// continuously and <c>NowMarkdownImages.Tick</c> is on <c>NowRuntime.onFrame</c>, so the download makes
+        /// progress between frames without this decode waiting for anything.</para>
+        /// <para>A FAILED IMAGE STILL DRAWS ITS BOX. Leaving nothing would collapse a layout around a hole and
+        /// leave the author guessing whether the URL was wrong or the op did nothing; a muted box keeps the
+        /// composition and says the slot was reserved. The reason it failed is on the console, once per URL,
+        /// through the cache's own reporting rather than once per frame from here.</para>
+        /// </remarks>
+        private void DrawImage(int args)
+        {
+            m_Painted = true;
+            BridgeOptions o = TakeOptions();
+            NowThemeAsset theme = NowTheme.themeAsset;
+
+            NowRect where = RectAt(args);
+            string url = m_Recorder.Text(m_Recorder.Slot(args + 4));
+
+            Texture2D texture;
+            NowMarkdownImageState state = NowMarkdownImages.GetState(url, out texture);
+
+            NowRectangle rect = Now.Rectangle(where);
+
+            if (state == NowMarkdownImageState.Loaded && texture != null)
+            {
+                rect = rect.SetTexture(texture)
+                    .SetColor(o.Has(Abi.OptColor) ? o.FillColor(theme, NowColorToken.Text) : Color.white);
+            }
+            else
+            {
+                // The placeholder. Muted rather than the author's tint: a solid block of their accent colour
+                // reads as a drawn shape, where the muted surface reads as something not there yet.
+                rect = rect.SetStyle(theme, NowRectangleStyle.Muted);
+            }
+
+            if (o.Has(Abi.OptRadius)) rect = rect.SetRadius(o.radius.x, o.radius.y, o.radius.z, o.radius.w);
+            if (o.Has(Abi.OptStroke)) rect = rect.SetOutline(o.stroke);
+            if (o.Has(Abi.OptStrokeColor)) rect = rect.SetOutlineColor(o.StrokeColor(theme, NowColorToken.Border));
+
+            rect.Draw();
+        }
+
+        /// <summary>
+        /// <c>ui.lottie</c>: a vector animation from a URL, drawn at the playback position the caller names.
+        /// </summary>
+        /// <remarks>
+        /// <para>The shape is deliberately the same as <see cref="DrawImage"/> - ask the cache, draw what is
+        /// there, draw a placeholder when it is not - so an author who has used one already knows this one. The
+        /// only real difference is the time argument, and the reason it is an argument is in the op's own entry
+        /// in Abi.cs.</para>
+        /// <para>A Lottie that has NOT arrived draws nothing rather than a muted box. That is the opposite of
+        /// the image decision and it is deliberate: an image is usually content in a layout, where a hole is a
+        /// broken page, while a Lottie is usually an accent over one - a spinner, a tick, a flourish - where a
+        /// grey rectangle appearing for a moment before the animation is worse than nothing appearing at all.
+        /// The failure is still reported by the cache, once, with the URL in it.</para>
+        /// </remarks>
+        private void DrawLottie(int args)
+        {
+            m_Painted = true;
+            BridgeOptions o = TakeOptions();
+            NowThemeAsset theme = NowTheme.themeAsset;
+
+            NowRect where = RectAt(args);
+            string url = m_Recorder.Text(m_Recorder.Slot(args + 4));
+            float time = Flt(args + 5);
+
+            NowLottieAsset asset;
+            string error;
+            NowLottieCacheState state = NowLottieCache.GetState(url, out asset, out error);
+
+            if (state != NowLottieCacheState.Loaded || asset == null) return;
+
+            var lottie = new NowLottie(where, asset).SetTime(time);
+
+            if (o.Has(Abi.OptColor)) lottie = lottie.SetColor(o.FillColor(theme, NowColorToken.Text));
+
+            lottie.Draw();
         }
 
         /// <summary>

@@ -3681,6 +3681,17 @@ function asInts(view) {
 
 // ---------------------------------------------------------------------------------------------- init
 
+/// The three flags that mean "somebody is going to read this canvas back": the original ?capture=1, and the two
+/// capture requests nowui/capture.js answers. Read once, at context creation, because the attribute cannot be
+/// changed afterwards - a context created without it and asked for pixels later returns an empty buffer.
+function wantsPreservedBuffer() {
+    const search = new URLSearchParams(location.search);
+    if (search.get('capture') === '1') return true;
+    if (search.get('shot') === '1' || search.get('shot') === 'true') return true;
+    const clip = search.get('clip');
+    return clip !== null && Number.isFinite(Number(clip)) && Number(clip) > 0;
+}
+
 export function init(canvasSelector) {
     canvas = document.querySelector(canvasSelector);
     if (!canvas) fail(`no canvas matched the selector "${canvasSelector}".`);
@@ -3696,7 +3707,13 @@ export function init(canvasSelector) {
         // needs to read the canvas back after the frame has been composited: canvas.toDataURL and gl.readPixels both
         // return an empty buffer otherwise, which looks exactly like "nothing rendered" rather than like a capture
         // problem. Golden-image comparison against Unity's harness renders will want this.
-        preserveDrawingBuffer: new URLSearchParams(location.search).get('capture') === '1',
+        //
+        // ?shot= and ?clip= turn it on for themselves. nowui/capture.js reads the buffer from inside the frame
+        // callback, where it is still intact either way, but its fallback path is gl.readPixels - the one that
+        // returned correct pixels when drawImage of this canvas came back solid black - and that path needs the
+        // buffer retained. A capture run is a handful of seconds, so the per-frame copy is not worth a flag the
+        // caller has to remember.
+        preserveDrawingBuffer: wantsPreservedBuffer(),
         powerPreference: 'high-performance',
     });
 

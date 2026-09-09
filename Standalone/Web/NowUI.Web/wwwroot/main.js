@@ -17,6 +17,7 @@
 
 import { dotnet } from './_framework/dotnet.js'
 import * as nowuiFetch from './nowui-fetch.js'
+import { installCapture } from './nowui/capture.js'
 
 const canvas = document.getElementById('nowui-canvas');
 
@@ -172,10 +173,18 @@ const { setModuleImports, getAssemblyExports, getConfig, runMain } = await dotne
 
 let frameCallback = null;
 
+// ?shot=1 / ?clip=SECONDS. null on every ordinary load, so the frame loop pays one null check per frame and the
+// module's only cost is a URLSearchParams lookup at boot. The hook has to run HERE, inside the frame callback and
+// immediately after the draw, for the reason nowui/capture.js is built around: without preserveDrawingBuffer the
+// canvas is empty again by the time anything outside this task can look at it, and a driver reading it from a
+// timer gets a blank image with no error.
+const captureTick = installCapture(canvas);
+
 function frame() {
     // Before the frame, so WebHostServices.Poll and the backend's viewport see the same size in the same frame.
     resizeCanvas();
     frameCallback();
+    if (captureTick !== null) captureTick();
     // One-shot, and here rather than on a timer: the overlay comes off when something has actually been drawn,
     // not when a clock says it probably has.
     if (!bootCleared) bootDone();

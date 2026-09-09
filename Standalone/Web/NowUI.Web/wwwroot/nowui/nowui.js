@@ -638,6 +638,29 @@ function geomFlush() {
 
 // ------------------------------------------------------------------------------------------------ helpers
 
+/// Turns whatever an author wrote into the absolute http(s) URL the cache on the other side needs.
+///
+/// THIS IS NOT A CONVENIENCE. NowMarkdownImages and NowLottieCache both decide what to do with a string by
+/// asking whether it is an http(s) URL; anything else is treated as a Unity Resources path and fails without a
+/// single network request. So `ui.image('/logo.png')` - the most natural thing an author can write, and the form
+/// every example uses - would silently draw a placeholder forever. Resolving here is also the only place it CAN
+/// happen: the page knows its own origin and the WebAssembly side does not.
+///
+/// Resolving also makes the absolute URL the CACHE KEY, which is what stops '/a.png' and './a.png' from being
+/// downloaded twice.
+function absoluteUrl(value, fn) {
+    const raw = textArg(value, fn, 'url');
+    if (raw === '' || typeof location === 'undefined') return raw;
+
+    try {
+        return new URL(raw, location.href).href;
+    } catch (e) {
+        throw new NowUIAuthorError(
+            'NowUI: ' + fn + ' - "' + raw + '" is not a url this page can resolve. Use a path like ' +
+            '"/art/logo.png", or a full "https://..." address.');
+    }
+}
+
 /// Every string that reaches the wire goes through here, and since W10 that means every one of them obeys the
 /// same rule: absent is '', a number or a boolean converts, an object does not.
 function text(value, fn, param) {
@@ -710,6 +733,21 @@ function emitStrings(list) {
 
 /// ui.rect: the only shape with a semantic style, because NowRectangle is the only one with a SetStyle.
 const RECT_OPTIONS = ['color', 'stroke', 'strokeColor', 'radius', 'blur', 'style', 'disabled'];
+
+/// ui.image: a rect's geometry options, minus the ones that would fight the picture. No `style`, because a
+/// theme style sets a colour and an image's colour is its pixels; no `blur`, because the blur is the shape's
+/// edge falloff and it would fray the picture rather than soften it. `color` survives as a deliberate tint.
+const IMAGE_OPTIONS = ['color', 'stroke', 'strokeColor', 'radius'];
+
+/// ui.lottie: a tint, and the playback position. Nothing else - a Lottie draws its own shapes, so a stroke, a
+/// radius or a style would have nothing to apply to.
+///
+/// `time` is in this list but has no option flag, and that is not an inconsistency. The list is what an author
+/// is ALLOWED to write - anything outside it is refused by name rather than silently ignored - while the flags
+/// below are what gets encoded into the options block. ui.lottie reads `time` itself and sends it as a
+/// positional argument, so it must be permitted here and must not be encoded there. Leaving it out is what made
+/// the first version of this throw "time is not an option" on every call.
+const LOTTIE_OPTIONS = ['color', 'time'];
 
 /// ui.circle: segments is its tessellation; fill: false makes a ring.
 const CIRCLE_OPTIONS = ['color', 'stroke', 'strokeColor', 'fill', 'segments'];
@@ -1217,6 +1255,55 @@ export const ui = {
         emitOptions(encodeOptions(opts, undefined, RECT_OPTIONS, 'ui.rect'));
         W.op(OPS.RECT);
         geomFlush();
+    },
+
+    /// A picture from a URL, drawn into `box` exactly as ui.rect draws a colour into it.
+    ///
+    /// THE FIRST FRAME DOES NOT HAVE THE IMAGE, and the surface does not pretend otherwise. Naming a URL starts
+    /// the download; until it lands the box draws as a muted placeholder, and the frame after it arrives draws
+    /// the picture. Nothing blocks and nothing is awaited - the page is already running frames continuously, so
+    /// the image simply appears. A URL that fails keeps drawing the placeholder, so a layout never collapses
+    /// around a hole, and says why on the console once rather than once per frame.
+    ///
+    /// `box` is [x, y, width, height], canvas-local inside ui.canvas and screen-space outside it - the same rule
+    /// ui.rect follows. The image is stretched to the box; there is no fit mode yet, so size the box to the
+    /// aspect you want.
+    image(box, url, opts) {
+        geomReset();
+        geomBox(box, 'ui.image', 'box');
+
+        emitOptions(encodeOptions(opts, undefined, IMAGE_OPTIONS, 'ui.image'));
+        W.op(OPS.IMAGE);
+        geomFlush();
+        W.i32(W.str(absoluteUrl(url, 'ui.image')));
+    },
+
+    /// A Lottie animation from a URL, played into `box`.
+    ///
+    /// It plays by itself: with no `time` option the animation runs from the page's own clock, which is what you
+    /// want for a spinner, a tick or a looping flourish. Pass `time` in SECONDS to drive it yourself - from a
+    /// scrubber, from a paused value, or from the same clock as something else you are animating - and the same
+    /// number always draws the same frame, which is what makes a Lottie testable and capturable.
+    ///
+    /// Until the file arrives, NOTHING is drawn - not a placeholder box. A Lottie is usually an accent over a
+    /// layout rather than content inside one, and a grey rectangle flashing before a tick animation looks like a
+    /// bug. If you want the space reserved, draw your own ui.rect behind it.
+    lottie(box, url, opts) {
+        geomReset();
+        geomBox(box, 'ui.lottie', 'box');
+
+        // frameInfo.time, not a fresh clock read: it is sampled ONCE at the top of the frame, so two Lotties
+        // drawn in the same frame are at the same instant. Reading the clock per call would drift them apart by
+        // whatever the recording took, which is small, real, and impossible to debug from the outside.
+        const time = opts && opts.time !== undefined
+            ? numArg(opts.time, 'ui.lottie', 'time')
+            : frameInfo.time;
+
+        emitOptions(encodeOptions(opts, undefined, LOTTIE_OPTIONS, 'ui.lottie'));
+        W.op(OPS.LOTTIE);
+        geomFlush();
+        W.i32(W.str(absoluteUrl(url, 'ui.lottie')));
+        W.f32(time);
     },
 
     /// A circle, or an ellipse: `radius` is one number broadcast to both axes, or `[rx, ry]`. The radius is a

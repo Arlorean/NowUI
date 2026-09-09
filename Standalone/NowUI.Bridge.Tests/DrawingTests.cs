@@ -16,6 +16,7 @@ using System;
 using System.Collections.Generic;
 using NowUI;
 using NowUI.Bridge;
+using NowUI.Markdown;
 using NUnit.Framework;
 using UnityEngine;
 
@@ -721,5 +722,160 @@ namespace NowUI.Bridge.Tests
             record = default;
             return false;
         }
+
+        // ------------------------------------------------------------------------------------- W12: ui.image
+        //
+        // An image is a rect with a texture, so what needs proving is not that a textured quad tessellates - RECT
+        // already covers that - but the three things IMAGE adds: the URL reaches the cache, a picture that has not
+        // arrived still occupies its box, and the geometry lands where a RECT with the same box would.
+
+        /// <summary>The URL an image names is handed to the project's image cache, on the frame that names it.</summary>
+        [Test]
+        public void NamingAUrlAsksTheImageCacheForIt()
+        {
+            RequireFixtures();
+            NowMarkdownImages.Reset();
+
+            const string url = "https://example.invalid/nowui-asks-for-this.png";
+            Texture2D before;
+            Assert.AreEqual(NowMarkdownImageState.Failed, NowMarkdownImages.GetState("", out before),
+                "an empty url should be refused outright, which is the baseline this test reads against");
+            NowMarkdownImages.Reset();
+            Assert.AreEqual(0, NowMarkdownImages.cachedEntryCount, "the cache did not start empty");
+
+            var frame = new TestFrame();
+            int handle = frame.Intern(url);
+            frame.Op(Abi.Op("IMAGE"), TestFrame.F(10f), TestFrame.F(10f), TestFrame.F(64f), TestFrame.F(64f), handle);
+
+            List<string> log;
+            Run(frame, out log);
+            CollectionAssert.IsEmpty(log);
+
+            Assert.AreEqual(1, NowMarkdownImages.cachedEntryCount,
+                "the op drew without ever asking the cache for the url, so the picture would never arrive");
+
+            NowMarkdownImages.Reset();
+        }
+
+        /// <summary>
+        /// A picture that has not arrived - or never will - still draws its box, so a layout built around an image
+        /// does not collapse while the download runs and does not silently lose a slot when the url is wrong.
+        /// </summary>
+        [Test]
+        public void AnImageThatHasNotArrivedStillDrawsItsBox()
+        {
+            RequireFixtures();
+            NowMarkdownImages.Reset();
+
+            var frame = new TestFrame();
+            int handle = frame.Intern("https://example.invalid/never-arrives.png");
+            frame.Op(Abi.Op("IMAGE"), TestFrame.F(10f), TestFrame.F(10f), TestFrame.F(64f), TestFrame.F(64f), handle);
+
+            long drawn = Vertices(frame);
+
+            Assert.Greater(drawn, 0L,
+                "an image whose download has not finished tessellated nothing, so its box vanished from the " +
+                "layout until the bytes arrived");
+
+            // The tolerance is the ANTIALIASING BAND, not slack. NowUI submits geometry a couple of pixels
+            // outside the shape so the edge can fade across it, so the extent the backend sees is always a little
+            // larger than the box that was asked for - measured at 68 for a 64 px placeholder. What this asserts
+            // is that the box is still THERE and still its own size; AnImageOccupiesTheSameBoxAsARectangleWouldHave
+            // is the one that pins the position exactly, by comparing two drawn things rather than a drawn thing
+            // against a literal.
+            Assert.IsTrue(BridgeTestHost.counting.hasGeometry);
+            Rect box = BridgeTestHost.counting.geometry;
+            Assert.AreEqual(64f, box.width, 6f, "the placeholder did not occupy the width the image asked for");
+            Assert.AreEqual(64f, box.height, 6f, "the placeholder did not occupy the height the image asked for");
+
+            NowMarkdownImages.Reset();
+        }
+
+        /// <summary>
+        /// An image lands exactly where a rectangle with the same box lands. Asserted as an equality against RECT
+        /// rather than against literal coordinates, for the same reason the canvas-origin test is: the alternative
+        /// asserts NowUI's vertex conventions rather than the bridge's.
+        /// </summary>
+        [Test]
+        public void AnImageOccupiesTheSameBoxAsARectangleWouldHave()
+        {
+            RequireFixtures();
+            NowMarkdownImages.Reset();
+
+            var imageFrame = new TestFrame();
+            int handle = imageFrame.Intern("https://example.invalid/somewhere.png");
+            imageFrame.Op(Abi.Op("IMAGE"),
+                TestFrame.F(24f), TestFrame.F(36f), TestFrame.F(120f), TestFrame.F(80f), handle);
+
+            Vertices(imageFrame);
+            Rect imageBox = BridgeTestHost.counting.geometry;
+
+            var rectFrame = new TestFrame();
+            rectFrame.Op(Abi.Op("OPTS"), ColorOpts(Color.white));
+            rectFrame.Op(Abi.Op("RECT"), TestFrame.V4(24f, 36f, 120f, 80f));
+
+            Vertices(rectFrame);
+            Rect rectBox = BridgeTestHost.counting.geometry;
+
+            Assert.AreEqual(rectBox.xMin, imageBox.xMin, 0.5f, "an image and a rect disagreed about x");
+            Assert.AreEqual(rectBox.yMin, imageBox.yMin, 0.5f, "an image and a rect disagreed about y");
+            Assert.AreEqual(rectBox.width, imageBox.width, 0.5f);
+            Assert.AreEqual(rectBox.height, imageBox.height, 0.5f);
+
+            NowMarkdownImages.Reset();
+        }
+
+        /// <summary>
+        /// A texture already in the cache is drawn on the frame that names it, with no download and no wait. This
+        /// is the path an Editor-served project asset takes once its first frame has landed.
+        /// </summary>
+        [Test]
+        public void AnImageAlreadyInTheCacheDrawsImmediately()
+        {
+            RequireFixtures();
+            NowMarkdownImages.Reset();
+
+            const string url = "https://example.invalid/already-here.png";
+            var texture = new Texture2D(4, 4, TextureFormat.RGBA32, false);
+            NowMarkdownImages.SetTexture(url, texture);
+
+            Texture2D found;
+            Assert.AreEqual(NowMarkdownImageState.Loaded, NowMarkdownImages.GetState(url, out found),
+                "the injected texture did not register, so this test could not tell the two paths apart");
+
+            var frame = new TestFrame();
+            int handle = frame.Intern(url);
+            frame.Op(Abi.Op("IMAGE"), TestFrame.F(0f), TestFrame.F(0f), TestFrame.F(32f), TestFrame.F(32f), handle);
+
+            long drawn = Vertices(frame);
+            Assert.Greater(drawn, 0L, "a cached image drew nothing");
+
+            NowMarkdownImages.Reset();
+            UnityEngine.Object.DestroyImmediate(texture);
+        }
+
+        /// <summary>A Lottie's URL reaches the core's Lottie cache on the frame that names it.</summary>
+        [Test]
+        public void NamingAUrlAsksTheLottieCacheForIt()
+        {
+            RequireFixtures();
+            NowLottieCache.Reset();
+            Assert.AreEqual(0, NowLottieCache.cachedEntryCount, "the cache did not start empty");
+
+            var frame = new TestFrame();
+            int handle = frame.Intern("https://example.invalid/spinner.json");
+            frame.Op(Abi.Op("LOTTIE"),
+                TestFrame.F(0f), TestFrame.F(0f), TestFrame.F(64f), TestFrame.F(64f), handle, TestFrame.F(0.5f));
+
+            List<string> log;
+            Run(frame, out log);
+            CollectionAssert.IsEmpty(log);
+
+            Assert.AreEqual(1, NowLottieCache.cachedEntryCount,
+                "the op drew without ever asking the cache for the url, so the animation would never arrive");
+
+            NowLottieCache.Reset();
+        }
+
     }
 }

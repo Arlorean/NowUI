@@ -44,6 +44,13 @@
 
   <ItemGroup>
     <ProjectReference Include="../NowUI.Runtime/NowUI.Runtime.csproj" />
+    <!--
+      The Markdown extension, for ONE type: NowMarkdownImages, which is the project's only URL-keyed texture
+      cache and the thing ui.image resolves a URL with. The dependency is engine-free and one-directional -
+      the extension itself references only NowUI.Runtime - so this adds no cycle and nothing under Assets/NowUI
+      moves. See the IMAGE entry in Abi.cs for why an image reuses that cache rather than growing a second one.
+    -->
+    <ProjectReference Include="../Extensions/NowUI.Extensions.Markdown/NowUI.Extensions.Markdown.csproj" />
   </ItemGroup>
 
   <!-- Gate G10 / invariant I1. See the file for what it checks and why it is a build failure. -->
