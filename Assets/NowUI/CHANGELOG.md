@@ -1,3 +1,17 @@
+# [1.15.0](https://github.com/BlenMiner/NowUI/compare/nowui-v1.14.1...nowui-v1.15.0) (2026-09-09)
+
+
+### Bug Fixes
+
+* **draw:** fit sub-pixel texture windows at their true aspect ([b44c968](https://github.com/BlenMiner/NowUI/commit/b44c968b3d1a99df7ec4e866cd1f7d363b3466c2))
+* **images:** give fetched pictures a mip chain, and stop the shim discarding it ([897c136](https://github.com/BlenMiner/NowUI/commit/897c136390f08e26e4fdf69cc9213a0ee359eebb))
+
+
+### Features
+
+* **web:** draw images and Lottie from URLs, and serve the project's assets to the preview ([3a7b0e9](https://github.com/BlenMiner/NowUI/commit/3a7b0e907a858b938205d541abecaca7101dab07))
+* **web:** give ui.image a fit mode, and add cover to NowUI ([33e61f1](https://github.com/BlenMiner/NowUI/commit/33e61f1d16736f6edcc79bc2d1d4f997dde251c6))
+
 ## [1.14.1](https://github.com/BlenMiner/NowUI/compare/nowui-v1.14.0...nowui-v1.14.1) (2026-09-09)
 
 
