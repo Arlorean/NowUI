@@ -1,3 +1,10 @@
+## [1.14.1](https://github.com/BlenMiner/NowUI/compare/nowui-v1.14.0...nowui-v1.14.1) (2026-09-09)
+
+
+### Performance Improvements
+
+* decrease webgl time to first draw ([b28cdef](https://github.com/BlenMiner/NowUI/commit/b28cdefabcf44c7357518a463eddd428f0ae8039))
+
 # [1.14.0](https://github.com/BlenMiner/NowUI/compare/nowui-v1.13.0...nowui-v1.14.0) (2026-09-09)
 
 
