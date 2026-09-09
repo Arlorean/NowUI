@@ -73,8 +73,14 @@ markdown or code editor, and it is never a substitute for the Unity work a task
 asked for. Pictures and Lottie animations DO work there, from a URL rather than
 from the bundle: `ui.image(box, url)` and `ui.lottie(box, url)` fetch at runtime
 and cache by URL, and the preview serves the project's own `Assets` folder under
-`/assets/`, so a prototype can use the art the project already has. See
-[Web Preview](WebPreview.md).
+`/assets/`, so a prototype can use the art the project already has.
+
+Serving it is your job, not the user's: `python <package>/WebBundle~/serve.py`
+puts the bundle, the project's `NowUI/apps` folder and its `Assets` folder on a
+loopback port with no Unity, no SDK and nothing to install, and prints a URL per
+application. The Editor's **Tools > NowUI > Web Preview** does the same and adds
+reload-on-save, which makes it the authoring tool rather than the one to reach
+for when someone just needs to see a result. See [Web Preview](WebPreview.md).
 
 Read [Render Pipeline Integrations](RenderPipelines.md) before creating UGUI,
 UI Toolkit, URP, or HDRP integration. Read [World Space](WorldSpace.md) for

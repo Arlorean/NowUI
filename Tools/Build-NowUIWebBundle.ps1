@@ -327,7 +327,10 @@ if (-not $NoCompressBundle) {
     #                 for. It is fetched before the loader is in a position to report anything useful, and a
     #                 folder whose marker is missing is not recognised as a bundle at all - which is exactly how
     #                 this was caught. A few KB is a cheap price for both.
-    $keepRaw = @('index.html', 'bundle.json', 'blazor.boot.json')
+    # serve.py        a script somebody has to RUN. A brotli-compressed one cannot be run, and it is the file
+    #                 that lets anyone put this bundle on a socket without the Unity Editor, so it has to work
+    #                 straight out of the package.
+    $keepRaw = @('index.html', 'bundle.json', 'blazor.boot.json', 'serve.py')
     $rawTotal = 0L
     $newTotal = 0L
     $squeezed = 0

@@ -44,6 +44,13 @@ short animation of a running page. Read
 browser prototype alongside Unity work, never as a substitute for it, and report
 only captures that exist on disk.
 
+**Host it yourself.** Write the app to `<ProjectRoot>/NowUI/apps/NAME.js`, run
+`python <package-root>/WebBundle~/serve.py --app NAME` in the background, read
+the port it prints, and hand over the URL. Do not ask the user to open the Unity
+Editor or a menu item to see their own prototype - the Editor's preview is for
+live reload while authoring, not for showing someone a result. A plain static
+server will NOT work: the bundle is brotli-only and needs `Content-Encoding: br`.
+
 ## Verify the change
 
 For code changes, compile against the installed package, address `NOWUI001` and

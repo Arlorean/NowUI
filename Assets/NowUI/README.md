@@ -103,6 +103,19 @@ Choose **Tools > NowUI > Web Preview**. The Editor starts a loopback web server
 on `http://127.0.0.1:8973/` and opens your browser on it. The first launch also
 creates `<ProjectRoot>/NowUI/apps/app.js` with a small sample application.
 
+The Editor is a convenience, not a requirement. `WebBundle~/serve.py` puts the
+same bundle on the same kind of loopback port with nothing but Python 3, which
+is how a teammate with Unity closed, a CI job, or an assistant working in the
+project can hand someone a running page:
+
+```
+python WebBundle~/serve.py --app app
+```
+
+It finds the project and your `NowUI/apps` folder by itself and prints a URL for
+each application. What it does not do is reload on save or receive captures;
+both of those are the Editor window's.
+
 That folder is yours. It sits outside `Assets/` and outside this package, so
 updating NowUI can never overwrite it and Unity never reimports it. Edit
 `apps/app.js` in any editor, save, and press F5 — or leave the preview's watch

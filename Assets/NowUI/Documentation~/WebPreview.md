@@ -1,9 +1,25 @@
 # Web Preview: running NowUI in a browser, and showing it to someone
 
-NowUI ships a precompiled WebAssembly build of itself inside this package. A
-Unity user chooses **Tools > NowUI > Web Preview**, the Editor serves the bundle
-on `http://127.0.0.1:8973/`, and NowUI runs in their browser with no .NET SDK,
-no terminal and no network. Applications are written in JavaScript.
+NowUI ships a precompiled WebAssembly build of itself inside this package, so
+it runs in a browser with no .NET SDK, no build step and no network.
+Applications are written in JavaScript.
+
+**Serving it does not need the Unity Editor, and an assistant should never ask
+for the Editor when it can serve the bundle itself.** There are two ways in, and
+the first is the one to reach for:
+
+```
+python <package>/WebBundle~/serve.py --app NAME     # anyone who can run a script
+Tools > NowUI > Web Preview                          # the Editor's own, for authoring
+```
+
+`serve.py` is in the package, needs only Python 3 and nothing from `pip`, finds
+the project and the applications folder by itself, and prints a URL per
+application. Start it, hand over the link, and the reader clicks it. The Editor's
+window does the same job on `http://127.0.0.1:8973/` and adds live reload on
+save, which makes it the better tool while a person is iterating — and the wrong
+one for handing someone a running page, because it needs Unity open and a menu
+clicked.
 
 This guide is for the case where **someone needs to see what was built** — a
 reviewer, a teammate, or a user reading a conversation on a phone. It covers
@@ -11,6 +27,7 @@ what the browser surface can and cannot do, how to record a still or a short
 animation from inside the page, and what happens on every path that fails.
 
 - [When to reach for the browser](#when-to-reach-for-the-browser)
+- [Serving it yourself](#serving-it-yourself)
 - [Writing an application](#writing-an-application)
 - [The five mistakes](#the-five-mistakes)
 - [Showing the result](#showing-the-result)
@@ -36,6 +53,46 @@ or when the package has no `WebBundle~` folder.
 for.** The browser surface is a strict subset and the two hosts are not
 interchangeable. Offer a prototype *alongside* the real work, saying which is
 which.
+
+## Serving it yourself
+
+```
+python <package>/WebBundle~/serve.py                 # every application, one URL each
+python <package>/WebBundle~/serve.py --app calculator
+python <package>/WebBundle~/serve.py --port 8080 --project /path/to/UnityProject
+```
+
+It prints the URLs it can serve and then stays in the foreground, so run it in
+the background and read the port back from its output — it takes 8973 when that
+is free, walks up to 8992, and falls back to an ephemeral port rather than
+failing. **Read the port it printed; do not assume 8973.**
+
+Three routes, matching the Editor's own server so an application behaves the
+same either way:
+
+| Request | Served from |
+| --- | --- |
+| `/?app=NAME` → `/NAME.js` | `<ProjectRoot>/NowUI/apps/NAME.js`, falling back to the bundle's samples |
+| everything else | the bundle itself |
+| `/assets/...` | `<ProjectRoot>/Assets/...`, pictures, Lottie documents and fonts only |
+
+The project root is inferred from where the bundle sits (`<ProjectRoot>/Assets/
+NowUI/WebBundle~`), so from a normal install there is nothing to configure. Pass
+`--project` when the bundle has been copied somewhere else.
+
+**Why not `python -m http.server`.** The bundle is stored BROTLI-ONLY: every
+large file is `NAME.br` and the raw original is deleted, which is what keeps the
+committed artifact around a third of its size. A plain static server answers 404
+for all of them, and one that finds `NAME.br` and sends it without
+`Content-Encoding: br` hands the browser compressed bytes to parse as
+JavaScript. Both failures read as "the bundle is broken" rather than "the server
+is wrong", and neither is worth rediscovering — that is the single thing
+`serve.py` exists to get right. Any other server is fine if it does the same.
+
+**What it does not do:** accept captures. `?shot=` and `?clip=` post their bytes
+back to the *Editor's* server, which is what writes them into the project; a
+static server has nowhere to put them. Use the Editor's preview when a capture
+has to land on disk, or drive the browser and screenshot it from outside.
 
 ## Writing an application
 
@@ -169,7 +226,7 @@ inverted most often.
 
 | Rung | The reader gets | Needs | Falls back to |
 | --- | --- | --- | --- |
-| **0. the link** | a real, interactive app | the Editor running, and one click from the user | asking for that click |
+| **0. the link** | a real, interactive app | a server, which you start yourself | a still, if the reader is away from a computer |
 | **1. a still** | one PNG inline | the tab visible for about one frame | rung 0 |
 | **2a. an animated WebP** | motion, inline in a conversation | the tab visible for the clip | rung 1 |
 | **2b. a WebM or MP4** | motion, smaller file, **not inline** | the same | rung 2a |
@@ -178,12 +235,21 @@ Rung 0 is the best answer whenever the reader is at a computer. The recordings
 exist for the reader who is not.
 
 **What an agent can do unaided:** write `<ProjectRoot>/NowUI/apps/NAME.js`,
-compose the URL, read `<ProjectRoot>/NowUI/captures/`, and hand over an absolute
-path. **What it cannot do:** open the browser, bring the window to the front, or
-click anything. `Application.OpenURL` is Editor-side and only the menu item calls
-it. So the one manual step is always the same: the user opens the URL and leaves
-the window in front. Say that plainly rather than implying the picture appears
-by itself.
+**start `WebBundle~/serve.py` and hand over a working URL**, read
+`<ProjectRoot>/NowUI/captures/`, and give an absolute path to what landed there.
+Hosting is part of the job, not something to delegate: a reply that ends "now
+open Tools > NowUI > Web Preview" has handed the user a chore in place of a
+result.
+
+**What it cannot do:** open the browser on the user's machine, bring a window to
+the front, or click anything. So the one manual step that does remain is the
+reader clicking the link — and, for a CAPTURE, leaving that window in front while
+it records, since a hidden tab draws no frames. Say that plainly rather than
+implying the picture appears by itself.
+
+A server started for someone else outlives the reply that produced it only as
+long as the process does. Say which port it is on and that it stops when the
+session does, so a dead link later is expected rather than mysterious.
 
 Never claim a file that has not been seen on disk. A capture that did not happen
 leaves either nothing or a `.txt` explaining itself; both are readable answers,
@@ -309,12 +375,15 @@ trusting this paragraph.
 | Condition | What happens | What to do |
 | --- | --- | --- |
 | no `WebBundle~` in the package | there is no browser path at all | say so; work in Unity |
-| the Editor is closed, or the preview stopped | no link and nowhere to write | ask the user for one click on **Tools > NowUI > Web Preview**; an agent cannot start it |
+| the Editor is closed | nothing, for serving — this is the normal case | run `WebBundle~/serve.py`; the Editor is only needed for live reload on save |
+| `serve.py` cannot bind a port | it walks 8973-8992, then takes an ephemeral one | read the URL it printed rather than assuming 8973 |
+| no Python on the machine | `serve.py` will not run | any static server works IF it sends `Content-Encoding: br` for the `.br` files (see below); the Editor's window is the fallback that needs nothing installed |
+| captures have nowhere to be written | the page can record but not save | the capture upload goes to the EDITOR's server only. `serve.py` serves; it does not accept captures. Use the Editor's preview for capture flags, or drive the browser and screenshot it |
 | the tab is hidden, minimised or occluded | zero frames drawn; no image is written | a `.txt` of the same name lands instead — read it, ask the user to keep the window in front, retry |
 | `MediaRecorder` absent or the MIME type unsupported | detected before recording | falls back to the animated WebP automatically |
 | `toBlob('image/webp')` does not produce WebP | detected by the container's own bytes | reports that the browser cannot make an animation; take a still instead |
 | the upload is refused (no server, 403, 413) | the banner turns red and grows a **Download NAME.EXT** link holding the bytes | nothing is on disk until the user clicks that link, and then it is in their Downloads folder, not the project — say so rather than reporting a file |
-| no browser automation available | everything above still works | the user opens one URL; that is the only manual step |
+| no browser automation available | everything above still works | the reader clicks the one URL you started a server for |
 
 Captures land in `<ProjectRoot>/NowUI/captures/`, beside `apps/` and outside both
 this package and `Assets/` — a package upgrade replaces the package wholesale,
