@@ -1082,6 +1082,35 @@ namespace NowUI.Engine.Tests
             Assert.That(read[1].g, Is.EqualTo(1), "green carries the column index");
         }
 
+        /// <summary>
+        /// LoadImage keeps the mip chain the constructor asked for, because Unity's does.
+        /// </summary>
+        /// <remarks>
+        /// This pins one half of a CROSS-BUILD CONTRACT. The Unity half is asserted against the real engine in
+        /// Assets/NowUITests/NowImageMipmapContractTests.cs; the two together are what stop the browser and the
+        /// editor disagreeing about whether a fetched picture has mipmaps. They disagreed until this was fixed:
+        /// the shim hard-coded `false` here on the belief that Unity discards everything about the old texture,
+        /// which is true of its size and format and NOT of its mip setting. The visible symptom was a picture
+        /// that aliased on the web and nowhere else.
+        /// </remarks>
+        [Test]
+        public void LoadImage_KeepsAMipChainTheConstructorAskedFor()
+        {
+            m_Host.decoder = new FakeDecoder(64, 64);
+
+            var chained = new Texture2D(2, 2, TextureFormat.RGBA32, true);
+            Assert.That(chained.LoadImage(new byte[] { 0x89, 0x50 }), Is.True);
+            Assert.That(chained.width, Is.EqualTo(64));
+            Assert.That(chained.mipmapCount, Is.GreaterThan(1),
+                "the decode dropped the mip chain, so a fetched image cannot be given mipmaps in the browser " +
+                "even though the identical call gives them in Unity");
+
+            var plain = new Texture2D(2, 2, TextureFormat.RGBA32, false);
+            Assert.That(plain.LoadImage(new byte[] { 0x89, 0x50 }), Is.True);
+            Assert.That(plain.mipmapCount, Is.EqualTo(1),
+                "a texture built without a chain gained one, which would make every memory budget under-count");
+        }
+
         [Test]
         public void LoadImage_MarkNonReadableSealsTheTexture()
         {

@@ -58,6 +58,27 @@ namespace NowUI.Markdown
         /// <summary>Maximum decoded pixels accepted for one remote image.</summary>
         public static long maxTexturePixels = 100L * 1024L * 1024L;
 
+        /// <summary>
+        /// Whether decoded images are given a mipmap chain. On by default, because these pictures are drawn at
+        /// whatever size the layout gives them and that is usually smaller than the source.
+        /// </summary>
+        /// <remarks>
+        /// <para>WHAT IT BUYS. Without a chain a minified picture samples one arbitrary texel per pixel, so fine
+        /// detail turns into moire that also crawls whenever the box resizes. With one, the same picture resolves
+        /// to a correctly averaged colour. The web surface made this the common case rather than the exceptional
+        /// one: <c>ui.image</c> defaults to <c>fit: 'contain'</c>, and both contain and cover exist precisely to
+        /// draw a source into a box that is not its own size.</para>
+        /// <para>WHAT IT COSTS. About a third more memory per image, and one mip pyramid build on the frame the
+        /// download lands. In the browser that third is paid twice over: the GPU holds the chain, and the
+        /// engine-free Texture2D also sizes its CPU store for every level (Texture2D.ChainByteSize) and keeps it
+        /// for context-loss recovery, even though only level 0 is ever written there - the rest are generated on
+        /// the GPU. <see cref="maxCachedTexturePixels"/> counts the whole chain, so the budget stays honest
+        /// rather than quietly holding a third more than it was told to.</para>
+        /// <para>Turn it off for a document whose images are all drawn at their natural size, where the chain is
+        /// memory spent on levels nothing will ever sample.</para>
+        /// </remarks>
+        public static bool generateMipmaps = true;
+
         /// <summary>Maximum remote image requests in flight at once.</summary>
         public static int maxConcurrentDownloads = 4;
 
@@ -318,7 +339,11 @@ namespace NowUI.Markdown
                 return false;
             }
 
-            var decoded = new Texture2D(2, 2, TextureFormat.RGBA32, false)
+            // 2x2 is a placeholder: LoadImage re-creates the texture at the decoded image's size. The mip flag
+            // is the one thing it CARRIES ACROSS that re-creation, which is why it has to be decided here rather
+            // than after the bytes have landed. NowImageMipmapContractTests pins that behaviour against real
+            // Unity, and Standalone/NowUI.Engine/Graphics/ImageConversion.cs holds the browser shim to it.
+            var decoded = new Texture2D(2, 2, TextureFormat.RGBA32, generateMipmaps)
             {
                 name = string.IsNullOrEmpty(name) ? "Markdown Image" : name,
                 hideFlags = HideFlags.HideAndDontSave
@@ -331,6 +356,27 @@ namespace NowUI.Markdown
                     error = "Unity could not decode the downloaded image.";
                     DestroyTexture(decoded);
                     return false;
+                }
+
+                // Set after the decode, not in the initialiser above, because these two only mean anything once
+                // there is a real image: they exist to serve the mip chain, and until LoadImage succeeds there is
+                // no chain and no picture. Either order works - the upload carries filter and wrap alongside the
+                // pixels (WebGL2Backend.UploadTexture2D packs them at m_TextureInfo[6..8]) and a later assignment
+                // pushes them again through UpdateSampler - so this is about keeping the mip decisions together
+                // under one guard rather than about correctness.
+                if (generateMipmaps)
+                {
+                    // Trilinear rather than the Bilinear default, because bilinear-with-mips picks the nearest
+                    // level and switches between levels abruptly. In an immediate-mode UI the drawn size changes
+                    // every frame while a window is dragged, so that reads as the picture popping between two
+                    // sharpnesses - trading a shimmer for a flicker. Trilinear blends the two levels instead.
+                    decoded.filterMode = FilterMode.Trilinear;
+
+                    // Clamp rather than the Repeat default. Repeat is invisible while only level 0 is sampled at
+                    // exactly [0,1], but a coarse mip level averages across a wide footprint, and at the edge of
+                    // the picture that footprint wraps and pulls in the opposite edge - a thin band of the wrong
+                    // colour down one side. ui.image's `cover` samples a sub-rect, which makes it likelier still.
+                    decoded.wrapMode = TextureWrapMode.Clamp;
                 }
 
                 if (!AreDimensionsWithinLimits(decoded.width, decoded.height, out error))
@@ -564,12 +610,46 @@ namespace NowUI.Markdown
                 if (entry.texture == null)
                     continue;
 
-                long pixels = (long)entry.texture.width * entry.texture.height;
+                long pixels = ResidentPixels(entry.texture);
 
                 if (pixels > long.MaxValue - total)
                     return long.MaxValue;
 
                 total += pixels;
+            }
+
+            return total;
+        }
+
+        /// <summary>
+        /// Every pixel a texture actually holds, mip levels included.
+        /// </summary>
+        /// <remarks>
+        /// <para>The budget this feeds is a MEMORY guard, so it has to count the memory. Counting only the base
+        /// level was correct while nothing here had a mip chain; with <see cref="generateMipmaps"/> on it would
+        /// under-report by a third, and a caller who sized <see cref="maxCachedTexturePixels"/> to fit a real
+        /// budget would quietly overshoot it - the exact failure the setting exists to prevent.</para>
+        /// <para>Summed level by level rather than multiplied by 4/3, because the geometric series only reaches
+        /// 4/3 in the limit: a chain is truncated at 1x1 and each level rounds up, so small and non-square
+        /// textures diverge from the ratio noticeably. The shape is <c>NowFont.GetRgbaTexturePayloadBytes</c>'s,
+        /// in pixels rather than bytes.</para>
+        /// </remarks>
+        static long ResidentPixels(Texture2D texture)
+        {
+            long total = 0L;
+            int width = Mathf.Max(1, texture.width);
+            int height = Mathf.Max(1, texture.height);
+            int levels = Mathf.Max(1, texture.mipmapCount);
+
+            for (int mip = 0; mip < levels; ++mip)
+            {
+                total += (long)width * height;
+
+                if (width == 1 && height == 1)
+                    break;
+
+                width = Mathf.Max(1, width >> 1);
+                height = Mathf.Max(1, height >> 1);
             }
 
             return total;

@@ -4177,7 +4177,12 @@ export function uploadTexture(id, info, pixels) {
     applySampler(entry);
 }
 
-// info = [filter, wrapS, wrapT, aniso, mipCount]
+// info = [filter, wrapS, wrapT, reserved, mipCount]
+//
+// Index 3 carried anisoLevel and was never read here. It is now always 0 and the C# side says why
+// (WebGL2Backend.UpdateSampler): anisotropic filtering corrects minification that differs between the
+// screen axes, and this renderer draws axis-aligned quads under an orthographic projection, so the ratio
+// is always 1. The slot is kept so mipCount stays at index 4 for pages served from an older bundle.
 //
 // Reaches render targets as well as plain textures, and must: NowSdfImageField assigns filterMode and wrapMode
 // on every acquire from the temporary pool (NowSdfImageField.cs:448-451), and those handles are RenderTextures.

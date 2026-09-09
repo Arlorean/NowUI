@@ -605,7 +605,24 @@ namespace NowUI.Web
             m_SamplerInfo[0] = (int)texture.filterMode;
             m_SamplerInfo[1] = (int)texture.wrapModeU;
             m_SamplerInfo[2] = (int)texture.wrapModeV;
-            m_SamplerInfo[3] = texture.anisoLevel;
+
+            // SLOT 3 IS RESERVED AND DELIBERATELY ZERO. It used to carry texture.anisoLevel, which the page then
+            // ignored - applySampler in nowui-gl.js has never read it and no EXT_texture_filter_anisotropic is
+            // requested anywhere. Sending it implied a capability that did not exist.
+            //
+            // It is not wired up instead of being removed because anisotropic filtering cannot help this
+            // renderer. Aniso corrects minification that differs between the two screen axes; NowUI draws
+            // axis-aligned quads under an orthographic projection, and world-space graphics are excluded from
+            // the browser build entirely, so the two derivatives are equal and the anisotropy ratio is 1 - the
+            // case the extension is specified to do nothing in. Nothing in Assets/NowUI sets anisoLevel above
+            // its default of 1 either, so the value being dropped was always the no-op one.
+            //
+            // The SLOT stays rather than the array shrinking, because index 4 is mipCount and a shipped
+            // nowui-gl.js reads it there. Renumbering would break any page served from an older bundle. It is
+            // assigned rather than left alone because this array is reused across calls, and a stale aniso value
+            // from a previous texture would otherwise sit in it.
+            m_SamplerInfo[3] = 0;
+
             m_SamplerInfo[4] = texture.mipmapCount;
 
             Interop.UpdateSampler(texture.GetInstanceID(), m_SamplerInfo);

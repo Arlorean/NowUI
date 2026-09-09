@@ -64,7 +64,16 @@ namespace UnityEngine
 
             // Unity's LoadImage re-creates the texture at the image's size and in RGBA32, discarding whatever the
             // texture was before - which is why NowMarkdownImages can hand it a 2x2 placeholder (NowMarkdownImages.cs:441).
-            tex.Reinitialize(width, height, TextureFormat.RGBA32, false);
+            //
+            // IT DOES NOT DISCARD THE MIP CHAIN, and this line used to say otherwise. Hard-coding `false` here
+            // meant the shim silently overrode its own constructor: a caller that asked for mipmaps got them in
+            // Unity and not in the browser, so a fetched picture drawn smaller than it is aliased on the web and
+            // nowhere else. That is precisely the divergence this shim exists to prevent.
+            //
+            // The behaviour is not assumed. Assets/NowUITests/NowImageMipmapContractTests.cs runs against real
+            // Unity and pins both directions - mipChain:true survives LoadImage with mipmapCount > 1, and
+            // mipChain:false stays at 1 - so this line is held to a measured contract rather than to a comment.
+            tex.Reinitialize(width, height, TextureFormat.RGBA32, tex.mipmapCount > 1);
 
             // The decoder contract is tightly packed, BOTTOM-UP RGBA32 rows (design §4.4), which is precisely the CPU
             // store's own layout, so this is a straight copy with no flip.
