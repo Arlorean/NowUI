@@ -94,21 +94,52 @@ public class NowFontBakedPagesTests
 
     static void AssertSameGlyph(in NowFontAtlasInfo.Glyph expected, in NowFontAtlasInfo.Glyph actual, string label)
     {
+        AssertSameGlyph(expected, 1, actual, 1, label);
+    }
+
+    /// <summary>
+    /// Compares two glyph records that may live on atlases of DIFFERENT SIDES.
+    ///
+    /// atlasBounds are NORMALIZED - NowFont.BuildGlyphCache divides the exported pixel rectangle by the atlas
+    /// side - so "same cell width" is only the same number when both atlases happen to be the same size. They
+    /// used to be: at a 64 px cell, 95 printable ASCII glyphs needed a 1024 px page whether they arrived from a
+    /// bake or from the dynamic path. At 32 px they do not - a bake of exactly that set now fits 512 px while the
+    /// dynamic page stays at its configured 1024 - and a comparison written against the coincidence fails with
+    /// "cell width expected 0.0137 but was 0.0273", which is 14/1024 against 14/512: the SAME CELL, twice.
+    ///
+    /// So the sides are passed in and the normalization undone. What is being asserted is what was always meant:
+    /// the two paths reserve a cell of the same size in pixels for the same glyph.
+    /// </summary>
+    static void AssertSameGlyph(
+        in NowFontAtlasInfo.Glyph expected, int expectedAtlasSide,
+        in NowFontAtlasInfo.Glyph actual, int actualAtlasSide,
+        string label)
+    {
         Assert.AreEqual(expected.advance, actual.advance, Tolerance, $"{label}: advance");
         Assert.AreEqual(expected.planeBounds.left, actual.planeBounds.left, Tolerance, $"{label}: plane left");
         Assert.AreEqual(expected.planeBounds.right, actual.planeBounds.right, Tolerance, $"{label}: plane right");
         Assert.AreEqual(expected.planeBounds.top, actual.planeBounds.top, Tolerance, $"{label}: plane top");
         Assert.AreEqual(expected.planeBounds.bottom, actual.planeBounds.bottom, Tolerance, $"{label}: plane bottom");
         Assert.AreEqual(
-            expected.atlasBounds.right - expected.atlasBounds.left,
-            actual.atlasBounds.right - actual.atlasBounds.left,
+            (expected.atlasBounds.right - expected.atlasBounds.left) * expectedAtlasSide,
+            (actual.atlasBounds.right - actual.atlasBounds.left) * actualAtlasSide,
             Tolerance,
-            $"{label}: cell width");
+            $"{label}: cell width in pixels");
         Assert.AreEqual(
-            expected.atlasBounds.top - expected.atlasBounds.bottom,
-            actual.atlasBounds.top - actual.atlasBounds.bottom,
+            (expected.atlasBounds.top - expected.atlasBounds.bottom) * expectedAtlasSide,
+            (actual.atlasBounds.top - actual.atlasBounds.bottom) * actualAtlasSide,
             Tolerance,
-            $"{label}: cell height");
+            $"{label}: cell height in pixels");
+    }
+
+    /// <summary>The side of the single atlas a font has cached, for undoing atlasBounds normalization.</summary>
+    static int SingleAtlasSide(NowFont font)
+    {
+        var atlases = new List<Texture2D>();
+        font.GetCachedDynamicAtlasTextures(atlases);
+        Assert.AreEqual(1, atlases.Count, "This comparison assumes one page per font.");
+        Assert.AreEqual(atlases[0].width, atlases[0].height, "Atlas pages are square.");
+        return atlases[0].width;
     }
 
     [Test]
@@ -211,11 +242,14 @@ public class NowFontBakedPagesTests
         var dynamic = CreateFont();
         dynamic.EnsureGlyphs(NowFontBaker.ASCII, FontSize);
 
+        int dynamicSide = SingleAtlasSide(dynamic);
+        int bakedSide = SingleAtlasSide(baked);
+
         foreach (int codepoint in Codepoints(NowFontBaker.ASCII))
         {
             Assert.IsTrue(dynamic.GetGlyph(codepoint, FontSize, out var expected), $"U+{codepoint:X4} dynamic");
             Assert.IsTrue(baked.GetGlyph(codepoint, FontSize, out var actual), $"U+{codepoint:X4} baked");
-            AssertSameGlyph(expected, actual, $"U+{codepoint:X4}");
+            AssertSameGlyph(expected, dynamicSide, actual, bakedSide, $"U+{codepoint:X4}");
         }
 
         Vector2 expectedSize = dynamic.MeasureText(SampleText, FontSize);

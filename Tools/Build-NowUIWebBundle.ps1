@@ -102,10 +102,23 @@ if (-not $SkipGuard) {
 # ------------------------------------------------------------------------------------------------------- (b) clean
 # Unconditional: this is the documented recovery from the zero-byte-wasm state, and a shipped bundle built on top
 # of a poisoned intermediate is exactly the failure that is impossible to diagnose from a bug report.
-Write-Step 'Cleaning obj/Release and bin/Release'
+Write-Step 'Cleaning obj/Release, bin/Release and the generated wwwroot/Fixtures'
 foreach ($dir in @('obj/Release', 'bin/Release')) {
     $full = Join-Path $webDir $dir
     if (Test-Path $full) { Remove-Item -LiteralPath $full -Recurse -Force }
+}
+
+# wwwroot/Fixtures is a MIRROR of Standalone/Tests/Fixtures, repopulated by the csproj's CopyNowUIFixtures target
+# on every build. It is wiped here rather than merged there because a Copy only ever adds: a fixture the Unity
+# export STOPS producing would otherwise sit in wwwroot forever and keep shipping, and the target cannot delete it
+# itself - the static-web-assets glob is evaluated before any target runs, so a mid-build delete fails the publish
+# with "No file exists for the asset". That is not hypothetical: four stale 200 KB .page0.bin sidecars went on being
+# staged into the package the day the baked atlas pages were dropped from the export, by a build whose own report
+# said "no baked pages in the staged fixtures". See the comment on CopyNowUIFixtures.
+$fixtureMirror = Join-Path $webDir 'wwwroot/Fixtures'
+if (Test-Path $fixtureMirror) {
+    Remove-Item -LiteralPath $fixtureMirror -Recurse -Force
+    Write-Host "  wiped $fixtureMirror; the build repopulates it from Standalone/Tests/Fixtures."
 }
 
 # ----------------------------------------------------------------------------------------------------- (c) publish

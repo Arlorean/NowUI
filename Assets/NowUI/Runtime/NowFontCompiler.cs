@@ -47,8 +47,8 @@ namespace NowUI
         /// </summary>
         public static bool forceNativeCompiler;
 
-        const int ATLAS_SIZE = 64;
-        const int PIXEL_RANGE = 16;
+        const int ATLAS_SIZE = 32;
+        const int PIXEL_RANGE = 8;
         const int ERROR_CAPACITY = 4096;
         const int NATIVE_OK = 0;
         const int NATIVE_BUFFER_TOO_SMALL = 2;

@@ -1182,8 +1182,27 @@ namespace NowUI
     {
         public const string ATLAS_TYPE_MTSDF = "mtsdf";
         public const string ATLAS_TYPE_RGBA = "rgba";
-        public const int DEFAULT_DYNAMIC_ATLAS_SIZE = 64;
-        public const int DEFAULT_DYNAMIC_PIXEL_RANGE = 16;
+        // 32 with a range of 8 is 0.25 em of field reach, exactly what 64/16 was: halving both keeps every
+        // em-relative quantity identical - GetScreenPixelRange, and the 0.45-em outline budget in
+        // GetSafeSdfEffectReach below - and only halves the sampling resolution of the cell.
+        //
+        // MEASURED, in a real browser, on the shipped web bundle. Distance-field generation is linear in the
+        // pixels of the cell, so a quarter of the pixels is close to a quarter of the work: baking 95 printable
+        // ASCII glyphs went 3.37 ms/glyph -> 1.21 ms/glyph, and ?area=text's first frame 774 ms -> 434 ms with
+        // no baked pages under either. The quality cost is nil at every size NowUI draws text: reconstructing the
+        // gallery's text area (11-48 px, four faces, Greek and Cyrillic, and a 2 px SDF outline) from the shipped
+        // bundle before and after, 3.3% of pixels differ at all, 754 of 849,600 by more than 16/255, five by more
+        // than 64, and at 5x zoom on the worst-differing window the two are indistinguishable. Seven gallery areas
+        // behave the same way; every difference is on a glyph edge, none is structural. 24/6 was NOT taken: it
+        // starts costing at 40+ px/em, and this gallery draws 48 px text.
+        //
+        // THE PROJECT'S DENSE FACES ARE PINNED TO 64/16 IN THEIR OWN ASSETS - the CJK (JP/KR/SC), Arabic, OpenMoji
+        // and Material Design icon faces under Assets/NowUI/Assets/Fonts. A CJK glyph carries several times a Latin
+        // one's stroke density in the same em, which is the same regime as Latin drawn much larger, and that is
+        // where 32/8 was measured to start costing. Nobody measured those faces, so nobody moved them. Latin and
+        // the monospace face, which is what the browser bundle bakes at runtime, take the new default.
+        public const int DEFAULT_DYNAMIC_ATLAS_SIZE = 32;
+        public const int DEFAULT_DYNAMIC_PIXEL_RANGE = 8;
         public const int DEFAULT_DYNAMIC_PAGE_SIZE = 1024;
         public const int DEFAULT_DYNAMIC_MAX_ATLAS_SIZE = 2048;
         public const int DEFAULT_DYNAMIC_MAX_ATLAS_BYTES = 16 * 1024 * 1024;

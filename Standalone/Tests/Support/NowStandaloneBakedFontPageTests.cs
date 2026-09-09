@@ -69,13 +69,17 @@ namespace NowUI.Standalone.Tests
                 if (!face.TryGetProperty("bakedPages", out pages))
                 {
                     Assert.Ignore(
-                        fileName + " carries no baked pages. That is a valid fixture - everything falls back to " +
-                        "rasterizing on demand - but it means the export that produced it predates the bake, so " +
-                        "there is nothing here to check. Re-run Tools/NowUI/Export Standalone Test Fixtures.");
+                        fileName + " carries no baked pages, which is what the export produces TODAY - the bake " +
+                        "step was removed once the atlas cell moved to 32/8 and measurement showed the four pages " +
+                        "costing more first-frame time (311 ms, mostly managed PNG decode) than the rasterisation " +
+                        "they saved (~160 ms), on top of 875 KB of bundle. Re-running the export will not bring " +
+                        "them back. This case stays so that re-enabling the bake is checked rather than assumed; " +
+                        "see NowStandaloneAssetExport's header.");
                 }
 
-                // Printable ASCII at the shipped 64 px glyph / 16 px range fits one 1024 px page per face. More than
-                // one page would still be correct, but it would mean the geometry moved and the size claim with it.
+                // Printable ASCII fit one 1024 px page per face at the 64/16 cell this was written against, and
+                // fits comfortably at today's 32/8. More than one page would still be correct, but it would mean
+                // the geometry moved and the size claim with it.
                 Assert.AreEqual(1, pages.GetArrayLength(), "baked page count for " + fileName);
 
                 JsonElement page = pages[0];
@@ -118,7 +122,9 @@ namespace NowUI.Standalone.Tests
 
                 JsonElement pages;
                 if (!face.TryGetProperty("bakedPages", out pages) || pages.GetArrayLength() == 0)
-                    Assert.Ignore(fileName + " carries no baked pages; nothing to compare.");
+                    Assert.Ignore(
+                        fileName + " carries no baked pages; nothing to compare. That is today's expected state - " +
+                        "see the sibling case for why the export stopped writing them.");
 
                 JsonElement page = pages[0];
                 int width = page.GetProperty("width").GetInt32();

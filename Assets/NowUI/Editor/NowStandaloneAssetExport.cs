@@ -22,8 +22,6 @@
 //   Fixtures/NowUI/NotoSans-<Face>.font.json      per face: atlasInfo VERBATIM, the dynamic-atlas settings, the
 //                                                 material template name and the face material's own property values
 //   Fixtures/NowUI/NotoSans-<Face>.ttf            per face: the source font, raw bytes
-//   Fixtures/NowUI/NotoSans-<Face>.page<N>.bin    per face: printable ASCII baked into atlas pages, one PNG each
-//                                                 (WriteBakedPages; NowStandaloneFontPageWriter for the encoding)
 //
 // ONE THING THE PLAN ASSUMED IS NOT TRUE OF THESE ASSETS, and the shape of the font fixture follows from it. Design
 // H.7 and test plan section 3.3 describe exporting each face's PREBAKED atlasInfo - "atlas/metrics/glyphs verbatim" -
@@ -36,13 +34,24 @@
 // the same code and the same input Unity uses. That is why every face here ships its TTF and why the exported
 // atlasInfo is (correctly) empty; if a prebaked asset ever lands, the same fields carry it with no format change.
 //
-// SINCE THEN, ONE THING HAS CHANGED, and it is why the .page<N>.bin files above exist. The assets are still dynamic -
-// "kind" is still "dynamic" and atlasInfo is still empty, so every existing consumer sees exactly what it saw - but
-// upstream added a BAKED PAGE mechanism to NowFont (BakedPage / SetBakedPages / EnsureBakedPagesLoaded), which warms
-// the dynamic cache with pages rasterized ahead of time instead of prebaking a different kind of atlas. The browser
-// bundle spent 85-91% of its ~2 s first frame rasterizing printable ASCII in interpreted WebAssembly, so this pass now
-// bakes those 95 codepoints per face and writes them out under a new "bakedPages" member. A consumer that does not
-// look for it is unaffected; see WriteBakedPages.
+// THIS PASS ONCE ALSO BAKED PRINTABLE ASCII into a .page<N>.bin sidecar per face and declared it under a "bakedPages"
+// member, to spare the browser bundle's first frame the rasterisation. THAT STEP WAS REMOVED, and the reason is worth
+// keeping because the numbers point the other way round from the intuition that put it here.
+//
+// Measured in a real browser, on the shipped bundle, with the frame pump blocked so nothing consumed the first frame
+// before it was timed. Installing the four pages cost 311 ms of that frame - 251 ms of it inside the MANAGED PNG
+// decoder (NowWebPng, ~63 ms per 1024 px page in interpreted WebAssembly) and the rest in the channel swizzle - and
+// bought back 456 ms of rasterisation. A net 145 ms, for 875 KB, which was a quarter of the whole bundle. Halving the
+// atlas cell to 32/8 (NowFont.DEFAULT_DYNAMIC_ATLAS_SIZE) then made rasterisation 2.8x cheaper, so what the pages
+// bought fell to about 160 ms while what they cost stayed at 311 ms - they had become a net LOSS as well as the
+// single largest thing in the bundle. Deleting them took ?area=text's first frame from 600 ms to 434 ms AND removed
+// 875 KB. Probe apps drawing 0 / 1 / 95 glyphs agree.
+//
+// The MECHANISM is untouched and still supported: NowFont.BakedPage / SetBakedPages / EnsureBakedPagesLoaded, the
+// Editor's own bake buttons (NowFontEditor), and WebResourceProvider.InstallBakedPages, which still reads a
+// "bakedPages" member if a fixture carries one. Only this export stopped writing one. Anyone re-enabling it should
+// re-measure the decode first: at 32/8 a page is a quarter of the pixels, so the cost is roughly a quarter too, and
+// the trade may swing back.
 //
 // Still deliberately NOT exported: a prebaked atlasInfo ("atlasPng", reserved) - a baked page is not one of those, and
 // no test in the subset samples one. The family's fallback families (CJK, Arabic, emoji, Material Design icons) are omitted
@@ -897,9 +906,6 @@ namespace NowUI.Editor
             json.Number("fontByteCount", font.GetSourceByteCount());
 
             // Printable ASCII, baked here so the browser's first frame does not have to rasterize it. See
-            // WriteBakedPages for why this is a separate member from atlasInfo and why a consumer may ignore it.
-            WriteBakedPages(json, fontDirectory, fileName, font, written);
-
             // Reserved: an atlas image, and the bytes inline, for a consumer that cannot read the sidecar.
             json.Null("atlasPng");
             json.Null("fontBytesBase64");
@@ -913,139 +919,6 @@ namespace NowUI.Editor
             json.EndObject();
 
             written.Add(WriteJson(Path.Combine(fontDirectory, fileName), json));
-        }
-
-        /// <summary>
-        /// Bakes printable ASCII into atlas pages and writes them beside the face, as <c>"bakedPages"</c> plus one
-        /// <c>&lt;Face&gt;.page&lt;N&gt;.bin</c> sidecar each.
-        ///
-        /// WHY. The face fixtures are dynamic: nothing is baked, so the first frame that draws text rasterizes every
-        /// glyph on screen. In Unity that is fine - HarfBuzz is linked in and a bake is milliseconds. In the browser
-        /// bundle it is interpreted WebAssembly, and it measured at 85-91% of a ~2 s first frame. Baking here, in the
-        /// one pass that already runs inside Unity, moves that cost to export time and ships the result as pixels.
-        ///
-        /// WHY A NEW MEMBER AND NOT atlasInfo. A baked page is a WARMED DYNAMIC page, not a prebaked atlas: NowFont's
-        /// EnsureBakedPagesLoaded turns each one into exactly the DynamicAtlasPage it would otherwise have rasterized,
-        /// and a codepoint outside the bake still bakes on demand beside it. Writing these into "atlasInfo" would flip
-        /// "kind" to "prebaked" and change what every existing consumer sees - including Standalone/Tests, whose
-        /// provider gates on kind/atlasWidth/atlasInfo.glyphs and must keep baking dynamically so its goldens do not
-        /// move. As a separate member the pages are invisible to a reader that does not look for them.
-        ///
-        /// WHY ASCII AND NOT MORE. Each face maps 3,093 codepoints. Printable ASCII is 95 of them and fits exactly one
-        /// 1024 px page per face; Latin-1 would add 1.15 MB across four faces and Latin-Extended-A would spill to two
-        /// pages each. The gallery draws exactly one non-ASCII string, and the on-demand path that serves it is the
-        /// same one that serves any other miss - correct, and milliseconds per glyph.
-        ///
-        /// A FAILED BAKE IS NOT A FAILED EXPORT. Every exit below leaves the face exactly as it was before this
-        /// change: no "bakedPages" member, and a loader that finds none builds the face dynamically as it does today.
-        /// </summary>
-        static void WriteBakedPages(JsonWriter json, string fontDirectory, string fileName, NowFont font, List<string> written)
-        {
-            List<NowFont.BakedPage> pages;
-            string error;
-
-            if (!NowFontBaker.TryBakePages(font, NowFontBaker.ASCII, out pages, out error))
-            {
-                Debug.LogWarning(
-                    $"Standalone asset export: '{font.name}' did not bake its ASCII pages, so the fixture ships " +
-                    $"dynamic-only and the browser's first frame will rasterize as before. Reason: {error}");
-                return;
-            }
-
-            try
-            {
-                // Written to a scratch list first: a page that fails to encode must not leave a half-populated
-                // "bakedPages" array behind, because the loader would then trust a face that is missing glyphs.
-                var files = new List<string>(pages.Count);
-                var encodings = new List<string>(pages.Count);
-                var byteCounts = new List<int>(pages.Count);
-
-                for (int i = 0; i < pages.Count; i++)
-                {
-                    string pageFile = StripFaceSuffix(fileName) + ".page" + i.ToString(CultureInfo.InvariantCulture) + ".bin";
-                    string pagePath = Path.GetFullPath(Path.Combine(fontDirectory, pageFile));
-
-                    if (!NowStandaloneFontPageWriter.TryWrite(pages[i].texture, pagePath, out string encoding, out int byteCount, out string writeError))
-                    {
-                        Debug.LogWarning(
-                            $"Standalone asset export: '{font.name}' page {i} did not encode, so the whole face " +
-                            $"ships dynamic-only. Reason: {writeError}");
-                        return;
-                    }
-
-                    files.Add(pageFile);
-                    encodings.Add(encoding);
-                    byteCounts.Add(byteCount);
-                    written.Add(pagePath);
-                }
-
-                // ".bin", not ".png", deliberately. nowui-fetch.js pre-decodes any response whose Content-Type starts
-                // with "image/" into the browser's own bitmap cache; a ".png" name would spend four createImageBitmap
-                // calls and 16 MB of that cache on a decode nothing reads, because the managed decoder handles these.
-                // ".bin" is already application/octet-stream in NowWebPreviewServer.MimeFor, so no server changes.
-                json.String("bakedCharacters", NowFontBaker.ASCII);
-                json.BeginArray("bakedPages");
-
-                for (int i = 0; i < pages.Count; i++)
-                {
-                    NowFont.BakedPage page = pages[i];
-                    json.BeginObject();
-                    json.String("file", files[i]);
-                    json.String("pageEncoding", encodings[i]);
-
-                    // Declared for the same reason fontByteCount is: a server or a transform that rewrites the body
-                    // has to produce a named warning rather than a silently corrupted atlas.
-                    json.Number("pageByteCount", byteCounts[i]);
-                    json.Number("width", page.texture.width);
-                    json.Number("height", page.texture.height);
-
-                    // The two values NowFont.IsBakedPageCurrent compares against the live font. If the face's
-                    // dynamicAtlasSize or dynamicPixelRange ever drift from these, every page goes dormant on its own
-                    // and everything rasterizes - slower, never wrong.
-                    json.Number("atlasSize", page.atlasSize);
-                    json.Number("pixelRange", page.pixelRange);
-                    json.Number("distanceRange", page.distanceRange);
-                    json.Number("size", page.size);
-
-                    // Decides how the shader reads the atlas, so it travels with the pixels rather than being
-                    // recomputed on the far side from a material that might not declare _NowUITextSdfEncoding.
-                    json.Bool("packedSdf16", page.packedSdf16);
-                    WriteMetrics(json, "metrics", page.metrics);
-                    WriteGlyphs(json, "glyphs", page.glyphs);
-                    json.EndObject();
-                }
-
-                json.EndArray();
-
-                int glyphRecords = 0;
-
-                for (int i = 0; i < pages.Count; i++)
-                    glyphRecords += pages[i].glyphs != null ? pages[i].glyphs.Length : 0;
-
-                Debug.Log(
-                    $"Standalone asset export: face '{font.name}' baked {pages.Count} page(s), {glyphRecords} glyph " +
-                    $"record(s), {SumOf(byteCounts)} byte(s) of pixels.");
-            }
-            finally
-            {
-                // The baker hands back live Texture2Ds. The export is a one-shot Editor pass and must not leave them
-                // in the session; NowFontBaker.DestroyPages does the same thing for its own failure paths.
-                for (int i = 0; i < pages.Count; i++)
-                {
-                    if (pages[i].texture != null)
-                        UnityEngine.Object.DestroyImmediate(pages[i].texture);
-                }
-            }
-        }
-
-        static int SumOf(List<int> values)
-        {
-            int total = 0;
-
-            for (int i = 0; i < values.Count; i++)
-                total += values[i];
-
-            return total;
         }
 
         /// <summary>

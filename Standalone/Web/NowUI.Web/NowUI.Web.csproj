@@ -37,6 +37,23 @@
     -->
     <InvariantGlobalization>true</InvariantGlobalization>
     <PublishTrimmed>true</PublishTrimmed>
+
+    <!--
+      A third, worth 51,098 B brotli in the shipped bundle - the IANA time-zone database, which is compiled into
+      dotnet.native.wasm whether or not anything asks for a local time.
+
+      Nothing in the publish closure asks. Assets/NowUI/Runtime, Standalone/NowUI.Engine, Standalone/Extensions,
+      Standalone/NowUI.Bridge and this project between them contain no TimeZoneInfo, no DateTime.Now, no
+      DateTimeOffset.Now and no ToLocalTime; every clock in NowUI is a frame delta or a Stopwatch. With the switch
+      on, those APIs still exist and still compile - they resolve to UTC - so the failure mode if that ever stops
+      being true is a wrong local time, not a missing method, which is why it is worth naming here.
+
+      Measured rather than assumed. Every other trimmer feature switch on the usual list was tried on this exact
+      publish and moved ZERO bytes: UseSystemResourceKeys, EventSourceSupport, MetadataUpdaterSupport,
+      DebuggerSupport, HttpActivityPropagationSupport, NullabilityInfoContextSupport and TrimMode=full. This is
+      the only one that pays.
+    -->
+    <InvariantTimezone>true</InvariantTimezone>
   </PropertyGroup>
 
   <PropertyGroup>
@@ -173,15 +190,26 @@
     <NowUIFixture Include="$(MSBuildThisFileDirectory)../../Tests/Fixtures/**/*" />
   </ItemGroup>
 
+  <!--
+    THIS TARGET ONLY EVER ADDS. A fixture the export STOPS producing stays in wwwroot and keeps shipping, and the
+    static-web-assets glob that picks wwwroot up is evaluated before any target runs, so this target cannot delete
+    one either (tried: the delete lands after the SDK has already fingerprinted the file, and the publish fails with
+    "No file exists for the asset"). It is not hypothetical - four stale 200 KB .page0.bin sidecars went on being
+    staged into the package the day the baked atlas pages were dropped from the export, by a build whose own report
+    said "no baked pages in the staged fixtures".
+
+    So the wipe lives one level up, in Tools/Build-NowUIWebBundle.ps1's clean step, which is the one command that
+    produces the shipped bundle. Inputs/Outputs are deliberately absent here so the copy always runs to repopulate
+    after that wipe; SkipUnchangedFiles makes the steady-state cost a directory scan.
+  -->
   <Target Name="CopyNowUIFixtures"
-          BeforeTargets="PrepareForBuild;ResolveStaticWebAssetsInputs"
-          Inputs="@(NowUIFixture)"
-          Outputs="@(NowUIFixture->'$(MSBuildThisFileDirectory)wwwroot/Fixtures/%(RecursiveDir)%(Filename)%(Extension)')">
+          BeforeTargets="PrepareForBuild;ResolveStaticWebAssetsInputs">
     <!--
       Copied into wwwroot rather than referenced in place, because the WebAssembly SDK publishes wwwroot as the site
       root and the host fetches these over HTTP at start-up. wwwroot/Fixtures is generated output, and .gitignore
       beside this file says so.
     -->
+
     <Copy SourceFiles="@(NowUIFixture)"
           DestinationFiles="@(NowUIFixture->'$(MSBuildThisFileDirectory)wwwroot/Fixtures/%(RecursiveDir)%(Filename)%(Extension)')"
           SkipUnchangedFiles="true" />

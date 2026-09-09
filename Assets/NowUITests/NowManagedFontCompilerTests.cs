@@ -15,9 +15,43 @@ public class NowManagedFontCompilerTests
     const string FontAssetPath = "Assets/NowUI/Assets/Fonts/NotoSans/NotoSans-Regular.ttf.asset";
     const string ArabicFontAssetPath = "Assets/NowUI/Assets/Fonts/Noto_Sans_Arabic/NotoSansArabic-Regular.ttf.asset";
 
+    // Explicit parameters for the tests that drive a compiler session directly. They are inputs, not the
+    // font's configuration, so they stay put whatever the dynamic default is.
     const int Size = 64;
     const int PixelRange = 16;
     const int AtlasSide = 512;
+
+    // The dynamic cell a font compiled with NowFontCompiler.TryCompile(bytes, out font, out error) actually
+    // gets. It moved from 64/16 to 32/8 (see NowFont.DEFAULT_DYNAMIC_ATLAS_SIZE for the measurements), and the
+    // tests below that ask such a font about ITS OWN cache have to ask with its own geometry.
+    const int DefaultSize = NowFont.DEFAULT_DYNAMIC_ATLAS_SIZE;
+
+    /// <summary>
+    /// The adaptive SDF capacity ladder is power-of-two multiples of the font's base pixel range, so every tier
+    /// in it moved with that base. These tests were written against a base of 16; this restates each tier they
+    /// name as the multiple it always was, which is both what they meant and what survives the next change.
+    /// </summary>
+    static int Tier(int tierAtBase16) => tierAtBase16 * NowFont.DEFAULT_DYNAMIC_PIXEL_RANGE / 16;
+
+    /// <summary>
+    /// Same idea for the deliberately tiny cache budgets below, which are written as "N writable pages" of a
+    /// given side. A smaller cell packs the same glyphs into a proportionally smaller page, so a budget pinned
+    /// to a 64 px cell's page stops being the pressure it was named for - it simply never fills.
+    /// </summary>
+    static long PageBudget(int pagesAt64Cell, int sideAt64Cell)
+    {
+        long side = (long)sideAt64Cell * NowFont.DEFAULT_DYNAMIC_ATLAS_SIZE / 64;
+        return 4L * pagesAt64Cell * side * side * 4;
+    }
+
+
+    // Enough distinct glyphs that one sparse tier page cannot hold them all, which is the pressure the three
+    // tests below are named for. It is a count, not a string with meaning: a 512 px sparse page fits
+    // (512 / (cell + range + padding))^2 cells, so the number needed rose when the dynamic cell went from 64 px
+    // to 32 px - fourteen letters used to spill across four pages and now fit on one. If the cell shrinks again,
+    // this string grows again; the assertions it feeds are about spilling, not about any particular letter.
+    const string SpillText =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
 
     byte[] _fontBytes;
     byte[] _arabicFontBytes;
@@ -707,7 +741,13 @@ public class NowManagedFontCompilerTests
     {
         const float FontSize = 80f;
         float[] outlinePixels = { 0f, 8f, 9f, 19f, 37f, 73f, 100f, -100f };
-        int[] expectedRanges = { 16, 16, 32, 64, 128, 256, 256, 256 };
+
+        // The ladder for TODAY'S cell. It was { 16, 16, 32, 64, 128, 256, 256, 256 } when the dynamic cell was
+        // 64/16; halving the cell to 32/8 halved the FLOOR (the no-outline entry, which is just the base range)
+        // and moved the outline-driven entries down a step each. Only the floor is derivable from a constant, so
+        // the rest are pinned - what the structural assertions below actually protect is that they are
+        // power-of-two tiers, and that scrubbing an Inspector across them lands on five of them, not a hundred.
+        int[] expectedRanges = { NowFont.DEFAULT_DYNAMIC_PIXEL_RANGE, 16, 16, 32, 64, 128, 128, 128 };
 
         NowFontCompiler.forceManagedCompiler = true;
         Assert.IsTrue(NowFontCompiler.TryCompile(_fontBytes, out NowFont font, out string error), error);
@@ -727,6 +767,7 @@ public class NowManagedFontCompilerTests
 
             Assert.AreEqual(0, font.GetCachedDynamicPageCount(),
                 "Selecting hidden capacity must not allocate until a glyph is actually requested.");
+
         }
         finally
         {
@@ -763,13 +804,15 @@ public class NowManagedFontCompilerTests
         try
         {
             int maximumRange = font.GetDynamicPixelRange(HugeOutlineEm, FontSize);
-            Assert.AreEqual(1916, maximumRange,
+            // Geometric: the 2048 px cache ceiling less two cells and the glyph padding, then trimmed to leave
+            // room for the sealed base page. It moves with the cell - it was 1916 at 64/16.
+            Assert.AreEqual(1948, maximumRange,
                 "The geometric maximum should be trimmed only enough to retain the prepared face page.");
             Assert.IsTrue(font.GetGlyph(' ', FontSize, 0f, out _, out var baseMaterial));
             Assert.IsTrue(font.GetGlyph(' ', FontSize, HugeOutlineEm, out _, out var effectMaterial),
                 "The advertised maximum range must remain allocatable after face prewarming.");
             Assert.AreNotSame(baseMaterial, effectMaterial);
-            Assert.IsFalse(font.IsDynamicGlyphCapacityBlocked(' ', Size, maximumRange));
+            Assert.IsFalse(font.IsDynamicGlyphCapacityBlocked(' ', DefaultSize, maximumRange));
             Assert.LessOrEqual(
                 font.GetEstimatedDynamicCacheResidentBytes(),
                 NowFont.DEFAULT_DYNAMIC_CACHE_BUDGET_BYTES);
@@ -800,7 +843,8 @@ public class NowManagedFontCompilerTests
                 Assert.IsTrue(font.GetGlyph('A', FontSize, outlineEm, out _, out _));
             }
 
-            CollectionAssert.AreEquivalent(new[] { 16, 32, 64, 128, 256 }, selectedRanges);
+            CollectionAssert.AreEquivalent(
+                new[] { Tier(16), Tier(32), Tier(64), Tier(128), Tier(256) }, selectedRanges);
             Assert.AreEqual(5, font.GetCachedDynamicPageCount(),
                 "Inspector scrubbing should populate logarithmic capacity tiers, not one page per value.");
             Assert.AreEqual(5, font.GetCachedDynamicGlyphCount());
@@ -828,13 +872,17 @@ public class NowManagedFontCompilerTests
                     ++readableCount;
             }
 
-            Assert.AreEqual(2, fullPageCount);
-            Assert.AreEqual(3, sparsePageCount);
-            Assert.AreEqual(11L * 1024 * 1024, textureBytes,
+            // One full page (the base tier) and four sparse ones. It was 2 full and 3 sparse at a 64 px cell:
+            // a sparse tier takes a 1024 px page once its padded cell needs more than half of a 512 px one, and
+            // halving the cell moved the top tier back under that line. Strictly less texture, for the same five
+            // tiers - 8 MiB where it used to be 11.
+            Assert.AreEqual(1, fullPageCount);
+            Assert.AreEqual(4, sparsePageCount);
+            Assert.AreEqual(8L * 1024 * 1024, textureBytes,
                 "Sparse effect tiers should not eagerly reserve a full default page.");
             Assert.AreEqual(5, readableCount,
                 "Canonical tier sessions remain writable so alternating styles can append without page fragmentation.");
-            Assert.AreEqual(44L * 1024 * 1024, font.GetEstimatedDynamicCacheResidentBytes(),
+            Assert.AreEqual(32L * 1024 * 1024, font.GetEstimatedDynamicCacheResidentBytes(),
                 "Five writable tiers count GPU, readable CPU, session atlas, and conservative work storage.");
             Assert.LessOrEqual(
                 font.GetEstimatedDynamicCacheResidentBytes(),
@@ -856,7 +904,7 @@ public class NowManagedFontCompilerTests
 
             Assert.AreEqual(5, font.GetCachedDynamicPageCount());
             Assert.AreEqual(10, font.GetCachedDynamicGlyphCount());
-            Assert.AreEqual(44L * 1024 * 1024, font.GetEstimatedDynamicCacheResidentBytes());
+            Assert.AreEqual(32L * 1024 * 1024, font.GetEstimatedDynamicCacheResidentBytes());
         }
         finally
         {
@@ -870,20 +918,22 @@ public class NowManagedFontCompilerTests
     {
         const float FontSize = 80f;
         const float OutlineEm = 37f / FontSize;
-        const int ExpectedRange = 128;
-        const long OneWritablePageBudget = 4L * 512 * 512 * 4;
+        int expectedRange = Tier(128);
+        const long oneWritablePageBudget = 4L * 512 * 512 * 4;
 
         NowFontCompiler.forceManagedCompiler = true;
         Assert.IsTrue(NowFontCompiler.TryCompile(_fontBytes, out NowFont font, out string error), error);
-        font.dynamicCacheBudgetBytesOverride = OneWritablePageBudget;
+        font.dynamicCacheBudgetBytesOverride = oneWritablePageBudget;
 
         try
         {
             int succeeded = 0;
             int refused = 0;
 
-            for (int unicode = 'A'; unicode <= 'Z'; ++unicode)
+            for (int i = 0; i < SpillText.Length; ++i)
             {
+                int unicode = SpillText[i];
+
                 if (font.GetGlyph(unicode, FontSize, OutlineEm, out _, out _))
                 {
                     ++succeeded;
@@ -898,9 +948,9 @@ public class NowManagedFontCompilerTests
             Assert.AreNotEqual(0, refused, "The tiny test budget should eventually refuse a second page.");
             Assert.AreEqual(1, font.GetCachedDynamicPageCount(),
                 "Published pages remain valid; a denied allocation must not publish a partial page.");
-            Assert.LessOrEqual(font.GetEstimatedDynamicCacheResidentBytes(), OneWritablePageBudget);
-            Assert.IsTrue(font.IsDynamicGlyphCapacityBlocked(refused, Size, ExpectedRange));
-            Assert.IsFalse(font.IsDynamicGlyphMissing(refused, Size, ExpectedRange),
+            Assert.LessOrEqual(font.GetEstimatedDynamicCacheResidentBytes(), oneWritablePageBudget);
+            Assert.IsTrue(font.IsDynamicGlyphCapacityBlocked(refused, DefaultSize, expectedRange));
+            Assert.IsFalse(font.IsDynamicGlyphMissing(refused, DefaultSize, expectedRange),
                 "Capacity pressure is transient cache state, not a missing font glyph.");
 
             int pagesBeforeRetry = font.GetCachedDynamicPageCount();
@@ -930,8 +980,8 @@ public class NowManagedFontCompilerTests
     {
         const float FontSize = 80f;
         const float OutlineEm = 37f / FontSize;
-        const int RequestedRange = 128;
-        const long SealedBasePageBudget = 4L * 1024 * 1024;
+        int requestedRange = Tier(128);
+        const long sealedBasePageBudget = 4L * 1024 * 1024;
 
         NowFontCompiler.forceManagedCompiler = true;
         Assert.IsTrue(NowFontCompiler.TryCompile(_fontBytes, out NowFont font, out string error), error);
@@ -942,7 +992,7 @@ public class NowManagedFontCompilerTests
             var baseTexture = (Texture2D)baseMaterial.mainTexture;
             Assert.IsTrue(baseTexture.isReadable);
 
-            font.dynamicCacheBudgetBytesOverride = SealedBasePageBudget;
+            font.dynamicCacheBudgetBytesOverride = sealedBasePageBudget;
 
             Assert.IsTrue(font.GetGlyph('A', FontSize, OutlineEm, out var fallbackGlyph, out var fallbackMaterial));
             Assert.AreSame(baseMaterial, fallbackMaterial);
@@ -952,8 +1002,8 @@ public class NowManagedFontCompilerTests
                 "Budget pressure should seal the least-recent writable session without destroying its page.");
             Assert.AreEqual(1, font.GetCachedDynamicPageCount());
             Assert.AreEqual(1, font.GetCachedDynamicGlyphCount());
-            Assert.AreEqual(SealedBasePageBudget, font.GetEstimatedDynamicCacheResidentBytes());
-            Assert.IsTrue(font.IsDynamicGlyphCapacityBlocked('A', Size, RequestedRange));
+            Assert.AreEqual(sealedBasePageBudget, font.GetEstimatedDynamicCacheResidentBytes());
+            Assert.IsTrue(font.IsDynamicGlyphCapacityBlocked('A', DefaultSize, requestedRange));
             Assert.AreEqual(20f, font.GetScreenPixelRange('A', FontSize, OutlineEm), 0.001f,
                 "Shader clamping must use the actual lower-range fallback page.");
             Assert.AreSame(baseMaterial, font.GetMaterial('A', FontSize, OutlineEm));
@@ -971,7 +1021,7 @@ public class NowManagedFontCompilerTests
         const float FontSize = 80f;
         const float MediumOutlineEm = 37f / FontSize;
         const float HighOutlineEm = 150f / FontSize;
-        const int HighRange = 512;
+        int highRange = Tier(512);
         const long Budget = 16L * 1024 * 1024;
 
         NowFontCompiler.forceManagedCompiler = true;
@@ -983,7 +1033,7 @@ public class NowManagedFontCompilerTests
             Assert.IsTrue(font.GetGlyph('A', FontSize, 0f, out _, out var baseMaterial));
             Assert.IsTrue(font.GetGlyph('A', FontSize, HighOutlineEm, out _, out var firstFallback));
             Assert.AreSame(baseMaterial, firstFallback);
-            Assert.IsTrue(font.IsDynamicGlyphCapacityBlocked('A', Size, HighRange));
+            Assert.IsTrue(font.IsDynamicGlyphCapacityBlocked('A', DefaultSize, highRange));
             Assert.IsTrue(font.TryGetPreparedCodepointRun(
                 "A",
                 FontSize,
@@ -1370,7 +1420,7 @@ public class NowManagedFontCompilerTests
     {
         const float FontSize = 80f;
         const float OutlineEm = 37f / FontSize;
-        const string Text = "ABCDEFGHIJKLMN";
+        const string Text = SpillText;
         var textures = new List<Texture2D>();
         var usedTextures = new HashSet<Texture>();
 
@@ -1420,7 +1470,11 @@ public class NowManagedFontCompilerTests
                 "Every spilled page should own at least one resolved shaped glyph mapping.");
 
             int pagesBeforeAppend = font.GetCachedDynamicPageCount();
-            Assert.IsTrue(font.TryGetShapedRun("Z", out var appended));
+
+            // A codepoint SpillText does not contain, so the append below is genuinely a new glyph. It used to be
+            // "Z" against a fourteen-letter run; SpillText covers A-Z, a-z and 0-9, so the punctuation is the
+            // part that still means "one more".
+            Assert.IsTrue(font.TryGetShapedRun("@", out var appended));
             Assert.IsTrue(font.EnsureShapedGlyphs(appended, FontSize, OutlineEm));
             Assert.AreEqual(1, appended.Length);
             Assert.IsTrue(font.TryGetShapedGlyph(
@@ -1529,13 +1583,13 @@ public class NowManagedFontCompilerTests
     {
         const float FontSize = 80f;
         const float OutlineEm = 37f / FontSize;
-        const int ExpectedRange = 128;
-        const string Text = "ABCDEFGHIJKLMN";
-        const long OneWritablePageBudget = 4L * 512 * 512 * 4;
+        int expectedRange = Tier(128);
+        const string Text = SpillText;
+        const long oneWritablePageBudget = 4L * 512 * 512 * 4;
 
         NowFontCompiler.forceManagedCompiler = true;
         Assert.IsTrue(NowFontCompiler.TryCompile(_fontBytes, out NowFont font, out string error), error);
-        font.dynamicCacheBudgetBytesOverride = OneWritablePageBudget;
+        font.dynamicCacheBudgetBytesOverride = oneWritablePageBudget;
 
         try
         {
@@ -1544,7 +1598,7 @@ public class NowManagedFontCompilerTests
 
             Assert.IsFalse(font.EnsureShapedGlyphs(run, FontSize, OutlineEm));
             Assert.AreEqual(1, font.GetCachedDynamicPageCount());
-            Assert.LessOrEqual(font.GetEstimatedDynamicCacheResidentBytes(), OneWritablePageBudget);
+            Assert.LessOrEqual(font.GetEstimatedDynamicCacheResidentBytes(), oneWritablePageBudget);
 
             int resolved = 0;
             int capacityBlocked = 0;
@@ -1563,11 +1617,11 @@ public class NowManagedFontCompilerTests
                     ++resolved;
                 }
 
-                if (!font.IsDynamicGlyphCapacityBlocked(encoded, Size, ExpectedRange))
+                if (!font.IsDynamicGlyphCapacityBlocked(encoded, DefaultSize, expectedRange))
                     continue;
 
                 ++capacityBlocked;
-                Assert.IsFalse(font.IsDynamicGlyphMissing(encoded, Size, ExpectedRange));
+                Assert.IsFalse(font.IsDynamicGlyphMissing(encoded, DefaultSize, expectedRange));
             }
 
             Assert.Greater(resolved, 0, "Glyphs committed before pressure must remain resolvable.");
