@@ -1,3 +1,10 @@
+# [1.16.0](https://github.com/BlenMiner/NowUI/compare/nowui-v1.15.0...nowui-v1.16.0) (2026-09-09)
+
+
+### Features
+
+* **web:** ship a server with the bundle so the Editor is not needed to show a prototype ([d708103](https://github.com/BlenMiner/NowUI/commit/d708103c4e8878807d0fc9527478cc9175133fb0))
+
 # [1.15.0](https://github.com/BlenMiner/NowUI/compare/nowui-v1.14.1...nowui-v1.15.0) (2026-09-09)
 
 
