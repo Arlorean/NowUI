@@ -198,6 +198,12 @@ Remove-Item -LiteralPath $temp -Recurse -Force -ErrorAction SilentlyContinue
 #
 # ONLY THE BROWSER BUNDLE. The Unity-side faces under Assets/NowUI/Assets/Fonts must keep their layout tables:
 # the Unity player DOES have HarfBuzz, so leaning those would cost real kerning and ligatures in a built game.
+#
+# ONE MORE THING LEANING MUST NOT DO, added when the faces started shipping baked atlas pages: it must not RENUMBER
+# THE GLYPH IDS. The pages are baked in Unity from the full face and carry a record per glyph index alongside the
+# record per codepoint, so a renumbering would silently repoint them at other outlines. It does not today - the
+# check after the subset run proves it, 380 comparisons with zero mismatches - and that check is there so the day it
+# does, the build fails instead of the text.
 
 if (-not $NoLeanFonts) {
     Write-Step 'Leaning the fonts (layout tables dropped, every codepoint kept)'
@@ -258,6 +264,21 @@ if (-not $NoLeanFonts) {
         if ($faceBefore -gt 0) {
             Write-Host ("  four faces: {0:N0} B -> {1:N0} B ({2:P0}), every codepoint kept" -f `
                 $faceBefore, $faceAfter, ($faceAfter / [double]$faceBefore))
+        }
+
+        # The one thing leaning could break that nothing else would notice. The baked atlas pages are baked in Unity
+        # from the FULL face and carry glyph-INDEX records (keyed -1 - glyphIndex); a subsetter is entitled to
+        # renumber glyph ids, and if it did, those records would point at the wrong outlines - right advance, right
+        # position, wrong letter, no error. Measured today at 380 comparisons with zero mismatches, so this is a
+        # tripwire and not a fix. See Tools/Check-LeanedGlyphIndices.py for what to do if it ever fires.
+        $fixtureFonts = Join-Path $OutputRoot 'Fixtures/NowUI'
+        if (Test-Path -LiteralPath $fixtureFonts) {
+            & $python (Join-Path $PSScriptRoot 'Check-LeanedGlyphIndices.py') $fixtureFonts
+            if ($LASTEXITCODE -ne 0) {
+                throw "Leaning the fonts renumbered glyph ids the baked pages were baked against (see above). " +
+                      "The bundle would render the wrong glyphs for shaped text; re-export, or drop the " +
+                      "negative-keyed records from the pages."
+            }
         }
     }
 }

@@ -21,6 +21,7 @@ using System.Buffers.Binary;
 using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.JavaScript;
 using System.Threading.Tasks;
+using NowUI;
 using NowUI.Engine;
 using UnityEngine;
 using UnityEngine.Rendering;
@@ -1248,18 +1249,26 @@ namespace NowUI.Web
             }
             else
             {
-                // Expected to be 1 at runtime even though the material fixture records 0: the managed baker packs
-                // SDF16 and writes the uniform before the first text draw. A 0 here is a finding worth chasing,
-                // not something to paper over, so it is said out loud once.
+                // Which value is CORRECT here depends on which baker produced the page, so this cannot be a
+                // one-sided check any more:
+                //
+                //   1 - the managed baker's packed SDF16 pages (NowFont writes it before the first text draw).
+                //   0 - an ordinary MTSDF atlas, decoded by median-RGB. NowFontCompiler.CreateFont writes it for
+                //       every page the NATIVE compiler produces, and since this host prefers the native msdf
+                //       plugin (see Program.cs), 0 is the ordinary case rather than a symptom.
+                //
+                // So the warning now fires only when the managed baker is the one in use, which is the only
+                // situation in which 0 still means "text will render blurry and subtly wrong". Left unconditional
+                // it fired on every native run and said the opposite of the truth.
                 float encoding = ResolveFloat(material, properties, IdTextSdfEncoding);
                 m_Uniforms[UniformSlots.TextSdfEncoding] = encoding;
 
-                if (encoding <= 0.5f && m_WarnedOnce.Add("sdf-encoding"))
+                if (encoding <= 0.5f && NowFontCompiler.forceManagedCompiler && m_WarnedOnce.Add("sdf-encoding"))
                 {
                     Debug.LogWarning(
-                        "WebGL2Backend: _NowUITextSdfEncoding resolved to 0, so the text shader will take the " +
-                        "median-RGB branch. This build's managed baker packs SDF16 and should set it to 1; text " +
-                        "will render blurry and subtly wrong until that is understood. This message appears once.");
+                        "WebGL2Backend: _NowUITextSdfEncoding resolved to 0 while the managed baker is forced, so " +
+                        "the text shader will take the median-RGB branch on a page that packs SDF16; text will " +
+                        "render blurry and subtly wrong until that is understood. This message appears once.");
                 }
             }
 

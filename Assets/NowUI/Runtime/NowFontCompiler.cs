@@ -6,7 +6,17 @@
 // DllImport with no plugin is a link error, not a runtime exception.
 // WebGL's plugin is built by Now-UI/Native/build-msdf-webgl.sh, which keeps
 // its symbols disjoint from Unity's player libraries.
-#if !NOWUI_STANDALONE
+//
+// The engine-free build (NOWUI_STANDALONE) opts in through
+// NOWUI_STANDALONE_MSDF_NATIVE, set by Standalone/NowUI.Runtime/NowUI.Runtime.csproj.
+// It is safe there for the reason the paragraph above gives for keeping the
+// valve on everywhere else: off Unity, LIBRARY_NAME is the module NAME
+// "nowui-msdf", never "__Internal", so a host that does not link the plugin
+// gets a catchable DllNotFoundException on first use and falls back to the
+// managed baker. The browser host links it (see
+// Standalone/Web/NowUI.Web/NowUI.Web.csproj); the desktop test hosts do not,
+// and keep the managed path they already had.
+#if !NOWUI_STANDALONE || NOWUI_STANDALONE_MSDF_NATIVE
 #define NOWUI_MSDF_NATIVE
 #endif
 
@@ -452,23 +462,87 @@ namespace NowUI
                     }
                 }
 
+                // Whether the managed compiler has already had its turn above. When it has not - which is exactly
+                // the forceNativeCompiler case - a missing or broken plugin must not be the end of the road: it
+                // would take every glyph on the page with it. See the fallback below.
+                bool managedAlreadyTried = forceManagedCompiler || !forceNativeCompiler;
+
                 try
                 {
-                    return TryCreateNative(fontData, size, pixelRange, atlasSide, out session, out error);
+                    if (TryCreateNative(fontData, size, pixelRange, atlasSide, out session, out error))
+                        return true;
+
+                    // The plugin loaded and answered, but declined this font. If the managed compiler has not
+                    // been asked yet, ask it before giving up.
+                    if (!managedAlreadyTried &&
+                        TryCreateManaged(fontData, size, pixelRange, atlasSide, packedManagedSdf16, out session))
+                    {
+                        error = null;
+                        return true;
+                    }
+
+                    return false;
                 }
                 catch (DllNotFoundException)
                 {
-                    error = "The font is not supported by the managed compiler and the native font compiler plugin was not found for this platform.";
+                    error = managedAlreadyTried
+                        ? "The font is not supported by the managed compiler and the native font compiler plugin was not found for this platform."
+                        : "The native font compiler plugin was not found for this platform.";
                 }
                 catch (EntryPointNotFoundException)
                 {
-                    error = "The font is not supported by the managed compiler and the native font compiler plugin is outdated.";
+                    error = managedAlreadyTried
+                        ? "The font is not supported by the managed compiler and the native font compiler plugin is outdated."
+                        : "The native font compiler plugin is outdated.";
                 }
                 catch (BadImageFormatException)
                 {
-                    error = "The font is not supported by the managed compiler and the native font compiler plugin has the wrong architecture.";
+                    error = managedAlreadyTried
+                        ? "The font is not supported by the managed compiler and the native font compiler plugin has the wrong architecture."
+                        : "The native font compiler plugin has the wrong architecture for this platform.";
                 }
 
+                // forceNativeCompiler skipped the managed compiler on the way in, so the plugin being absent has
+                // just disqualified the ONLY compiler that was going to be tried. Falling back here is what keeps
+                // forceNativeCompiler a preference rather than a requirement: a host that asks for the native
+                // baker and does not get it draws the same text more slowly, instead of drawing none at all.
+                if (!managedAlreadyTried &&
+                    TryCreateManaged(fontData, size, pixelRange, atlasSide, packedManagedSdf16, out session))
+                {
+                    error = null;
+                    return true;
+                }
+
+                return false;
+            }
+
+            /// <summary>
+            /// The managed baker as a plain attempt, with its error discarded: every caller of this overload
+            /// already holds a more specific message about why the native compiler was unavailable, and that is
+            /// the message worth keeping.
+            /// </summary>
+            static bool TryCreateManaged(
+                byte[] fontData,
+                int size,
+                int pixelRange,
+                int atlasSide,
+                bool packedManagedSdf16,
+                out DynamicSession session)
+            {
+                if (NowManagedFontSession.TryCreate(
+                        fontData,
+                        size,
+                        pixelRange,
+                        atlasSide,
+                        packedManagedSdf16,
+                        out var managed,
+                        out _))
+                {
+                    session = new DynamicSession(managed);
+                    return true;
+                }
+
+                session = null;
                 return false;
             }
 

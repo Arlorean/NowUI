@@ -56,6 +56,13 @@
     <!-- Our own support layer: the Unity-test-runner surface dotnet does not have, plus the standalone host. -->
     <Compile Include="Shims/**/*.cs" />
     <Compile Include="Support/**/*.cs" />
+    <!--
+      The browser's PNG decoder, compiled in BY REFERENCE so NowStandaloneBakedFontPageTests checks the shipped font
+      atlas pages with the very decoder the browser runs rather than a second implementation that could agree with the
+      encoder about the same mistake. NowUI.Web itself cannot be referenced: it targets net9.0-browser. The file
+      depends on System.IO.Compression and UnityEngine.Color32 only, both of which are here.
+    -->
+    <Compile Include="../Web/NowUI.Web/NowWebPng.cs" LinkBase="Web" />
   </ItemGroup>
 
   <ItemGroup>

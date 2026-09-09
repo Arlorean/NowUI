@@ -178,6 +178,11 @@ namespace NowUI.Web
             await FetchAll(http, root, files, faceFiles).ConfigureAwait(false);
 
             List<string> byteFiles = new List<string>(faceFiles.Count);
+
+            // Baked atlas pages, fetched in the SAME wave as the TTFs rather than a fourth one: they are four more
+            // parallel requests, not four more round trips. They are OPTIONAL - see the optional set below.
+            List<string> pageFiles = new List<string>(faceFiles.Count);
+
             for (int i = 0; i < faceFiles.Count; i++)
             {
                 using (JsonDocument face = Parse(files[faceFiles[i]]))
@@ -190,12 +195,44 @@ namespace NowUI.Web
                     }
 
                     byteFiles.Add("NowUI/" + bytes.GetString());
+                    AddBakedPageFiles(pageFiles, face.RootElement);
                 }
             }
 
-            await FetchAll(http, root, files, byteFiles).ConfigureAwait(false);
+            // The TTF is load-bearing - nothing renders without it, so a missing one throws. A baked page is an
+            // optimisation over a path that still works: losing one costs a slower first frame, and refusing to boot
+            // over it would trade a slow page for a dead one. So pages fetch under the optional set and a miss is a
+            // warning at build time (BuildFace), not an exception here.
+            List<string> wave = new List<string>(byteFiles.Count + pageFiles.Count);
+            wave.AddRange(byteFiles);
+            wave.AddRange(pageFiles);
+
+            await FetchAll(http, root, files, wave, new HashSet<string>(pageFiles, StringComparer.Ordinal))
+                .ConfigureAwait(false);
 
             return new WebResourceProvider(root, files);
+        }
+
+        /// <summary>
+        /// Appends the <c>bakedPages[].file</c> entries a face declares, if any. A face with no <c>bakedPages</c>
+        /// member is the normal older shape and adds nothing.
+        /// </summary>
+        private static void AddBakedPageFiles(List<string> into, JsonElement face)
+        {
+            JsonElement pages;
+            if (!face.TryGetProperty("bakedPages", out pages) || pages.ValueKind != JsonValueKind.Array)
+                return;
+
+            foreach (JsonElement page in pages.EnumerateArray())
+            {
+                JsonElement file;
+                if (!page.TryGetProperty("file", out file) || file.ValueKind != JsonValueKind.String)
+                    continue;
+
+                string path = "NowUI/" + file.GetString();
+                if (!into.Contains(path))
+                    into.Add(path);
+            }
         }
 
         private static void AddFace(List<string> into, JsonElement faces, string slot)
@@ -209,11 +246,25 @@ namespace NowUI.Web
                 into.Add(path);
         }
 
-        private static async Task FetchAll(
+        private static Task FetchAll(
             HttpClient http,
             string root,
             Dictionary<string, byte[]> into,
             IReadOnlyList<string> paths)
+        {
+            return FetchAll(http, root, into, paths, null);
+        }
+
+        /// <summary>
+        /// Fetches <paramref name="paths"/> in parallel. A path in <paramref name="optional"/> that does not come back
+        /// is simply absent from <paramref name="into"/> afterwards; any other failure throws.
+        /// </summary>
+        private static async Task FetchAll(
+            HttpClient http,
+            string root,
+            Dictionary<string, byte[]> into,
+            IReadOnlyList<string> paths,
+            HashSet<string> optional)
         {
             List<string> pending = new List<string>(paths.Count);
             List<Task<byte[]>> tasks = new List<Task<byte[]>>(paths.Count);
@@ -224,13 +275,21 @@ namespace NowUI.Web
                     continue;
 
                 pending.Add(paths[i]);
-                tasks.Add(Fetch(http, root + "/" + paths[i]));
+                tasks.Add(optional != null && optional.Contains(paths[i])
+                    ? FetchOptional(http, root + "/" + paths[i])
+                    : Fetch(http, root + "/" + paths[i]));
             }
 
             byte[][] payloads = await Task.WhenAll(tasks).ConfigureAwait(false);
 
             for (int i = 0; i < pending.Count; i++)
-                into[pending[i]] = payloads[i];
+            {
+                // A null payload is an optional fetch that failed. Left OUT of the dictionary rather than stored as
+                // null, so every existing reader keeps its "was never fetched" diagnosis instead of a
+                // NullReferenceException three calls later.
+                if (payloads[i] != null)
+                    into[pending[i]] = payloads[i];
+            }
         }
 
         private static async Task<byte[]> Fetch(HttpClient http, string url)
@@ -247,6 +306,22 @@ namespace NowUI.Web
                     "Could not fetch the NowUI fixture '" + url + "'. The fixtures are copied into wwwroot/Fixtures " +
                     "by the CopyNowUIFixtures target in NowUI.Web.csproj; they originate from " +
                     "Assets/NowUI/Editor/NowStandaloneAssetExport.cs.", e);
+            }
+        }
+
+        /// <summary>Like <see cref="Fetch"/>, but returns null with a warning instead of throwing.</summary>
+        private static async Task<byte[]> FetchOptional(HttpClient http, string url)
+        {
+            try
+            {
+                return await http.GetByteArrayAsync(url).ConfigureAwait(false);
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning(
+                    "the optional fixture '" + url + "' did not fetch (" + e.Message + "). Whatever needed " +
+                    "it falls back to building it at runtime.");
+                return null;
             }
         }
 
@@ -593,9 +668,203 @@ namespace NowUI.Web
                 font.dynamicMaxAtlasBytes = face.GetProperty("dynamicMaxAtlasBytes").GetInt32();
 
                 SetFallbacks(font, RequireNoFallbacks(face, fileName));
+                InstallBakedPages(font, face, fileName);
 
                 return font;
             }
+        }
+
+        /// <summary>
+        /// Warms the face's dynamic cache with the atlas pages the exporter baked, so the first frame that draws text
+        /// does not have to rasterize printable ASCII.
+        ///
+        /// WHY THIS IS WORTH CODE. Measured on the shipped bundle in a real browser, the first frame cost ~2.0 s
+        /// against ~11 ms for every frame after it, and 85-91% of that was MSDF rasterisation in interpreted
+        /// WebAssembly. Unity never sees this because it bakes through HarfBuzz in milliseconds.
+        ///
+        /// WHAT A BAKED PAGE IS. Not a prebaked atlas - a WARMED DYNAMIC page. NowFont.SetBakedPages hands these to
+        /// EnsureBakedPagesLoaded, which turns each into exactly the DynamicAtlasPage the runtime would have
+        /// rasterized and registers its glyph keys. After that the lookup path cannot tell the two apart, and a
+        /// codepoint outside the bake (the gallery's "Äéîõü ßçø Γαμμα Да" line, say) still bakes on demand onto a
+        /// dynamic page beside the baked one.
+        ///
+        /// EVERY FAILURE LANDS ON TODAY'S BEHAVIOUR. A missing member, a missing file, a short body, a PNG the decoder
+        /// refuses, dimensions that disagree with the declaration - each skips that page with one named warning and
+        /// leaves the face to rasterize as it does now. Deliberately unlike the fontByteCount check above, which
+        /// throws: the TTF is load-bearing and a page is an optimisation. And a page whose atlasSize or pixelRange no
+        /// longer match the font needs no check here at all - NowFont.IsBakedPageCurrent leaves it dormant by itself.
+        /// </summary>
+        private void InstallBakedPages(NowFont font, JsonElement face, string fileName)
+        {
+            JsonElement declared;
+            if (!face.TryGetProperty("bakedPages", out declared) ||
+                declared.ValueKind != JsonValueKind.Array ||
+                declared.GetArrayLength() == 0)
+            {
+                return;
+            }
+
+            List<NowFont.BakedPage> pages = new List<NowFont.BakedPage>(declared.GetArrayLength());
+
+            foreach (JsonElement page in declared.EnumerateArray())
+            {
+                NowFont.BakedPage built;
+                if (TryBuildBakedPage(page, fileName, out built))
+                    pages.Add(built);
+            }
+
+            if (pages.Count == 0)
+                return;
+
+            string characters = face.TryGetProperty("bakedCharacters", out JsonElement chars) &&
+                                chars.ValueKind == JsonValueKind.String
+                ? chars.GetString()
+                : null;
+
+            font.SetBakedPages(characters, false, pages.ToArray());
+        }
+
+        private bool TryBuildBakedPage(JsonElement page, string fileName, out NowFont.BakedPage built)
+        {
+            built = default;
+
+            string file = page.GetProperty("file").GetString();
+            string path = "NowUI/" + file;
+
+            byte[] encoded;
+            if (!m_Files.TryGetValue(path, out encoded) || encoded == null)
+            {
+                Debug.LogWarning(
+                    "'" + fileName + "' declares the baked page '" + file + "' but it did not fetch. That " +
+                    "face rasterizes its glyphs on demand instead, which is slower and looks the same.");
+                return false;
+            }
+
+            // Declared for the same reason fontByteCount is: a server or a transform that rewrites the body must
+            // produce a named warning rather than a corrupted atlas.
+            int declaredBytes = page.GetProperty("pageByteCount").GetInt32();
+            if (encoded.Length != declaredBytes)
+            {
+                Debug.LogWarning(
+                    "the baked page '" + file + "' declares " + declaredBytes + " bytes but " +
+                    encoded.Length + " arrived; skipping it and rasterizing on demand. Re-export, and check that no " +
+                    "transform is applied to .bin.");
+                return false;
+            }
+
+            int width, height;
+            byte[] rgba;
+            string error;
+            if (!NowWebPng.TryDecode(encoded, out width, out height, out rgba, out error))
+            {
+                Debug.LogWarning(
+                    "the baked page '" + file + "' did not decode (" + error + "); skipping it and " +
+                    "rasterizing on demand.");
+                return false;
+            }
+
+            int declaredWidth = page.GetProperty("width").GetInt32();
+            int declaredHeight = page.GetProperty("height").GetInt32();
+            if (width != declaredWidth || height != declaredHeight)
+            {
+                Debug.LogWarning(
+                    "the baked page '" + file + "' decoded to " + width + "x" + height + " but declares " +
+                    declaredWidth + "x" + declaredHeight + "; skipping it and rasterizing on demand.");
+                return false;
+            }
+
+            string encoding = page.GetProperty("pageEncoding").GetString();
+            if (string.Equals(encoding, "grey8-alpha8", StringComparison.Ordinal))
+            {
+                // The file holds the two planes of the packed 16-bit distance: the HIGH byte in grey, the LOW byte in
+                // alpha. NowWebPng expands colour type 4 to r = g = b = grey, a = alpha, so what arrives is
+                // (hi, hi, hi, lo) and the page wants (hi, hi, lo, hi) - R/G/A high, B low, per
+                // NowFont.CreateDynamicPageFont. One swap per pixel; measured under a millisecond for 1 Mpx.
+                for (int i = 0; i < rgba.Length; i += 4)
+                {
+                    byte low = rgba[i + 3];
+                    rgba[i + 3] = rgba[i];
+                    rgba[i + 2] = low;
+                }
+            }
+            else if (!string.Equals(encoding, "rgba8", StringComparison.Ordinal))
+            {
+                Debug.LogWarning(
+                    "the baked page '" + file + "' declares the unknown encoding '" + encoding + "'; " +
+                    "skipping it and rasterizing on demand.");
+                return false;
+            }
+
+            // linear: true, matching NowFontBaker.TrySealPage. An sRGB page would be read through the transfer
+            // function and every glyph would come out at the wrong weight.
+            Texture2D texture = new Texture2D(width, height, TextureFormat.RGBA32, false, true);
+            texture.filterMode = FilterMode.Bilinear;
+            texture.wrapMode = TextureWrapMode.Clamp;
+            texture.hideFlags = HideFlags.HideAndDontSave;
+            texture.LoadRawTextureData(rgba);
+            texture.Apply(false, false);
+
+            built = new NowFont.BakedPage
+            {
+                texture = texture,
+                atlasSize = page.GetProperty("atlasSize").GetInt32(),
+                pixelRange = page.GetProperty("pixelRange").GetInt32(),
+                distanceRange = page.GetProperty("distanceRange").GetInt32(),
+                size = page.GetProperty("size").GetInt32(),
+                packedSdf16 = page.GetProperty("packedSdf16").GetBoolean(),
+                metrics = ReadMetrics(page.GetProperty("metrics")),
+                glyphs = ReadGlyphs(page.GetProperty("glyphs"))
+            };
+
+            return true;
+        }
+
+        private static NowFontAtlasInfo.Metrics ReadMetrics(JsonElement element)
+        {
+            return new NowFontAtlasInfo.Metrics
+            {
+                emSize = ReadFloat(element, "emSize"),
+                lineHeight = ReadFloat(element, "lineHeight"),
+                ascender = ReadFloat(element, "ascender"),
+                descender = ReadFloat(element, "descender"),
+                underlineY = ReadFloat(element, "underlineY"),
+                underlineThickness = ReadFloat(element, "underlineThickness")
+            };
+        }
+
+        /// <summary>
+        /// Glyph records as exported: <c>atlasBounds</c> in PIXELS. NowFont.BuildGlyphCache divides by the atlas size
+        /// when it builds its lookup, so normalizing here would divide twice and every glyph would sample a sliver of
+        /// the atlas corner.
+        /// </summary>
+        private static NowFontAtlasInfo.Glyph[] ReadGlyphs(JsonElement element)
+        {
+            NowFontAtlasInfo.Glyph[] glyphs = new NowFontAtlasInfo.Glyph[element.GetArrayLength()];
+            int index = 0;
+
+            foreach (JsonElement glyph in element.EnumerateArray())
+            {
+                glyphs[index++] = new NowFontAtlasInfo.Glyph
+                {
+                    unicode = glyph.GetProperty("unicode").GetInt32(),
+                    advance = ReadFloat(glyph, "advance"),
+                    planeBounds = ReadBounds(glyph.GetProperty("planeBounds")),
+                    atlasBounds = ReadBounds(glyph.GetProperty("atlasBounds"))
+                };
+            }
+
+            return glyphs;
+        }
+
+        private static NowFontAtlasInfo.Bounds ReadBounds(JsonElement element)
+        {
+            return new NowFontAtlasInfo.Bounds
+            {
+                left = ReadFloat(element, "left"),
+                bottom = ReadFloat(element, "bottom"),
+                right = ReadFloat(element, "right"),
+                top = ReadFloat(element, "top")
+            };
         }
 
         private static NowFontAsset[] RequireNoFallbacks(JsonElement element, string fixtureName)

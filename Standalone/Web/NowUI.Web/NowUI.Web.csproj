@@ -102,6 +102,71 @@
     <Compile Remove="Placeholder/**/*.cs" Condition="Exists('$(MSBuildThisFileDirectory)WebGL2Backend.cs')" />
   </ItemGroup>
 
+  <!--
+    ============================================================================================ native msdf baker
+
+    The same msdf-atlas-gen + FreeType object Unity's WebGL player links, linked into this host so that glyph
+    baking runs as compiled native code instead of as interpreted managed IL.
+
+    Why this is worth a native relink: NowManagedFontBaker's hot loop is a [BurstCompile] IJobParallelFor. Under
+    Unity, Burst vectorises it and spreads it over worker threads; here Burst is an attribute-only shim
+    (Standalone/NowUI.Engine/Burst/Burst.cs), so the identical source runs scalar, single-threaded and
+    INTERPRETED - measured at ~19 ms per distinct glyph, which is ~1.6 s of first frame for an app that shows the
+    printable ASCII range. Through this object the same work is ~4 ms per glyph. Measured numbers, both rasterizers,
+    are in the report accompanying this change.
+
+    Two things make this link work, and both are easy to get wrong:
+
+      1. The EXTENSION IS LOAD-BEARING. NativeFileReference dispatches on it, and the shipped file is named .bc for
+         Unity's sake even though it is a real WebAssembly relocatable object (magic 00 61 73 6d), not LLVM bitcode.
+         Handed to emcc as ".bc" it is passed to clang as a SOURCE file and fails with "expected top-level entity".
+         So it is staged into obj/ as .o rather than referenced in place. Staged rather than committed a second
+         time: a copy under this directory would be 1.14 MB of duplicate binary in git that could drift from the
+         Unity one, and the whole point is that both hosts link the SAME object.
+
+      2. The 18 HarfBuzz symbols it leaves undefined resolve, in a Unity player, against Unity's
+         TextRenderingModule. Nothing here provides them, so native/nowui-hb-stubs.c does - see that file for why
+         binding them to an abort is sound rather than a hazard.
+
+    Build without it with -p:NowUIMsdfNative=false. That is a supported configuration, not a broken one: the host
+    still bakes every glyph, through the managed baker, at roughly four times the cost per glyph. It exists so the
+    fallback can be TESTED rather than assumed, and so a platform that cannot link the object has a way out.
+
+    No WasmAllowUndefinedSymbols, and no WasmBuildNative: a Release publish already relinks the runtime, and the
+    relink itself costs +70 bytes. The pinvoke module name the SDK generates is the object's file name,
+    "nowui-msdf", which is exactly what NowFontCompiler.LIBRARY_NAME resolves to off Unity - so nothing on the
+    managed side has to know this happened.
+  -->
+  <PropertyGroup>
+    <!-- Opt out with -p:NowUIMsdfNative=false; see the note above on why that stays a working build. -->
+    <NowUIMsdfNative Condition="'$(NowUIMsdfNative)' == ''">true</NowUIMsdfNative>
+    <NowUIMsdfSource>$(MSBuildThisFileDirectory)../../../Assets/NowUI/Plugins/WebGL/nowui-msdf.bc</NowUIMsdfSource>
+    <!--
+      A literal obj/native/ rather than $(IntermediateOutputPath): that property is computed in
+      Microsoft.Common.CurrentVersion.targets, which is imported BELOW this file, so it is still empty while this
+      PropertyGroup is evaluated and the staged object lands in the project directory as a stray 1.1 MB file.
+      Measured, not theorised - the first version of this target did exactly that. obj/ is already ignored
+      (.gitignore, "Standalone/**/obj/").
+    -->
+    <NowUIMsdfObject>$(MSBuildThisFileDirectory)obj/native/nowui-msdf.o</NowUIMsdfObject>
+  </PropertyGroup>
+
+  <Target Name="StageNowUIMsdfObject"
+          Condition="'$(NowUIMsdfNative)' == 'true'"
+          BeforeTargets="PrepareForBuild;ResolveStaticWebAssetsInputs"
+          Inputs="$(NowUIMsdfSource)"
+          Outputs="$(NowUIMsdfObject)">
+    <Error Condition="!Exists('$(NowUIMsdfSource)')"
+           Text="The native msdf plugin is missing at $(NowUIMsdfSource). It is the object Unity's WebGL player links. Build with -p:NowUIMsdfNative=false to leave it out deliberately: the host still bakes every glyph through the managed baker, about four times slower per glyph." />
+    <MakeDir Directories="$(MSBuildThisFileDirectory)obj/native" />
+    <Copy SourceFiles="$(NowUIMsdfSource)" DestinationFiles="$(NowUIMsdfObject)" SkipUnchangedFiles="true" />
+  </Target>
+
+  <ItemGroup Condition="'$(NowUIMsdfNative)' == 'true'">
+    <NativeFileReference Include="$(NowUIMsdfObject)" />
+    <NativeFileReference Include="$(MSBuildThisFileDirectory)native/nowui-hb-stubs.c" />
+  </ItemGroup>
+
   <ItemGroup>
     <!-- The exported fonts, material templates and shader metadata the host fetches. Same tree the standalone test
          run reads from disk; see Standalone/Tests/Support/NowStandaloneTestResources.cs for the format. -->

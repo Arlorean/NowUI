@@ -222,6 +222,27 @@ internal static partial class WebApp
             // runtime rather than edit-time branches) are the ones a running page should take.
             NowRuntime.isPlaying = true;
 
+            // ------------------------------------------------------------------------------------- glyph baker
+            //
+            // The browser is the one host where the DEFAULT choice is wrong. Everywhere else NowUI prefers the
+            // managed baker for TrueType faces, and rightly: it carries no binary dependency and, with Burst
+            // compiling its IJobParallelFor, it is fast. Here Burst is an attribute-only shim
+            // (Standalone/NowUI.Engine/Burst/Burst.cs), so that same job runs scalar, single-threaded and
+            // interpreted - about 19 ms per distinct glyph, paid on the frame that first shows it. The native
+            // msdf plugin this host links (see NowUI.Web.csproj) does the same work at about 4 ms per glyph.
+            //
+            // This is a PREFERENCE, not a requirement. NowFontCompiler.DynamicSession.TryCreate falls back to the
+            // managed baker when the plugin is missing or refuses, so a build without the native object still
+            // draws every glyph - just slowly. Fail-open is the point: a host that cannot render text is worse
+            // than a host that renders it late.
+            //
+            // `?baker=managed` forces the managed path back on, in the SAME binary, which is what makes the two
+            // rasterizers comparable: same fonts, same sizes, same atlas, one flag apart.
+            string baker = BrowserInterop.QueryParam("baker");
+            NowFontCompiler.forceManagedCompiler = baker == "managed";
+            NowFontCompiler.forceNativeCompiler = baker != "managed";
+            BrowserInterop.Log(0, "[NowUI] glyph baker: " + (baker == "managed" ? "managed (forced)" : "native (preferred, managed fallback)"));
+
             NowRuntime.Initialize(s_Host, backend);
 
             // After Initialize, because Install writes NowUI statics, and before the first frame, because

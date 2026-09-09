@@ -70,7 +70,28 @@ namespace NowUI.Internal
         [DllImport(LIBRARY_NAME, CallingConvention = CallingConvention.Cdecl)]
         static extern void nowui_shaper_destroy(IntPtr shaper);
 
+        // Starts latched OFF in the engine-free build, because there the plugin's shaping half CANNOT work.
+        //
+        // The nowui-msdf object leaves its 18 HarfBuzz symbols undefined by design: in a Unity player they resolve
+        // against Unity's TextRenderingModule at player link time (Native/build-msdf-webgl.sh). A standalone host
+        // has no TextRenderingModule and no HarfBuzz, so the browser host binds them to aborting stubs
+        // (Standalone/Web/NowUI.Web/native/nowui-hb-stubs.c) purely to satisfy wasm-ld.
+        //
+        // That makes the runtime latch below insufficient here, and the failure it misses is not a graceful one.
+        // The latch only trips on DllNotFoundException / EntryPointNotFoundException - the plugin being ABSENT.
+        // Once the browser host links the plugin for its glyph baker, the plugin is PRESENT, nowui_shaper_create
+        // resolves, and the first call runs into hb_blob_create and aborts the whole wasm runtime. Measured, not
+        // predicted: that is exactly what the first build of that host did.
+        //
+        // Shaping is documented above as an enhancement and never a requirement, so declining it here costs the
+        // ligatures, ZWJ emoji and complex-script handling that this host never had anyway - it has always taken
+        // the per-codepoint path, because until now the plugin was missing entirely and the latch tripped on the
+        // first call. This preserves that behaviour instead of turning it into an abort.
+#if NOWUI_STANDALONE
+        static bool s_unsupported = true;
+#else
         static bool s_unsupported;
+#endif
 
         IntPtr _handle;
         ShapedGlyph[] _glyphScratch = new ShapedGlyph[128];
