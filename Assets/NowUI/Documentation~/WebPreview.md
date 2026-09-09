@@ -75,6 +75,7 @@ same either way:
 | `/?app=NAME` → `/NAME.js` | `<ProjectRoot>/NowUI/apps/NAME.js`, falling back to the bundle's samples |
 | everything else | the bundle itself |
 | `/assets/...` | `<ProjectRoot>/Assets/...`, pictures, Lottie documents and fonts only |
+| `/docs/` and `/docs/NAME.md` | the package's own documentation - an index, then each document. `Documentation~` is a sibling of `WebBundle~`, so this works from a clone and from an installed copy alike. The package's own README answers to `/docs/package.md`, because `Documentation~/README.md` is a different document and claimed the obvious name first |
 
 The project root is inferred from where the bundle sits (`<ProjectRoot>/Assets/
 NowUI/WebBundle~`), so from a normal install there is nothing to configure. Pass
@@ -170,8 +171,39 @@ is a `uvRect` computed from the two aspect ratios — which works without
 deforming the rounded corners because the shader keeps the shape's distance
 field in full-quad space no matter where the UVs point.
 
-What it does not: arbitrary transforms, SDF, the node graph, markdown and the
-code editor. Those are Unity-side only.
+**`ui.markdown(key, source, opts)`** renders a Markdown document, and it is the
+one control that lays itself out rather than taking a box:
+
+```js
+ui.scroll('body', { padding: 22 }, () => {
+  const link = ui.markdown('doc', source, { fontSize: 15 });
+  if (link) open(link);          // the link the reader clicked, or null
+});
+```
+
+That shape is the point. The document measures itself in the flow, so the scroll
+container sizes and clips it without being told a height — where a rect-shaped
+markdown would have to report its height to JavaScript and be handed it back a
+frame later, which is a frame of jitter every time the text or the width changes.
+Tables, code fences, inline code and links all render, and colours come from the
+ambient `ui.theme`.
+
+It is cheaper to redraw than it looks. The parse and the layout are cached, and
+so is the text itself: a string is volatile the first time the recorder sees it
+and interned the second, after which the handle lasts the session — a document
+that does not change costs **zero text bytes per frame**, measured at frame 3060
+of the docs viewer. One that *does* change every frame never reaches that second
+sighting, so it stays volatile and leaks nothing.
+
+Links are **reported, never followed**. A relative `Layout.md` is another
+document and the application decides what that means; an `https://` link is the
+web and the application decides that too. That is what makes an in-page docs
+viewer four lines instead of a parser. `NowUI/apps/docs.js` is one, and the
+package's own documentation is served for it under `/docs/` — see
+[Serving it yourself](#serving-it-yourself).
+
+What it does not: arbitrary transforms, SDF, the node graph and the code editor.
+Those are Unity-side only.
 
 ## The five mistakes
 

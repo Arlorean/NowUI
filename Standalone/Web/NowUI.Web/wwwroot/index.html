@@ -45,11 +45,47 @@
       text-align: center;
     }
 
+    /* A moving bar under the message, so the wait looks like progress rather than a stalled black page.
+
+       IT IS A PSEUDO-ELEMENT ON PURPOSE. main.js reports a boot failure by REPLACING this element's text, which
+       would delete any child node put here; ::after survives that, and the rule below hides it when the message
+       turns into an error so a failure never animates as though it were still working.
+
+       Pure CSS and no extra request: this has to paint before anything else has loaded, which is the whole
+       point - the WebAssembly runtime needs about a second before NowUI can draw its first frame, and this is
+       what the reader looks at until then. */
+    #nowui-boot::after {
+      content: '';
+      position: absolute;
+      top: calc(50% + 22px);
+      left: 50%;
+      margin-left: -90px;
+      width: 180px;
+      height: 2px;
+      border-radius: 1px;
+      background: linear-gradient(90deg, #16191d 0%, #4d8ee0 50%, #16191d 100%);
+      background-size: 200% 100%;
+      animation: nowui-boot-sweep 1.15s linear infinite;
+    }
+
+    @keyframes nowui-boot-sweep {
+      from { background-position: 200% 0; }
+      to   { background-position: -200% 0; }
+    }
+
+    /* A reader who asked for less motion gets a static track rather than nothing: the bar still says "there is
+       a thing loading here", it just stops sweeping. */
+    @media (prefers-reduced-motion: reduce) {
+      #nowui-boot::after { animation: none; background: #2a3038; }
+    }
+
     #nowui-boot.nowui-boot-failed {
       color: #ffa198;
       align-items: flex-start;
       text-align: left;
     }
+
+    #nowui-boot.nowui-boot-failed::after { display: none; }
   </style>
   <script type="module" src="./main.js"></script>
 </head>

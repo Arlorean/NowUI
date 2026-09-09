@@ -14,6 +14,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using NowUI;
 using NowUI.Bridge;
 using NowUI.Markdown;
@@ -987,6 +988,93 @@ namespace NowUI.Bridge.Tests
 
             NowMarkdownImages.Reset();
             UnityEngine.Object.DestroyImmediate(texture);
+        }
+
+        // --------------------------------------------------------------------------------- W12: ui.markdown
+        //
+        // MARKDOWN is a CONTROL, not a drawing: it lays itself out in the flow and reports the link the reader
+        // clicked. What is worth pinning is the property the whole design rests on - that it MEASURES ITSELF,
+        // so a container can size around it without anyone round-tripping a height through JavaScript.
+
+        /// <summary>A document tessellates, and a longer one is taller. That is the self-measuring claim.</summary>
+        [Test]
+        public void AMarkdownDocumentMeasuresItselfInTheFlow()
+        {
+            RequireFixtures();
+
+            Rect Draw(string body)
+            {
+                var frame = new TestFrame();
+                int seg = frame.Intern("doc");
+                int text = frame.Intern(body);
+                frame.Op(Abi.Op("MARKDOWN"), 1, seg, text, TestFrame.F(0f));
+
+                long drawn = Vertices(frame);
+                Assert.Greater(drawn, 0L, "the document tessellated nothing");
+                return BridgeTestHost.counting.geometry;
+            }
+
+            Rect one = Draw("# One\n\nA single short paragraph.");
+            Rect many = Draw("# Many\n\n" + string.Concat(Enumerable.Repeat("A paragraph of prose.\n\n", 12)));
+
+            TestContext.WriteLine("one paragraph " + one + "   twelve " + many);
+
+            Assert.Greater(many.height, one.height + 20f,
+                "a twelve paragraph document was no taller than a one paragraph one, so the layout is not " +
+                "measuring the content - a scroll container built on this would size to the wrong thing");
+        }
+
+        /// <summary>The font size reaches the document: the same text set larger occupies more height.</summary>
+        [Test]
+        public void TheFontSizeOptionReachesTheDocument()
+        {
+            RequireFixtures();
+
+            Rect Draw(float size)
+            {
+                var frame = new TestFrame();
+                int seg = frame.Intern("doc");
+                int text = frame.Intern("Some prose that is long enough to wrap more than once at any size.");
+                frame.Op(Abi.Op("MARKDOWN"), 1, seg, text, TestFrame.F(size));
+
+                Vertices(frame);
+                return BridgeTestHost.counting.geometry;
+            }
+
+            Rect small = Draw(10f);
+            Rect large = Draw(24f);
+
+            TestContext.WriteLine("10pt " + small + "   24pt " + large);
+            Assert.Greater(large.height, small.height,
+                "the font size did not reach NowMarkdown - a document set at 24pt was no taller than at 10pt");
+        }
+
+        /// <summary>
+        /// A document with no link click reports no link, and the result is a string result rather than an event.
+        /// </summary>
+        /// <remarks>
+        /// The negative half of the link contract. It is worth a test because the failure it guards against is
+        /// silent: reporting <c>hoveredLink</c>, or reporting the last click forever, would both look correct
+        /// until someone moved the pointer.
+        /// </remarks>
+        [Test]
+        public void AnUnclickedDocumentReportsNoLink()
+        {
+            RequireFixtures();
+
+            var frame = new TestFrame();
+            int seg = frame.Intern("doc");
+            int text = frame.Intern("A [link](Other.md) that nobody clicked.");
+            frame.Op(Abi.Op("MARKDOWN"), 1, seg, text, TestFrame.F(0f));
+
+            List<string> log;
+            BridgeReplay replay = Run(frame, out log);
+            CollectionAssert.IsEmpty(log);
+
+            BridgeResults.Record record;
+            Assert.IsTrue(TryFind(replay, 1, out record), "the control wrote no result at all");
+            Assert.AreEqual(0, (int)(record.flags & BridgeFlags.Clicked),
+                "an untouched document reported a click, so every frame would look like a navigation");
         }
 
     }

@@ -541,6 +541,21 @@ namespace NowUI.Bridge
 
                 new OpSpec("THEME", "NowUI.NowControls.Theme(NowUI.NowThemeAsset)", 0,
                     new[] { ArgKind.Rid, ArgKind.Seg, ArgKind.Enum }, opensScope: true),
+
+                // A rendered Markdown document, laid out IN THE FLOW rather than into a rect of its own.
+                //
+                // THAT IS THE WHOLE DESIGN DECISION. NowMarkdown has two Draw overloads: one takes a rect, and
+                // one takes nothing and measures itself through NowLayout.ContentRect (NowMarkdown.cs:209-213).
+                // Taking the second makes a document an ordinary child of whatever contains it, so ui.scroll
+                // sizes and clips it with no help - where a rect-shaped op would have to report its height to
+                // JavaScript and be re-fed it on the following frame, which is a frame of visible jitter every
+                // time the text or the width changes.
+                //
+                // It is a CONTROL and not a drawing because it has something to say: links. Drawing ops carry
+                // no rid, so they have nowhere to put a result; a control's single value slot carries the link
+                // that was clicked, and the Clicked flag says whether one was.
+                new OpSpec("MARKDOWN", "NowUI.Markdown.NowMarkdown.Document(System.String)", 0,
+                    new[] { ArgKind.Rid, ArgKind.Seg, ArgKind.Str, ArgKind.F32 }),
             };
         }
 

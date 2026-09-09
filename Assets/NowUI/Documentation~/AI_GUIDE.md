@@ -68,9 +68,11 @@ resolved `com.unity.inputsystem`; their public API uses its `Key` type.
 
 The browser is not one of these hosts. The package also ships a WebAssembly
 build of NowUI with a JavaScript surface, for prototypes a person can open and
-click; it is a strict subset with no arbitrary transforms, SDF, node graph,
-markdown or code editor, and it is never a substitute for the Unity work a task
-asked for. Pictures and Lottie animations DO work there, from a URL rather than
+click; it is a strict subset with no arbitrary transforms, SDF, node graph or
+code editor, and it is never a substitute for the Unity work a task asked for.
+`ui.markdown` renders a document in the flow - put one in a `ui.scroll` and the
+scroll sizes it - and returns the link the reader clicked, so a viewer navigates
+between documents without a parser. Pictures and Lottie animations DO work there, from a URL rather than
 from the bundle: `ui.image(box, url)` and `ui.lottie(box, url)` fetch at runtime
 and cache by URL, and the preview serves the project's own `Assets` folder under
 `/assets/`, so a prototype can use the art the project already has.

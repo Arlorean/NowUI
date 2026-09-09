@@ -24,6 +24,7 @@ browser sends `Accept-Encoding: br`.
 """
 
 import argparse
+import json
 import os
 import posixpath
 import socket
@@ -59,6 +60,7 @@ MIME = {
     ".webm": "video/webm",
     # A Lottie document is JSON whatever it is named.
     ".lottie": "application/json",
+    ".md": "text/markdown; charset=utf-8",
 }
 
 # What /assets/ will hand out of the project's Assets folder. The same allowlist the Editor's server uses, and
@@ -71,6 +73,9 @@ SERVABLE_ASSETS = {
     ".json", ".lottie", ".ttf", ".otf", ".woff", ".woff2",
 }
 
+# What the package's own README.md is served as, so it does not collide with Documentation~/README.md.
+PACKAGE_README_ALIAS = "package.md"
+
 # Root-level modules the bundle owns. A user application named main.js must never replace the page's own boot
 # script - that produces a black canvas and no explanation.
 RESERVED = {"main.js", "nowui-fetch.js", "nowui-gl.js", "nowui-input.js", "serve.py"}
@@ -80,6 +85,52 @@ class Handler(BaseHTTPRequestHandler):
     bundle_root = ""
     apps_root = ""
     assets_root = ""
+    docs_root = ""
+    package_root = ""
+
+    # ------------------------------------------------------------------------------------------- documentation
+
+    def docs_index(self):
+        """Every document this server can serve, as JSON.
+
+        An index rather than a hardcoded list in the application, because the set of documents is a property of
+        the package and changes with it. A viewer that listed them itself would go stale silently the first time
+        a document was added.
+        """
+        entries = []
+
+        overview = os.path.join(self.package_root, "README.md")
+        if os.path.isfile(overview):
+            entries.append({"name": "Overview", "path": "/docs/" + PACKAGE_README_ALIAS,
+                            "bytes": os.path.getsize(overview)})
+
+        if os.path.isdir(self.docs_root):
+            for name in sorted(os.listdir(self.docs_root)):
+                if not name.lower().endswith(".md"):
+                    continue
+                entries.append({"name": "Documentation index" if name == "README.md" else name[:-3],
+                                "path": "/docs/" + name,
+                                "bytes": os.path.getsize(os.path.join(self.docs_root, name))})
+
+        return json.dumps(entries).encode("utf-8")
+
+    def docs_file(self, tail):
+        """One document, by name. Only .md, and only out of the package's own two documentation locations.
+
+        THE ALIAS IS NOT DECORATION. Both the package root and Documentation~ contain a README.md, and they are
+        different documents - the package's is the project overview, the folder's is the index of the other
+        guides. Mapping both onto /docs/README.md silently served the first and made the second unreachable, so
+        the folder keeps the natural mapping and the package's gets a name of its own.
+        """
+        if not tail.lower().endswith(".md") or "/" in tail:
+            return None
+
+        if tail == PACKAGE_README_ALIAS:
+            candidate = os.path.join(self.package_root, "README.md")
+            return candidate if os.path.isfile(candidate) else None
+
+        candidate = os.path.join(self.docs_root, tail)
+        return candidate if self.inside(self.docs_root, candidate) and os.path.isfile(candidate) else None
 
     # ------------------------------------------------------------------------------------------------ routing
 
@@ -91,6 +142,19 @@ class Handler(BaseHTTPRequestHandler):
 
         if ".." in relative.split("/"):
             return None, False
+
+        # /docs/... - the package's own documentation, so NowUI can render the manual that describes it.
+        #
+        # A SEPARATE ROUTE FROM /assets/, and not simply ".md added to the allowlist", because the documentation
+        # is not in the project. It ships inside the package, and for anyone who installed NowUI rather than
+        # cloning it the package lives under Library/PackageCache where nothing beneath Assets/ can reach it.
+        # WebBundle~ and Documentation~ are siblings under the package root, so resolving relative to the bundle
+        # works identically in a clone and in an install.
+        if relative.lower().startswith("docs/") or relative.lower() == "docs":
+            tail = relative[5:] if len(relative) > 4 else ""
+            if tail == "":
+                return "\x00index", True
+            return (self.docs_file(tail), True)
 
         # /assets/... - the project's own Assets folder, media only.
         if relative.lower().startswith("assets/"):
@@ -145,6 +209,17 @@ class Handler(BaseHTTPRequestHandler):
     def serve(self, body):
         path = posixpath.normpath(self.path.split("?", 1)[0].split("#", 1)[0])
         resolved, from_user = self.resolve(path)
+
+        if resolved == "\x00index":
+            payload = self.docs_index()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(payload)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            if body:
+                self.wfile.write(payload)
+            return
 
         if resolved is None:
             self.fail(404, "NowUI: '%s' was not found.\n\nLooked in:\n  %s\n  %s\n"
@@ -229,9 +304,15 @@ def main():
     project = os.path.abspath(args.project) if args.project \
         else os.path.abspath(os.path.join(bundle, "..", "..", ".."))
 
+    # The package root is the bundle's parent: <package>/WebBundle~ and <package>/Documentation~ are siblings
+    # in a clone and in an installed copy alike, which is what lets /docs/ work without knowing which it is.
+    package = os.path.abspath(os.path.join(bundle, ".."))
+
     Handler.bundle_root = bundle
     Handler.apps_root = os.path.join(project, "NowUI", "apps")
     Handler.assets_root = os.path.join(project, "Assets")
+    Handler.package_root = package
+    Handler.docs_root = os.path.join(package, "Documentation~")
 
     port = free_port(args.port)
     server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
@@ -245,6 +326,10 @@ def main():
     print("  bundle   %s" % bundle)
     print("  apps     %s%s" % (Handler.apps_root, "" if os.path.isdir(Handler.apps_root) else "   (not present)"))
     print("  assets   /assets/... -> %s" % Handler.assets_root)
+
+    doc_count = len([f for f in os.listdir(Handler.docs_root) if f.endswith(".md")]) \
+        if os.path.isdir(Handler.docs_root) else 0
+    print("  docs     /docs/    -> %s   (%d documents)" % (Handler.docs_root, doc_count))
 
     if args.app:
         print("\n  http://127.0.0.1:%d/?app=%s" % (port, args.app))

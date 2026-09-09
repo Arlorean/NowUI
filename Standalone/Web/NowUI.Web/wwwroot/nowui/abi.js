@@ -257,6 +257,10 @@ const SPEC = [
     // `enum` is 0 light, 1 dark. Not a general named-asset lookup: that needs a host resource manifest, which is
     // the same missing piece that blocks textures. Two entries is the whole of what a browser host can resolve.
     { name: 'THEME', sig: 'NowUI.NowControls.Theme(NowUI.NowThemeAsset)', args: ['rid', 'seg', 'enum'] },
+
+    // A Markdown document, laid out in the flow so a scroll container can size it. The f32 is the font size, 0
+    // meaning "the style's own". See the matching entry in Abi.cs for why it is a control rather than a drawing.
+    { name: 'MARKDOWN', sig: 'NowUI.Markdown.NowMarkdown.Document(System.String)', args: ['rid', 'seg', 'str', 'f32'] },
 ];
 
 // ------------------------------------------------------------------------------------------------ options

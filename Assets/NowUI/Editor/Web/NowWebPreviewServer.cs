@@ -420,6 +420,14 @@ namespace NowUI.Editor.Web
             string relative = rawPath.TrimStart('/');
             if (relative.Length == 0) relative = "index.html";
 
+            // The documentation index is computed, not a file, so it is answered before Resolve.
+            if (relative.Equals("docs/", StringComparison.OrdinalIgnoreCase) ||
+                relative.Equals("docs", StringComparison.OrdinalIgnoreCase))
+            {
+                WriteText(context, 200, "application/json", DocsIndexJson());
+                return;
+            }
+
             string resolved = Resolve(relative, out bool fromUserFolder);
             if (resolved == null)
             {
@@ -583,6 +591,20 @@ namespace NowUI.Editor.Web
             //
             // A miss here returns null rather than falling through to the bundle: the prefix says where the file
             // was meant to come from, and a 404 naming that folder is worth more than a surprise hit elsewhere.
+            // /docs/... - the package's own documentation, so an application can render the manual that
+            // describes it. PARITY WITH WebBundle~/serve.py MATTERS HERE: an application that fetches /docs/
+            // has to behave the same whichever server is in front of it, or it works under the script and 404s
+            // in this window for no reason the author can see.
+            //
+            // Documentation~ is a SIBLING of WebBundle~ under the package root, in a clone and in an installed
+            // copy alike, so it is found relative to the bundle rather than relative to the project.
+            if (relative.StartsWith("docs/", StringComparison.OrdinalIgnoreCase) ||
+                relative.Equals("docs", StringComparison.OrdinalIgnoreCase))
+            {
+                fromUserFolder = true;
+                return ResolveDoc(relative.Length > 4 ? relative.Substring(5) : string.Empty);
+            }
+
             if (relative.StartsWith("assets/", StringComparison.OrdinalIgnoreCase))
             {
                 string tail = relative.Substring("assets/".Length);
@@ -697,6 +719,98 @@ namespace NowUI.Editor.Web
             }
 
             return app.Length > 0;
+        }
+
+        /// <summary>
+        /// The package folder the served bundle belongs to, or null when the bundle is not sitting in one.
+        /// </summary>
+        /// <remarks>
+        /// THE PARENT IS CHECKED, NOT ASSUMED. <c>Documentation~</c> is a sibling of <c>WebBundle~</c> in a real
+        /// install and in this repository, but <see cref="NowWebPreviewPaths.FindBundleRoot"/> also accepts a
+        /// bundle hand-copied to <c>&lt;ProjectRoot&gt;/NowUI/WebBundle</c>, and there the parent is the user's
+        /// own folder. Assuming the sibling relationship there served that folder's README.md as the package
+        /// overview - a real file, the wrong document, and no error anywhere. Requiring Documentation~ to exist
+        /// beside the bundle makes the difference between "the docs are here" and "there are no docs" instead.
+        /// </remarks>
+        internal static string DocumentedPackageRoot()
+        {
+            if (s_BundleRoot == null) return null;
+
+            string package = Path.GetDirectoryName(s_BundleRoot);
+            if (package == null) return null;
+
+            return Directory.Exists(Path.Combine(package, "Documentation~")) ? package : null;
+        }
+
+        /// <summary>What the package's own README.md is served as, so it does not collide with the docs folder's.</summary>
+        internal const string PackageReadmeAlias = "package.md";
+
+        /// <summary>
+        /// One document under <c>/docs/</c>, or null. An empty name is the index and is handled by the caller.
+        /// </summary>
+        /// <remarks>
+        /// Both the package root and <c>Documentation~</c> hold a README.md, and they are different documents -
+        /// the package's is the project overview, the folder's is the index of the guides. The folder keeps the
+        /// natural mapping and the package's answers to <see cref="PackageReadmeAlias"/>, because serving both
+        /// at /docs/README.md made the second unreachable.
+        /// </remarks>
+        internal static string ResolveDoc(string name)
+        {
+            if (name.Length == 0) return null;
+            if (name.IndexOf('/') >= 0 || !name.EndsWith(".md", StringComparison.OrdinalIgnoreCase)) return null;
+
+            string package = DocumentedPackageRoot();
+            if (package == null) return null;
+
+            if (string.Equals(name, PackageReadmeAlias, StringComparison.OrdinalIgnoreCase))
+            {
+                string overview = Path.Combine(package, "README.md");
+                return File.Exists(overview) ? overview : null;
+            }
+
+            string root = Path.Combine(package, "Documentation~");
+            string candidate = Path.Combine(root, name);
+            return IsInside(root, candidate) && File.Exists(candidate) ? candidate : null;
+        }
+
+        /// <summary>The JSON index of <c>/docs/</c>: what <c>serve.py</c> answers, in the same shape.</summary>
+        internal static string DocsIndexJson()
+        {
+            string package = DocumentedPackageRoot();
+            if (package == null) return "[]";
+
+            var json = new StringBuilder("[");
+            bool first = true;
+
+            void Add(string display, string path, long bytes)
+            {
+                if (!first) json.Append(',');
+                first = false;
+                json.Append("{\"name\":\"").Append(display)
+                    .Append("\",\"path\":\"/docs/").Append(path)
+                    .Append("\",\"bytes\":").Append(bytes.ToString(CultureInfo.InvariantCulture)).Append('}');
+            }
+
+            string overview = Path.Combine(package, "README.md");
+            if (File.Exists(overview)) Add("Overview", PackageReadmeAlias, new FileInfo(overview).Length);
+
+            string docs = Path.Combine(package, "Documentation~");
+            if (Directory.Exists(docs))
+            {
+                string[] files = Directory.GetFiles(docs, "*.md", SearchOption.TopDirectoryOnly);
+                Array.Sort(files, StringComparer.OrdinalIgnoreCase);
+
+                foreach (string file in files)
+                {
+                    string name = Path.GetFileName(file);
+                    string display = string.Equals(name, "README.md", StringComparison.OrdinalIgnoreCase)
+                        ? "Documentation index"
+                        : name.Substring(0, name.Length - 3);
+                    Add(display, name, new FileInfo(file).Length);
+                }
+            }
+
+            return json.Append(']').ToString();
         }
 
         /// <summary>
@@ -912,6 +1026,7 @@ namespace NowUI.Editor.Web
                 // what the tooling emits. Served as octet-stream it still parsed - the loader reads bytes -
                 // but nothing else on the machine would know what it was.
                 case ".lottie": return "application/json";
+                case ".md":   return "text/markdown; charset=utf-8";
                 case ".html":
                 case ".htm":  return "text/html; charset=utf-8";
                 case ".css":  return "text/css";

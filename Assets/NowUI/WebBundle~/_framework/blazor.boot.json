@@ -1,7 +1,7 @@
 {
   "mainAssemblyName": "NowUI.Web",
   "resources": {
-    "hash": "sha256-xXNMNweW96hsLdi3akLWwufPeP3QBLd6k4ZU0pfwOvY=",
+    "hash": "sha256-0RgV8YD2LAW3iL/pd7LMuoZKvMC9RdnId7I3uBvl27g=",
     "jsModuleNative": {
       "dotnet.native.js": "sha256-BbDVkUaFRZGmzTf3eve4b1Pez7iOqB69Iw3bejeRt3I="
     },
@@ -16,17 +16,17 @@
       "System.Runtime.InteropServices.JavaScript.wasm": "sha256-N85dmm9kMn6cHRUfbAnSlC4FaJ5BeXdydcwvm0FEB08="
     },
     "assembly": {
-      "NowUI.Bridge.wasm": "sha256-SaKd4CtZtOGBPyFcGukhHTSV53dcq+QeyYc9LIQCG+s=",
-      "NowUI.Engine.wasm": "sha256-R8OVXveUPDL5ixa9y6t4sMPl5PSRaS3392LEx+IQlMg=",
-      "NowUI.Extensions.CodeEditor.wasm": "sha256-9H4TMYpS7THBlYJa0agDTIEzmsxzUzb3biCObvEcLQ0=",
-      "NowUI.Extensions.Docking.wasm": "sha256-+FBEPS9hRvSf4jSg1y+xWDHxptBNgLPNqIAHNUuAmXw=",
-      "NowUI.Extensions.Markdown.Markup.wasm": "sha256-IS4Pg9dYxQHV+BAselTNZCTr2iGuHgocbWpq14u0Go4=",
-      "NowUI.Extensions.Markdown.wasm": "sha256-//kaZLPgXTcC+icSrwZtbd8zlaQAI+GCHE1+J70+R8A=",
-      "NowUI.Extensions.Markup.wasm": "sha256-5h67cwsF6OAsjvCIGMBKz2phqAx4GKtbvuRUnGUV42g=",
-      "NowUI.Extensions.NodeGraph.wasm": "sha256-BDmS8XhzCFepWvgIJ4FcEgABGhiitRlOWnCBNM5onq0=",
-      "NowUI.Extensions.Sdf.wasm": "sha256-McaPlKA3VX1P7Xell5KKwgpxH9/FQzxij5YLFuxmIK4=",
-      "NowUI.Runtime.wasm": "sha256-JVOAkdXgvZ5epWUgMVuyTbmIrSRQ0gTZjEGSe0imGuc=",
-      "NowUI.Web.wasm": "sha256-6SYLwUrLgvLF+oAp4h3FqLLs/GOUFN7U+lItR4YuwG4=",
+      "NowUI.Bridge.wasm": "sha256-zLcA1Mpw+SEUHTviOjtfURxSvnMX8MEEetz4dmz7MqI=",
+      "NowUI.Engine.wasm": "sha256-u6UJiOPO9q0ykyXAOTD85fatX+tQsfv/AY8yFSGyfKY=",
+      "NowUI.Extensions.CodeEditor.wasm": "sha256-rHoLo+XOsSe8Lh1LUM/pm7LIkHAyiuv+Jl0nzY8XyUY=",
+      "NowUI.Extensions.Docking.wasm": "sha256-47wrqYVxKo4B4wdWh9+frtgSmIy6dYrwHeC9zr74r+I=",
+      "NowUI.Extensions.Markdown.Markup.wasm": "sha256-IOGOtzai87KjnbIELPLC867gPfymDpVwNPIDh0gHUJI=",
+      "NowUI.Extensions.Markdown.wasm": "sha256-BO3qsxD83nAZikiVcRdqZ3uHr6OD6z+/y/h2cy0mftU=",
+      "NowUI.Extensions.Markup.wasm": "sha256-T+DqA93lowQ1De9Fo9r4SplunfLVOW4zs/jVBkyGVUw=",
+      "NowUI.Extensions.NodeGraph.wasm": "sha256-FrHEVvl6Yma29jw1usy17HMK+YJzTsIee6fG+lDTxlU=",
+      "NowUI.Extensions.Sdf.wasm": "sha256-keJS8um0inSwlerDdvDGocjCro35WsJlFu3laj582z4=",
+      "NowUI.Runtime.wasm": "sha256-HoELrGSZX0vxgOYKoTLl15Wh1Fl0hwR/uyuYgcpPiBg=",
+      "NowUI.Web.wasm": "sha256-cli+FY0nsXepKeqVd35UI/6CBDm2L0ZOevYJfKCz35E=",
       "System.Collections.wasm": "sha256-JqrW4/w/qpb7SC/BXHtUotjaXFMhb39ZjvoqhQGlCtg=",
       "System.Console.wasm": "sha256-kfj4iPsej+IAKlxJnjbnX7/Fdn44DPvXp+h2iyOAXdA=",
       "System.Diagnostics.DiagnosticSource.wasm": "sha256-XaL/jXF9f/1GqSFdhDD4fV2PRxhzpTskbpE53o8GLG0=",

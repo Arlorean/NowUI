@@ -752,6 +752,10 @@ const IMAGE_OPTIONS = ['color', 'stroke', 'strokeColor', 'radius', 'fit'];
 /// the first version of this throw "time is not an option" on every call.
 const LOTTIE_OPTIONS = ['color', 'time'];
 
+/// ui.markdown: the layout options every flow child takes, plus its own font size. No `color` or `style` - a
+/// document's colours come from the ambient theme, which is what makes ui.theme('dark') reach it.
+const MARKDOWN_OPTIONS = LAYOUT_OPTIONS.concat(['fontSize']);
+
 /// ui.circle: segments is its tessellation; fill: false makes a ring.
 const CIRCLE_OPTIONS = ['color', 'stroke', 'strokeColor', 'fill', 'segments'];
 
@@ -1530,6 +1534,36 @@ export const ui = {
 
         rememberHandlers(node.rid, opts);
         return resolved;
+    },
+
+    /// A rendered Markdown document, laid out where it sits.
+    ///
+    /// Put it inside a ui.scroll and the scroll does the rest - the document measures itself in the flow, so
+    /// nothing has to know its height in advance. `fontSize` scales the whole document; omit it for the
+    /// style's own size.
+    ///
+    /// Returns the LINK that was clicked this frame, or null. Nothing is opened for you: a link is reported and
+    /// the application decides, which is what lets "[Layout](Layout.md)" navigate inside a viewer rather than
+    /// leaving the page.
+    ///
+    /// A document that stays the same is sent once, not once a frame: a `str` position is volatile on its
+    /// first sighting and interned on its second, and the handle then lasts the session. A document that
+    /// changes every frame never reaches that second sighting, so it is re-encoded each frame and leaks
+    /// nothing. Both cases are handled without the author choosing.
+    markdown(key, source, opts) {
+        const payload = encodeOptions(opts, undefined, MARKDOWN_OPTIONS, 'ui.markdown');
+        const node = trie.control(key);
+        const clicked = R.event(node.rid, F_CLICKED);
+        const link = R.value(node.rid, '');
+
+        emitOptions(payload);
+        W.op(OPS.MARKDOWN);
+        W.i32(node.rid);
+        W.i32(node.seg);
+        W.i32(W.str(text(source, 'ui.markdown', 'source')));
+        W.f32(opts && opts.fontSize !== undefined ? numArg(opts.fontSize, 'ui.markdown', 'fontSize') : 0);
+
+        return clicked && link ? link : null;
     },
 
     textArea(key, value, opts) {
