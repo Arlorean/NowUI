@@ -745,7 +745,8 @@ namespace NowUI.Bridge.Tests
 
             var frame = new TestFrame();
             int handle = frame.Intern(url);
-            frame.Op(Abi.Op("IMAGE"), TestFrame.F(10f), TestFrame.F(10f), TestFrame.F(64f), TestFrame.F(64f), handle);
+            frame.Op(Abi.Op("IMAGE"), TestFrame.F(10f), TestFrame.F(10f), TestFrame.F(64f), TestFrame.F(64f), handle,
+                (int)BridgeImageFit.Stretch);
 
             List<string> log;
             Run(frame, out log);
@@ -769,7 +770,8 @@ namespace NowUI.Bridge.Tests
 
             var frame = new TestFrame();
             int handle = frame.Intern("https://example.invalid/never-arrives.png");
-            frame.Op(Abi.Op("IMAGE"), TestFrame.F(10f), TestFrame.F(10f), TestFrame.F(64f), TestFrame.F(64f), handle);
+            frame.Op(Abi.Op("IMAGE"), TestFrame.F(10f), TestFrame.F(10f), TestFrame.F(64f), TestFrame.F(64f), handle,
+                (int)BridgeImageFit.Stretch);
 
             long drawn = Vertices(frame);
 
@@ -805,7 +807,8 @@ namespace NowUI.Bridge.Tests
             var imageFrame = new TestFrame();
             int handle = imageFrame.Intern("https://example.invalid/somewhere.png");
             imageFrame.Op(Abi.Op("IMAGE"),
-                TestFrame.F(24f), TestFrame.F(36f), TestFrame.F(120f), TestFrame.F(80f), handle);
+                TestFrame.F(24f), TestFrame.F(36f), TestFrame.F(120f), TestFrame.F(80f), handle,
+                (int)BridgeImageFit.Stretch);
 
             Vertices(imageFrame);
             Rect imageBox = BridgeTestHost.counting.geometry;
@@ -845,7 +848,8 @@ namespace NowUI.Bridge.Tests
 
             var frame = new TestFrame();
             int handle = frame.Intern(url);
-            frame.Op(Abi.Op("IMAGE"), TestFrame.F(0f), TestFrame.F(0f), TestFrame.F(32f), TestFrame.F(32f), handle);
+            frame.Op(Abi.Op("IMAGE"), TestFrame.F(0f), TestFrame.F(0f), TestFrame.F(32f), TestFrame.F(32f), handle,
+                (int)BridgeImageFit.Stretch);
 
             long drawn = Vertices(frame);
             Assert.Greater(drawn, 0L, "a cached image drew nothing");
@@ -875,6 +879,114 @@ namespace NowUI.Bridge.Tests
                 "the op drew without ever asking the cache for the url, so the animation would never arrive");
 
             NowLottieCache.Reset();
+        }
+
+        // ------------------------------------------------------------------------------- W12: ui.image fit
+        //
+        // The three modes are distinguishable from the OUTSIDE, which is what makes them testable here: contain
+        // shrinks the drawn quad to the source's aspect, cover and stretch both keep the whole box and differ
+        // only in the UVs. So geometry proves contain, and the two that agree on geometry are separated by
+        // asserting the uvRect arithmetic directly.
+
+        /// <summary>A 2:1 picture asked to CONTAIN a square box draws half as tall, centred, and crops nothing.</summary>
+        [Test]
+        public void ContainShrinksTheQuadToTheSourceAspectAndCentresIt()
+        {
+            RequireFixtures();
+            NowMarkdownImages.Reset();
+
+            const string url = "https://example.invalid/wide.png";
+            var texture = new Texture2D(200, 100, TextureFormat.RGBA32, false);
+            NowMarkdownImages.SetTexture(url, texture);
+
+            var frame = new TestFrame();
+            int handle = frame.Intern(url);
+            frame.Op(Abi.Op("IMAGE"),
+                TestFrame.F(0f), TestFrame.F(0f), TestFrame.F(100f), TestFrame.F(100f),
+                handle, (int)BridgeImageFit.Contain);
+
+            Vertices(frame);
+            Rect box = BridgeTestHost.counting.geometry;
+            TestContext.WriteLine("a 200x100 picture contained in 100x100 drew " + box);
+
+            // 6 px of tolerance is the antialiasing band, which is submitted outside the shape on every edge.
+            Assert.AreEqual(100f, box.width, 6f, "contain used the full width, which a 2:1 source should");
+            Assert.AreEqual(50f, box.height, 6f,
+                "contain did not shrink the quad to the source's aspect - a 2:1 picture in a square box is 100x50");
+
+            // CENTRING IS ASSERTED AGAINST A DRAWN REFERENCE, never against a literal y. NowUI's vertex
+            // positions carry its own sign and origin conventions (see this file's header), so the same picture
+            // stretched into the same box gives the box's true centre and the contained one must share it.
+            var reference = new TestFrame();
+            int referenceHandle = reference.Intern(url);
+            reference.Op(Abi.Op("IMAGE"),
+                TestFrame.F(0f), TestFrame.F(0f), TestFrame.F(100f), TestFrame.F(100f),
+                referenceHandle, (int)BridgeImageFit.Stretch);
+
+            Vertices(reference);
+            Rect full = BridgeTestHost.counting.geometry;
+
+            Assert.AreEqual(full.center.x, box.center.x, 1f, "the contained picture was not centred horizontally");
+            Assert.AreEqual(full.center.y, box.center.y, 1f, "the contained picture was not centred vertically");
+
+            NowMarkdownImages.Reset();
+            UnityEngine.Object.DestroyImmediate(texture);
+        }
+
+        /// <summary>Cover keeps the whole box - it crops the picture instead of shrinking the shape.</summary>
+        [Test]
+        public void CoverKeepsTheWholeBoxWhereContainDoesNot()
+        {
+            RequireFixtures();
+            NowMarkdownImages.Reset();
+
+            const string url = "https://example.invalid/wide-cover.png";
+            var texture = new Texture2D(200, 100, TextureFormat.RGBA32, false);
+            NowMarkdownImages.SetTexture(url, texture);
+
+            var frame = new TestFrame();
+            int handle = frame.Intern(url);
+            frame.Op(Abi.Op("IMAGE"),
+                TestFrame.F(0f), TestFrame.F(0f), TestFrame.F(100f), TestFrame.F(100f),
+                handle, (int)BridgeImageFit.Cover);
+
+            Vertices(frame);
+            Rect box = BridgeTestHost.counting.geometry;
+            TestContext.WriteLine("the same picture covering the same box drew " + box);
+
+            Assert.AreEqual(100f, box.width, 6f);
+            Assert.AreEqual(100f, box.height, 6f,
+                "cover shrank the quad, which is contain's behaviour - cover fills the box and crops instead");
+
+            NowMarkdownImages.Reset();
+            UnityEngine.Object.DestroyImmediate(texture);
+        }
+
+        /// <summary>Stretch is the null mode: the whole box, and no cropping either.</summary>
+        [Test]
+        public void StretchFillsTheBoxAndSamplesTheWholeTexture()
+        {
+            RequireFixtures();
+            NowMarkdownImages.Reset();
+
+            const string url = "https://example.invalid/wide-stretch.png";
+            var texture = new Texture2D(200, 100, TextureFormat.RGBA32, false);
+            NowMarkdownImages.SetTexture(url, texture);
+
+            var frame = new TestFrame();
+            int handle = frame.Intern(url);
+            frame.Op(Abi.Op("IMAGE"),
+                TestFrame.F(0f), TestFrame.F(0f), TestFrame.F(100f), TestFrame.F(100f),
+                handle, (int)BridgeImageFit.Stretch);
+
+            Vertices(frame);
+            Rect box = BridgeTestHost.counting.geometry;
+
+            Assert.AreEqual(100f, box.width, 6f);
+            Assert.AreEqual(100f, box.height, 6f, "stretch should have filled the box");
+
+            NowMarkdownImages.Reset();
+            UnityEngine.Object.DestroyImmediate(texture);
         }
 
     }

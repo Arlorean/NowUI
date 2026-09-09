@@ -240,7 +240,7 @@ const SPEC = [
 
     // A rect with a picture in it. The second argument is a URL, resolved on the C# side by the project's image
     // cache; see the matching entry in Abi.cs for why that cache is the markdown one.
-    { name: 'IMAGE', sig: 'NowUI.Now.Rectangle(NowUI.NowRect)+NowUI.Markdown.NowMarkdownImages.GetState(System.String,UnityEngine.Texture2D&)', args: ['rect', 'str'] },
+    { name: 'IMAGE', sig: 'NowUI.Now.Rectangle(NowUI.NowRect)+NowUI.Markdown.NowMarkdownImages.GetState(System.String,UnityEngine.Texture2D&)', args: ['rect', 'str', 'enum'] },
 
     // A Lottie animation from a URL. The third argument is the playback position in seconds - see the matching
     // entry in Abi.cs for why the time is sent rather than read from a clock on the other side.
@@ -340,6 +340,13 @@ export const COLOR_TOKEN = {
 ///   circle                              cx, cy, r, -
 ///   capsule                             x0, y0, x1, y1    (radius in vec4.x)
 export const MASK_KIND = { rectangle: 0, roundedRect: 1, ellipse: 2, circle: 3, capsule: 4 };
+
+/// How ui.image fills its box. NOT a NowUI enum - the C# side has no such type, because the two interesting
+/// modes are reached by two different existing mechanisms rather than by one switch: `contain` is
+/// NowRectangle.preserveAspect (Now.cs:2279 shrinks and centres the QUAD, so the rounded corners follow the
+/// picture) and `cover` is a computed NowRectangle.uvRect (the quad keeps the whole box and the picture is
+/// cropped). BridgeImageFit in Abi.cs is the mirror of this table.
+export const IMAGE_FIT = { stretch: 0, contain: 1, cover: 2 };
 
 /// NowGradientKind (NowGradient.cs:10-15) and NowGradientSpread (:38-44).
 export const GRADIENT_KIND = { linear: 0, radial: 1, conic: 2 };

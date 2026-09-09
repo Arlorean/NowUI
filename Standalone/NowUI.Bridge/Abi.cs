@@ -16,6 +16,30 @@ using System.Text;
 
 namespace NowUI.Bridge
 {
+    /// <summary>How <c>ui.image</c> fills the box it was given. The mirror of IMAGE_FIT in abi.js.</summary>
+    /// <remarks>
+    /// <para>Declared here rather than in <c>Assets/NowUI</c> because NowUI HAS NO SUCH ENUM, and it does not
+    /// need one: the two interesting modes are already reachable, by two different mechanisms, and this type
+    /// exists only to name the choice on the wire.</para>
+    /// <list type="bullet">
+    /// <item><b>Contain</b> is <c>NowRectangle.preserveAspect</c>. Now.cs:2279 shrinks the QUAD to the source's
+    /// aspect and centres it in the rect, so the whole picture is visible and the rounded corners and outline
+    /// follow the PICTURE rather than the box.</item>
+    /// <item><b>Cover</b> is a computed <c>NowRectangle.uvRect</c>. The quad keeps the whole box - so corners and
+    /// outline follow the BOX - and the picture is cropped instead, which works because the shader keeps the
+    /// shape's signed distance field in full-quad space no matter where the UVs point
+    /// (UIRectangle.shader, "the shape SDF must stay in full-quad space").</item>
+    /// <item><b>Stretch</b> is neither: the picture is distorted to the box. It is the C# default, and it is
+    /// NOT the default here - see ui.image in nowui.js for why.</item>
+    /// </list>
+    /// </remarks>
+    public enum BridgeImageFit
+    {
+        Stretch = 0,
+        Contain = 1,
+        Cover = 2,
+    }
+
     /// <summary>The argument kinds of section 5.3, with the slot width each occupies.</summary>
     public enum ArgKind
     {
@@ -494,7 +518,7 @@ namespace NowUI.Bridge
                 // one download policy in the codebase, where a second one would eventually disagree with it.
                 new OpSpec("IMAGE",
                     "NowUI.Now.Rectangle(NowUI.NowRect)+NowUI.Markdown.NowMarkdownImages.GetState(System.String,UnityEngine.Texture2D&)", 0,
-                    new[] { ArgKind.Rect, ArgKind.Str }),
+                    new[] { ArgKind.Rect, ArgKind.Str, ArgKind.Enum }),
 
                 // A Lottie plays the same way an image draws: name a URL, get a cache entry, draw what is there
                 // this frame. NowLottieCache is the core's own asset cache - not an extension's - and it already

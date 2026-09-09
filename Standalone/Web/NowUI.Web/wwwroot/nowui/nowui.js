@@ -42,7 +42,7 @@ import {
     OPT_CAP, OPT_DASH, OPT_SEGMENTS, OPT_FILL, OPT_SPREAD, OPT_ANGLE,
     ALIGN, JUSTIFY, RECT_STYLE, TEXT_STYLE,
     PAINT_LITERAL, PAINT_TOKEN, COLOR_TOKEN,
-    MASK_KIND, GRADIENT_KIND, GRADIENT_SPREAD, LINE_CAP, SPLIT_AXIS, THEME_MODE,
+    MASK_KIND, GRADIENT_KIND, GRADIENT_SPREAD, LINE_CAP, SPLIT_AXIS, THEME_MODE, IMAGE_FIT,
 } from './abi.js';
 
 import { NowUIAuthorError } from './trie.js';
@@ -737,7 +737,10 @@ const RECT_OPTIONS = ['color', 'stroke', 'strokeColor', 'radius', 'blur', 'style
 /// ui.image: a rect's geometry options, minus the ones that would fight the picture. No `style`, because a
 /// theme style sets a colour and an image's colour is its pixels; no `blur`, because the blur is the shape's
 /// edge falloff and it would fray the picture rather than soften it. `color` survives as a deliberate tint.
-const IMAGE_OPTIONS = ['color', 'stroke', 'strokeColor', 'radius'];
+///
+/// `fit` is permitted here but carries no option flag: ui.image reads it and sends it as a positional enum, the
+/// same arrangement `kind` has on ui.gradient.
+const IMAGE_OPTIONS = ['color', 'stroke', 'strokeColor', 'radius', 'fit'];
 
 /// ui.lottie: a tint, and the playback position. Nothing else - a Lottie draws its own shapes, so a stroke, a
 /// radius or a style would have nothing to apply to.
@@ -1266,16 +1269,38 @@ export const ui = {
     /// around a hole, and says why on the console once rather than once per frame.
     ///
     /// `box` is [x, y, width, height], canvas-local inside ui.canvas and screen-space outside it - the same rule
-    /// ui.rect follows. The image is stretched to the box; there is no fit mode yet, so size the box to the
-    /// aspect you want.
+    /// ui.rect follows.
+    ///
+    /// `fit` decides how the picture meets the box, and DEFAULTS TO 'contain' so a photograph is never silently
+    /// squashed:
+    ///
+    ///   'contain'  the whole picture, centred, letterboxed in the box. The drawn shape shrinks to the picture,
+    ///              so `radius` and `stroke` follow the PICTURE's edges and the leftover space is empty.
+    ///   'cover'    the box is filled and the picture is cropped, centred, on whichever axis has spare. The
+    ///              shape stays the full box, so `radius` and `stroke` follow the BOX.
+    ///   'stretch'  the picture is distorted to the box. Nothing is cropped and nothing is left empty.
+    ///
+    /// Which one you want is usually decided by the corners: a rounded avatar wants 'cover', an illustration
+    /// with its own margins wants 'contain'.
     image(box, url, opts) {
         geomReset();
         geomBox(box, 'ui.image', 'box');
+
+        // THE DEFAULT IS `contain`, not `stretch`, and that is a deliberate disagreement with the C# default.
+        // NowRectangle.preserveAspect is false because a NowRectangle is usually a SHAPE that happens to carry a
+        // texture - a nine-slice, a ramp, an atlas cell - where stretching is the point. ui.image is the other
+        // thing: an author who writes a URL means "show me this picture", and the failure mode of stretching is a
+        // silently squashed photograph that looks like a rendering bug rather than a choice. `fit: 'stretch'`
+        // is one word away when the distortion IS the intent.
+        const fit = opts && opts.fit !== undefined
+            ? enumValue(IMAGE_FIT, opts.fit, 'image fit')
+            : IMAGE_FIT.contain;
 
         emitOptions(encodeOptions(opts, undefined, IMAGE_OPTIONS, 'ui.image'));
         W.op(OPS.IMAGE);
         geomFlush();
         W.i32(W.str(absoluteUrl(url, 'ui.image')));
+        W.i32(fit);
     },
 
     /// A Lottie animation from a URL, played into `box`.

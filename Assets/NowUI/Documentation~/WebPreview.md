@@ -93,6 +93,26 @@ the layout keeps its shape; a Lottie draws nothing until it is there, because it
 is usually an accent rather than content. `ui.lottie` plays from the page clock
 on its own — pass `time` in seconds to drive it yourself.
 
+`ui.image` takes a **`fit`**, and it decides where the corners go as much as
+where the pixels go:
+
+| `fit` | the picture | the shape `radius` and `stroke` follow |
+| --- | --- | --- |
+| `'contain'` (default) | whole picture, centred, letterboxed | the **picture** — the quad shrinks to the source's aspect |
+| `'cover'` | fills the box, cropped centrally on one axis | the **box** — the quad is unchanged, the UVs move |
+| `'stretch'` | distorted to the box | the box |
+
+The default is `contain` rather than `stretch` on purpose: an author who writes
+a URL means "show me this picture", and a silently squashed photograph reads as
+a rendering bug. A rounded avatar usually wants `'cover'`; an illustration that
+carries its own margins wants `'contain'`.
+
+Neither mode is new machinery. `contain` is `NowRectangle.preserveAspect`, which
+NowUI has always had (`Now.cs:2279` shrinks and centres the quad), and `cover`
+is a `uvRect` computed from the two aspect ratios — which works without
+deforming the rounded corners because the shader keeps the shape's distance
+field in full-quad space no matter where the UVs point.
+
 What it does not: arbitrary transforms, SDF, the node graph, markdown and the
 code editor. Those are Unity-side only.
 

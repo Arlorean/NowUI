@@ -1449,6 +1449,19 @@ namespace NowUI.Bridge
             {
                 rect = rect.SetTexture(texture)
                     .SetColor(o.Has(Abi.OptColor) ? o.FillColor(theme, NowColorToken.Text) : Color.white);
+
+                switch ((BridgeImageFit)m_Recorder.Slot(args + 5))
+                {
+                    case BridgeImageFit.Contain:
+                        // One flag, because NowUI already does this: Now.cs:2279 shrinks the quad to the
+                        // source's aspect and centres it. Nothing to compute here.
+                        rect = rect.SetPreserveAspect(true);
+                        break;
+
+                    case BridgeImageFit.Cover:
+                        rect = rect.SetUV(CoverUV(texture, where));
+                        break;
+                }
             }
             else
             {
@@ -1462,6 +1475,44 @@ namespace NowUI.Bridge
             if (o.Has(Abi.OptStrokeColor)) rect = rect.SetOutlineColor(o.StrokeColor(theme, NowColorToken.Border));
 
             rect.Draw();
+        }
+
+        /// <summary>
+        /// The texture sub-rectangle that makes a picture COVER a box: centred, cropped on whichever axis has
+        /// spare, and never distorted.
+        /// </summary>
+        /// <remarks>
+        /// <para>This is the one fit mode NowUI does not already implement, and the reason is that it cannot be
+        /// a flag: cropping needs the SOURCE's pixel dimensions, which are only known once the texture has
+        /// actually arrived. <c>preserveAspect</c> can be set before then because the renderer resolves it at
+        /// draw time; a uvRect cannot.</para>
+        /// <para>Worked example, because contain and cover are opposites and easy to swap: a 200x100 source in a
+        /// 100x100 box has sourceAspect 2 and boxAspect 1. boxAspect &lt; sourceAspect, so the box is the
+        /// narrower shape and the crop is horizontal: keep 1/2 of the width, offset by 1/4, giving a 100x100
+        /// region of the source that fills the box exactly. Contain would instead have drawn 100x50 and left
+        /// two empty bands.</para>
+        /// <para>The result is always centred. An anchor option would be the natural next thing to want - "crop
+        /// to the top" is what a portrait usually needs - and is deliberately not invented here.</para>
+        /// </remarks>
+        private static Vector4 CoverUV(Texture2D texture, NowRect box)
+        {
+            // A degenerate box or texture has no aspect to preserve; the full range is the honest answer and it
+            // makes cover behave exactly like stretch rather than dividing by zero.
+            if (texture.width <= 0 || texture.height <= 0 || box.width <= 0f || box.height <= 0f)
+                return new Vector4(0f, 0f, 1f, 1f);
+
+            float sourceAspect = (float)texture.width / texture.height;
+            float boxAspect = box.width / box.height;
+
+            if (boxAspect > sourceAspect)
+            {
+                // The box is the wider shape, so the full width is used and the height is cropped.
+                float keep = sourceAspect / boxAspect;
+                return new Vector4(0f, (1f - keep) * 0.5f, 1f, keep);
+            }
+
+            float keepWidth = boxAspect / sourceAspect;
+            return new Vector4((1f - keepWidth) * 0.5f, 0f, keepWidth, 1f);
         }
 
         /// <summary>
