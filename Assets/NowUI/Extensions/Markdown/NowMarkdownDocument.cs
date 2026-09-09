@@ -219,6 +219,52 @@ namespace NowUI.Markdown
             return DrawResolved(rect, embeds ?? _embeds, id);
         }
 
+        /// <summary>
+        /// Whether an op that can only paint inside <paramref name="paint"/> cannot reach the screen at all.
+        /// </summary>
+        /// <remarks>
+        /// <para>WHY THIS IS A WHITELIST AND NOT A PREDICATE AT THE TOP OF THE LOOP. Only three of the seven op
+        /// kinds are purely visual. The other four would each break in a different way:</para>
+        /// <list type="bullet">
+        /// <item><b>Embed</b> runs the caller's renderer live and feeds the measured height back into layout. An
+        /// embed never inside the clip is never measured, so it keeps its one-line placeholder and the whole
+        /// document's height - and the scroll range built on it - stays wrong until the reader happens to scroll
+        /// there, at which point everything below it jumps.</item>
+        /// <item><b>SelectionLayer</b> carries NO RECT AT ALL: its op.rect is default, so a rect test against it
+        /// is a test against (0,0,0,0) and culls every highlight in the document. This is the trap that makes
+        /// the obvious one-line version of this change silently disable text selection.</item>
+        /// <item><b>CopyButton</b> paints from hoverRect rather than op.rect, so op.rect is not a conservative
+        /// bound for it, and skipping it de-registers the button from focus.</item>
+        /// <item><b>Image</b> carries cache keepalive and load bookkeeping; it is rare enough that always
+        /// running it costs nothing worth having.</item>
+        /// </list>
+        /// <para>WHAT THIS ACTUALLY BUYS, stated honestly: the renderer ALREADY rejects a fully-masked text draw
+        /// before shaping any glyphs ("scrolled-out content costs nothing", Now.DrawString). So this does not
+        /// save the drawing - that was already saved. It saves the per-op work in front of it: the rect
+        /// construction, the style setup and the call, thousands of times per frame for a document whose visible
+        /// share is a few percent.</para>
+        /// <para>The probe is transformed and outset before it is tested. Transformed because Now.Mask stores
+        /// its bounds already transformed while op rects are authored-space, so under any transform scope the
+        /// two are in different spaces and a raw comparison culls the wrong things. Outset because the text path
+        /// masks with target.Outset(4f) - glyphs legitimately overhang their advance box, and a cull tighter
+        /// than the renderer's own mask would clip descenders at the viewport edge.</para>
+        /// <para>With no ambient mask at all this is a no-op, which preserves the documented contract that a
+        /// document drawn without one overflows its rect rather than being clipped to it.</para>
+        /// </remarks>
+        static bool CulledByMask(NowRect paint)
+        {
+            if (Now.ambientMaskCount == 0)
+                return false;
+
+            // OUTSET AFTER THE TRANSFORM, not before. The 4 units are a SCREEN-space margin - they exist to
+            // match the outset the text path masks with, so a glyph's descender at the viewport edge is not
+            // clipped by a cull tighter than the renderer's own. Outsetting first would put the margin through
+            // the transform too, and under a shrinking scale it would arrive smaller than 4 - which is exactly
+            // the case where content starts disappearing at the edge and nobody can reproduce it.
+            NowRect probe = Now.hasTransform ? Now.TransformScreenRect(paint) : paint;
+            return Now.ApplyAmbientMask(probe.Outset(4f)).isEmpty;
+        }
+
         internal NowMarkdownResult DrawResolved(
             NowRect rect,
             NowMarkdownEmbedSet embeds,
@@ -261,6 +307,12 @@ namespace NowUI.Markdown
 
                     var probe = new NowRect(rect.x + op.rect.x, rect.y + op.rect.y, op.rect.width, op.rect.height);
 
+                    // The same cull as the draw loop, and safe for the same reason it is useful: the pointer
+                    // can only be inside the mask, so a link word outside it can never be hovered. Skipping it
+                    // is not an optimisation that changes an answer - it is the answer, reached sooner.
+                    if (CulledByMask(probe))
+                        continue;
+
                     if (NowInput.IsHovered(probe))
                         _linkHoverOp[op.link] = i;
                 }
@@ -293,6 +345,13 @@ namespace NowUI.Markdown
                 var op = _ops[i];
                 var target = new NowRect(rect.x + op.rect.x, rect.y + op.rect.y, op.rect.width, op.rect.height);
                 bool hovered = op.link >= 0 && op.link < _linkHoverOp.Count && _linkHoverOp[op.link] >= 0;
+
+                // Three kinds only, and the whitelist is the whole safety argument - see CulledByMask.
+                if ((op.kind == OpKind.Text || op.kind == OpKind.Fill || op.kind == OpKind.Line) &&
+                    CulledByMask(target))
+                {
+                    continue;
+                }
 
                 switch (op.kind)
                 {

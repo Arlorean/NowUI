@@ -1077,5 +1077,43 @@ namespace NowUI.Bridge.Tests
                 "an untouched document reported a click, so every frame would look like a navigation");
         }
 
+        /// <summary>
+        /// A rule given `grow` draws, and does not take the rest of the frame with it.
+        /// </summary>
+        /// <remarks>
+        /// Written because it did not. `ui.rule({ grow: 1 })` accepted the option on the JavaScript side - grow
+        /// is in KNOWN_OPTIONS, so nothing refused it - and then every control after the rule vanished from the
+        /// frame. A rule already stretches inside a row, so the option was pointless; being pointless is not the
+        /// same as being allowed to blank the page.
+        /// </remarks>
+        [Test]
+        public void ARuleWithGrowStillDrawsAndDoesNotEatTheFrame()
+        {
+            RequireFixtures();
+
+            // INSIDE A ROW, which is where a rule with grow is actually written - a section heading followed by
+            // a hairline. The row makes X the main axis, so it is the stretch-width default that collides with
+            // grow, and that is the collision this guards.
+            var frame = new TestFrame();
+            int seg = frame.Intern("row");
+            frame.Op(Abi.Op("ROW"), 1, seg);
+            frame.Op(Abi.Op("OPTS"), TestFrame.Args(Abi.OptGrow, TestFrame.F(1f), 0));
+            frame.Op(Abi.Op("RULE"));
+            frame.ScopeClose();
+            frame.Op(Abi.Op("OPTS"), ColorOpts(Color.white));
+            frame.Op(Abi.Op("RECT"), TestFrame.V4(0f, 0f, 40f, 40f));
+
+            List<string> log;
+            Run(frame, out log);
+
+            CollectionAssert.IsEmpty(log, "the decode reported something, so the frame did not survive the rule");
+            Assert.Greater(BridgeTestHost.counting.vertices, 0L,
+                "nothing tessellated at all after a rule with grow");
+
+            Rect box = BridgeTestHost.counting.geometry;
+            Assert.GreaterOrEqual(box.width, 30f,
+                "the rectangle AFTER the rule never drew, so the rule swallowed the rest of the frame");
+        }
+
     }
 }

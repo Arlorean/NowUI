@@ -555,8 +555,8 @@ function emitOptions(payload) {
 }
 
 /// The two-line pattern every function below starts with: encode, then emit, then the op itself.
-function options(opts, forcedTextStyle) {
-    emitOptions(encodeOptions(opts, forcedTextStyle));
+function options(opts, forcedTextStyle, allowed, fn) {
+    emitOptions(encodeOptions(opts, forcedTextStyle, allowed, fn));
 }
 
 /// A DRAWING's options, which are not quite a control's. Section 2.7 maps `style` to
@@ -741,6 +741,10 @@ const RECT_OPTIONS = ['color', 'stroke', 'strokeColor', 'radius', 'blur', 'style
 /// `fit` is permitted here but carries no option flag: ui.image reads it and sends it as a positional enum, the
 /// same arrangement `kind` has on ui.gradient.
 const IMAGE_OPTIONS = ['color', 'stroke', 'strokeColor', 'radius', 'fit'];
+
+/// ui.rule: what a hairline can be told. No `grow` - see ui.rule for why it is refused rather than
+/// ignored - and no `gap`, `align` or `justify`, which belong to a container and a rule is not one.
+const RULE_OPTIONS = ['width', 'height', 'minWidth', 'maxWidth', 'padding', 'style', 'color', 'key'];
 
 /// ui.lottie: a tint, and the playback position. Nothing else - a Lottie draws its own shapes, so a stroke, a
 /// radius or a style would have nothing to apply to.
@@ -1226,8 +1230,14 @@ export const ui = {
         W.f32(resolved);
     },
 
+    /// A hairline. Inside a row it fills whatever width is left; inside a column it spans the full width.
+    ///
+    /// `grow` is REFUSED rather than accepted, because a rule already stretches and the option has nowhere to
+    /// go: it collides with the rule's own sizing, and NowLayout answers a growing element that also has a
+    /// fixed main-axis size by THROWING - out of the decode, taking every control after the rule with it. An
+    /// option that silently blanks the rest of the page is worse than one that says no.
     rule(opts) {
-        options(opts);
+        options(opts, undefined, RULE_OPTIONS, 'ui.rule');
         W.op(OPS.RULE);
     },
 

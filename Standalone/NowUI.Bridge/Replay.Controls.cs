@@ -766,8 +766,22 @@ namespace NowUI.Bridge
             BridgeOptions o = TakeOptions();
             NowLayoutOptions layout = o.ToLayout(container: true);
 
-            if (!o.Has(Abi.OptHeight)) layout = layout.SetHeight(1f);
-            if (!o.Has(Abi.OptWidth)) layout = layout.SetStretchWidth();
+            // Both defaults step aside for grow, and for the same reason: the bridge cannot see whether
+            // its parent is a row or a column, so it cannot know WHICH of the two is the main axis and
+            // would collide. Standing aside on both is the only answer that cannot throw. A rule that
+            // grows then has no thickness of its own, which is why the surface refuses the option
+            // outright - this is the net under that, not the fix.
+            if (!o.Has(Abi.OptHeight) && !o.Has(Abi.OptGrow)) layout = layout.SetHeight(1f);
+
+            // STRETCH IS A DEFAULT, AND `grow` IS ALSO AN ANSWER TO THE SAME QUESTION. NowLayout refuses an
+            // element that both grows and has a fixed main-axis size ("A growing element cannot also have a
+            // fixed size on its parent's main axis", NowLayout.cs:2815), and it refuses it by THROWING - which
+            // here means out of the decode, taking every control after the rule with it. `ui.rule({ grow: 1 })`
+            // therefore blanked the rest of the frame, with nothing refused by name and nothing in the console.
+            //
+            // A rule already fills the row it is in, so grow was never needed; but an option that is accepted by
+            // the surface must not be able to do that. Letting the author's grow win costs one condition.
+            if (!o.Has(Abi.OptWidth) && !o.Has(Abi.OptGrow)) layout = layout.SetStretchWidth();
 
             // A rule is a drawing and holds no state, so the container it opens takes the enclosing rid - the
             // scope frame it would otherwise need does not exist. It is opened and closed in one statement pair
