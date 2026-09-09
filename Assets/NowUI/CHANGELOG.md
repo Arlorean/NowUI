@@ -1,3 +1,27 @@
+# [1.14.0](https://github.com/BlenMiner/NowUI/compare/nowui-v1.13.0...nowui-v1.14.0) (2026-09-09)
+
+
+### Bug Fixes
+
+* drain popup latches on every live pass and guard the file picker commit ([4747f32](https://github.com/BlenMiner/NowUI/commit/4747f3265809ac5df77de07ca8faa93e2bf51f5c))
+* only let a page-owning theme set the clear colour, and stop the drawing sample labelling controls that have none ([d2b20b9](https://github.com/BlenMiner/NowUI/commit/d2b20b91d6f1f985b2c3b6b16ae3fd75c8360c72))
+* refuse options and values that would be silently ignored, and clear to the theme the frame actually used ([4f429f1](https://github.com/BlenMiner/NowUI/commit/4f429f1810f8b72264775657023080e9162a0542))
+* report time picker changes from the live pass, not the discarded measure pass ([1edd44c](https://github.com/BlenMiner/NowUI/commit/1edd44c596ca63d2be9f4b6089414d6231db4ff0))
+
+
+### Features
+
+* browser host, WebGL2 backend and JavaScript API for NowUI ([d6d4a7d](https://github.com/BlenMiner/NowUI/commit/d6d4a7d99e609f90a891d487e9fb2cb05bb4de00))
+* engine-free build of the NowUI core ([040d11d](https://github.com/BlenMiner/NowUI/commit/040d11d8244744d67f1c36561751f47ea102a40b))
+* ship a precompiled browser bundle in the package and give the JavaScript surface drawing primitives ([7d94cb6](https://github.com/BlenMiner/NowUI/commit/7d94cb669cc4dfde00e4a8109d9cee4e58e297d3))
+
+
+### Performance Improvements
+
+* compress the shipped web bundle and drop unread font tables, from 8.17 MB to 2.35 MB ([8496434](https://github.com/BlenMiner/NowUI/commit/8496434f01195b30c643470fb057a714c7255f54))
+* halve the glyph cell and drop the pre-baked atlases, bundle 3.42MB to 2.51MB and first frame 426ms to 108ms ([775d1ff](https://github.com/BlenMiner/NowUI/commit/775d1fff7a290b2115f4b547782a2a35e13a8fa8))
+* pre-bake ASCII atlas pages and link the native msdf rasterizer, first frame 2061ms to 474ms ([a474c37](https://github.com/BlenMiner/NowUI/commit/a474c3722ce4b5714317afb282cdb2d525f71947))
+
 # [1.13.0](https://github.com/BlenMiner/NowUI/compare/nowui-v1.12.0...nowui-v1.13.0) (2026-09-08)
 
 
