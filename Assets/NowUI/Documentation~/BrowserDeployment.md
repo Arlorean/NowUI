@@ -10,9 +10,9 @@ and animation recording.
 Use the package launcher from the Unity project directory:
 
 ```powershell
-pwsh -File <package-root>/Native~/nowui.ps1 publish NowUI/apps/Demo/Preview.csproj --target web --output NowUI/sites/Demo
-pwsh -File <package-root>/Native~/nowui.ps1 preview NowUI/apps/Demo/Preview.csproj --target web
-pwsh -File <package-root>/Native~/nowui.ps1 serve NowUI/sites/Demo
+pwsh -File "<package-root>/Native~/nowui.ps1" publish NowUI/apps/Demo/Preview.csproj --target web --output NowUI/sites/Demo
+pwsh -File "<package-root>/Native~/nowui.ps1" preview NowUI/apps/Demo/Preview.csproj --target web
+pwsh -File "<package-root>/Native~/nowui.ps1" serve NowUI/sites/Demo
 ```
 
 In a source checkout, `Tools/NowUI-Native.ps1` accepts the same arguments.
@@ -30,6 +30,22 @@ asset hot reload: run the command again after editing.
 
 `serve <site-directory>` opens an already published site without rebuilding.
 It accepts the same `--port` and `--no-open` options.
+Keep the server process running while the user uses the page. Open the emitted
+URL and verify startup and the requested interactions before reporting a working
+browser preview. Publishing creates local files; deploying them to a public host
+is a separate action within the user's requested scope.
+
+## Download size and compilation
+
+The generated browser host is always a trimmed Release build. `--configuration`
+selects the scene assembly's build configuration. Start without `--aot` when
+download size matters. AOT can improve execution speed for some workloads, but
+adds build time and can substantially increase the download; benchmark the
+actual scene before choosing it.
+
+For scale, the .NET 9 starter has measured about 3.7 MB of Brotli-compressed
+initial response bodies, and about 5.5 MB with AOT. These are example measurements
+with the bundled fonts, not fixed sizes or a size guarantee for other scenes.
 
 The output includes smaller Brotli/GZip variants of compressible runtime and
 asset files. The local preview server negotiates these automatically. A deployed
@@ -60,10 +76,10 @@ site, so measure network transfers separately when budgeting initial downloads.
 | --- | --- |
 | `--scene <type>` | Select an `INowScene` when the assembly contains several. |
 | `--unity-project <directory>` | Find project assets when the scene is outside its Unity project. |
-| `--configuration <name>` | Select the C# build configuration. |
+| `--configuration <name>` | Select Debug or Release for the scene assembly; the browser host remains Release. |
 | `--no-build` | Reuse the existing scene assembly; the browser app still needs a build. |
 | `--title <text>` | Set the page title. |
-| `--aot` | Request ahead-of-time C# compilation, adding a longer build step. |
+| `--aot` | Request ahead-of-time C# compilation; benchmark execution speed against the longer build and larger download. |
 | `--all-assets` | Include all supported project assets when their paths are fully computed. |
 | `--native-symbols` | Include the optional native function-name map for diagnostics. |
 
@@ -88,6 +104,12 @@ preloads them into a virtual filesystem, then uses the same `NowFileResources`
 and `NowProjectAssets` parsers as the native host. Resolved package paths become
 `Packages/<package-name>/...`; the project lock file and local machine paths
 are not needed in the deployed application.
+
+All staged local assets load before the application starts, including all four
+built-in Noto Sans styles (regular, bold, italic and bold italic) and selected
+project fonts. The current host does not fetch local fonts on demand or use
+CSS/system fonts: NowUI reads font bytes and renders its own glyphs. Remote
+Lottie and Markdown downloads described below are a separate asynchronous path.
 
 Supported source images, sprites, fonts, themes and Lottie formats follow the
 [native asset contract](NativePreview.md#use-the-projects-assets). The build

@@ -1,4 +1,4 @@
 interface:
   display_name: "NowUI"
-  short_description: "Build C# interfaces and native previews with NowUI"
+  short_description: "Build C# UI, native previews and optional web targets"
   default_prompt: "Use $nowui to build and preview this C# interface with the installed NowUI package."

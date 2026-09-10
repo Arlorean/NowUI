@@ -78,7 +78,7 @@ namespace NowUI.Editor
                         WriteReceipt(destinationRoot, packageVersion, sourceHash);
                         ShowSuccess(
                             "The NowUI agent skill is already up to date.\n\n" +
-                            destinationRoot);
+                            "Project skill:\n" + destinationRoot);
                         return;
                     }
 
@@ -95,8 +95,10 @@ namespace NowUI.Editor
                             "NowUI Agent Skill Was Not Replaced",
                             "An existing skill differs from the copy previously installed by NowUI, " +
                             "or has no NowUI install receipt. It may contain local changes, so the installer " +
-                            "left it untouched.\n\nMove or remove the existing folder, then run the menu command again.\n\n" +
-                            destinationRoot,
+                            "left it untouched.\n\nCompare the packaged skill:\n" + sourceRoot +
+                            "\n\nWith your project copy:\n" + destinationRoot +
+                            "\n\nManually merge the changes you want into the project copy, preserving your " +
+                            "custom instructions. Locally changed copies remain protected from automatic replacement.",
                             "Reveal Existing Skill",
                             "Close");
 
@@ -136,7 +138,7 @@ namespace NowUI.Editor
                 string result = isUpdate ? "updated" : "installed";
                 string message =
                     "The NowUI agent skill was " + result + " successfully.\n\n" +
-                    "Destination:\n" + destinationRoot;
+                    "Project skill:\n" + destinationRoot;
 
                 if (!string.IsNullOrEmpty(retainedBackup))
                 {
@@ -182,8 +184,12 @@ namespace NowUI.Editor
                 EditorUtility.DisplayDialog(
                     "NowUI Project Instructions",
                     "The NowUI guidance block was copied to the clipboard.\n\n" +
-                    "Paste it into AGENTS.md at the Unity project root. Create that file if it does not exist. " +
-                    "This command does not change project files automatically.",
+                    "Merge the marked nowui-agent-guidance block into AGENTS.md at the Unity project root:\n" +
+                    Path.Combine(GetProjectRoot(), "AGENTS.md") +
+                    "\n\nCreate the file if needed. Update an existing NowUI block instead of adding a duplicate, " +
+                    "and preserve all other project instructions. Project files change only when you paste or merge.\n\n" +
+                    "This block makes NowUI the default for new custom Unity UI while preserving established " +
+                    "framework choices. Use Install Agent Skill separately to add the $nowui skill.",
                     "OK");
             }
             catch (Exception exception)
@@ -487,7 +493,16 @@ namespace NowUI.Editor
 
         static void ShowSuccess(string message)
         {
-            EditorUtility.DisplayDialog("NowUI Agent Skill", message, "OK");
+            EditorUtility.DisplayDialog(
+                "NowUI Agent Skill",
+                message +
+                "\n\nOpen your coding agent in this Unity project and use $nowui in your request. " +
+                "If the skill is not visible, start a fresh task or restart the agent.\n\n" +
+                "To make NowUI the project default for new custom Unity UI, also run:\n" +
+                CopyInstructionsMenuPath +
+                "\nThen merge that block into the project's AGENTS.md. Installing the skill does not set " +
+                "the project default automatically.",
+                "OK");
         }
 
         static void ShowError(string message)

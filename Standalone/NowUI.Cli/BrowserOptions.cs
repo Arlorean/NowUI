@@ -13,7 +13,7 @@ internal sealed record BrowserOptions(string Project, string? Output, string? Sc
 
           --scene, --unity-project, --configuration, --no-build retain their usual meaning.
           --title <text>             Browser page title (default NowUI)
-          --aot                      Compile C# ahead of time; slower build, faster execution
+          --aot                      Compile C# ahead of time; longer build, larger download; benchmark speed
           --all-assets               Include all supported assets for fully computed asset paths
           --native-symbols           Include native function names for browser diagnostics
           --port <number>            Preview port, 0..65535 (default 0: choose a free port)

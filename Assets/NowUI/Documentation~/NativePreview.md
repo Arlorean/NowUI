@@ -10,11 +10,13 @@ remains the default workflow.
 
 ## Start an app
 
-From the Unity project directory, use the package launcher:
+From the Unity project directory, use the package launcher. Replace
+`<package-root>` with the active package directory identified by the
+[AI guide](AI_GUIDE.md#source-of-truth); quote paths that contain spaces.
 
 ```powershell
-pwsh -File <package-root>/Native~/nowui.ps1 init NowUI/apps/Demo
-pwsh -File <package-root>/Native~/nowui.ps1 preview NowUI/apps/Demo/Preview.csproj
+pwsh -File "<package-root>/Native~/nowui.ps1" init NowUI/apps/Demo
+pwsh -File "<package-root>/Native~/nowui.ps1" preview NowUI/apps/Demo/Preview.csproj
 ```
 
 In the NowUI source checkout, `Tools/NowUI-Native.ps1` accepts the same arguments.
@@ -32,6 +34,13 @@ instance is preferable. Reload resets application state.
 The host owns frame timing, input and `Now.StartUI`. Scene code implements
 `INowScene.Draw(NowRect view)` and uses the regular NowUI builders. Keep reusable
 drawing methods separate from the native adapter so Unity hosts can call them too.
+
+Keep the preview process running while the user interacts with the app. When
+using an agent execution tool, use its persistent session or background-process
+support so waiting for the window to close does not block the conversation.
+Check startup diagnostics and exercise the requested interaction before reporting
+the app as working. `--frames` closes the window after a bounded smoke check;
+leave it off for a preview the user should keep using.
 
 ## Use the project's assets
 
@@ -69,21 +78,32 @@ regular NowUI animation APIs, and use `preview` to interact with it.
 Capture a still at a reproducible time:
 
 ```powershell
-pwsh -File <package-root>/Native~/nowui.ps1 render NowUI/apps/Demo/Preview.csproj --time 0.5 --output NowUI/captures/demo.png
+pwsh -File "<package-root>/Native~/nowui.ps1" render NowUI/apps/Demo/Preview.csproj --time 0.5 --output NowUI/captures/demo.png
 ```
 
 Capture a deterministic sequence:
 
 ```powershell
-pwsh -File <package-root>/Native~/nowui.ps1 animate NowUI/apps/Demo/Preview.csproj --duration 2 --fps 30 --output NowUI/captures/demo-frames
+pwsh -File "<package-root>/Native~/nowui.ps1" animate NowUI/apps/Demo/Preview.csproj --duration 2 --fps 30 --output NowUI/captures/demo-frames
 ```
 
 The frame directory is published only after capture succeeds and must not already
-exist. It includes timing metadata. Use `--input <replay.json>` to replay pointer,
-keyboard, text and scrolling events in `render` or `animate`. The source checkout's
-`Tools/Encode-NowUINativeAnimation.ps1 -Frames <directory> -Output demo.webp`
-helper can turn the sequence into an opaque animated WebP for sharing (Python 3
-with Pillow required only for encoding).
+exist. It includes timing metadata. To share a playable animation, encode the
+frames with the helper shipped beside the launcher:
+
+```powershell
+pwsh -File "<package-root>/Native~/encode-animation.ps1" -Frames NowUI/captures/demo-frames -Output NowUI/captures/demo.webp
+```
+
+This produces an opaque, infinitely looping WebP and requires Python 3 with
+Pillow. Use `-Python <executable>` to select an existing Python installation,
+or install Pillow into that interpreter with `python -m pip install Pillow`.
+Native preview and PNG capture do not require Python. The source checkout's
+`Tools/Encode-NowUINativeAnimation.ps1` forwards to the same packaged helper.
+
+Inspect the resulting PNG or WebP and open or attach it with the agent's media
+tools. A successful build or a directory of frames alone does not demonstrate
+that the requested image or playable animation was delivered.
 
 Choose capture size with `--width` and `--height`, select a scene with `--scene`,
 and select `--color-space gamma|linear` when comparing with a Unity project.
@@ -91,6 +111,30 @@ Remote assets settle at the capture's fixed animation time; `--load-timeout`
 sets the loading limit in seconds (default 30). Interactive previews load them
 asynchronously.
 Run `--help` for the installed CLI's exact options.
+
+### Replay input
+
+Use `--input <replay.json>` in `render` or `animate` to reproduce pointer,
+keyboard, text and scrolling events. The file is a JSON array with times in
+seconds and pointer coordinates in capture pixels. For example, save this as
+`NowUI/apps/Demo/replay.json` to click the generated starter's button:
+
+```json
+[
+  { "time": 0.2, "type": "click", "x": 60, "y": 130 }
+]
+```
+
+```powershell
+pwsh -File "<package-root>/Native~/nowui.ps1" render NowUI/apps/Demo/Preview.csproj --time 0.5 --input NowUI/apps/Demo/replay.json --output NowUI/captures/clicked.png
+```
+
+Other event types are `move`, `down`, `up`, `type` (with `text`), `scroll`
+(with `deltaX`/`deltaY`), and `keyDown`/`keyUp` (with a named `key`, such as
+`Tab`, `Enter` or `LeftShift`). Mouse `button` defaults to 0 (left); 1 is right,
+2 middle, 3 back and 4 forward. Positive scroll Y moves up in wheel notches.
+A `click` presses and releases on consecutive frames. Keep all events within
+the captured time range and leave a later captured frame for the release.
 
 ## Validation boundaries
 

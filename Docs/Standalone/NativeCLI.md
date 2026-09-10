@@ -105,7 +105,9 @@ the regular NowUI animation APIs. Capture stills or a reproducible frame sequenc
 ```
 
 The encoding helper requires Python 3 with Pillow and produces an opaque looping
-WebP. The native app and PNG capture do not depend on Python. `animate` writes
+WebP. Both source encoder entry points forward to the implementation shipped in
+`Assets/NowUI/Native~`; installed consumers use `Native~/encode-animation.ps1`
+without this checkout. The native app and PNG capture do not depend on Python. `animate` writes
 `frame-000000.png` onward plus `animation.json` with size, rate, frame count,
 duration, color space and filename pattern. The output directory must be new;
 it is published atomically after all frames succeed. Still failures preserve
@@ -178,3 +180,8 @@ scaffolding, deterministic replay/recording, failure preservation and actual GPU
 pixels for both color spaces, glass, SDF and text. Graphics tests skip unless
 explicitly enabled. The [Unity rendering comparison](NativeRenderingComparison.md)
 records the pixel alignment investigation and optional baseline snapping.
+
+For animation encoder changes, run `python Tools/Standalone/test_animation_encoder.py`
+with Python/Pillow and PowerShell 7. These tests copy the packaged scripts outside
+the checkout and check frame timing, opaque looping output, compatibility wrappers
+and preservation of an existing output after a failed encode.
