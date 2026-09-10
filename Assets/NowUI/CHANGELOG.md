@@ -1,3 +1,15 @@
+# [1.18.0](https://github.com/BlenMiner/NowUI/compare/nowui-v1.17.0...nowui-v1.18.0) (2026-09-10)
+
+
+### Features
+
+* change wasm for native C# (not dependent on Unity3D) ([4d46f58](https://github.com/BlenMiner/NowUI/commit/4d46f582ae2f09c977388df53c2f531dd072b41f))
+
+
+### Performance Improvements
+
+* **web:** hand WebGL a view onto the wasm heap instead of a copy of it ([435ca1e](https://github.com/BlenMiner/NowUI/commit/435ca1e3b1a9ae7f739f6df9ac30becbb24f6cce))
+
 # [1.17.0](https://github.com/BlenMiner/NowUI/compare/nowui-v1.16.0...nowui-v1.17.0) (2026-09-10)
 
 
