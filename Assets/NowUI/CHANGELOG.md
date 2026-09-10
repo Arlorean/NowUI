@@ -1,3 +1,10 @@
+# [1.19.0](https://github.com/BlenMiner/NowUI/compare/nowui-v1.18.0...nowui-v1.19.0) (2026-09-10)
+
+
+### Features
+
+* NowUI CLI ([c76d800](https://github.com/BlenMiner/NowUI/commit/c76d8004bb136d5d61917d58ef0ee6727ecfcc4e))
+
 # [1.18.0](https://github.com/BlenMiner/NowUI/compare/nowui-v1.17.0...nowui-v1.18.0) (2026-09-10)
 
 
