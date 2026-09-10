@@ -6,7 +6,8 @@ if (-not $OutputRoot) { $OutputRoot = Join-Path $nativeRepository 'Assets/NowUI/
 $OutputRoot = [IO.Path]::GetFullPath($OutputRoot)
 $nativePackStage = Join-Path $nativeRepository ('artifacts/local/native-pack/' + [Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $nativePackStage -Force | Out-Null
-& dotnet pack (Join-Path $nativeRepository 'Standalone/NowUI.Cli/NowUI.Cli.csproj') -c Release -o $nativePackStage --nologo
+# An active preview can lock the usual CLI output. Build in this pack's own staging tree.
+& dotnet pack (Join-Path $nativeRepository 'Standalone/NowUI.Cli/NowUI.Cli.csproj') -c Release -o $nativePackStage --artifacts-path (Join-Path $nativePackStage 'build') --nologo
 if ($LASTEXITCODE -ne 0) { throw "Native tool pack failed ($LASTEXITCODE)." }
 $nativePackages = @(Get-ChildItem -LiteralPath $nativePackStage -Filter '*.nupkg' -File)
 if ($nativePackages.Count -ne 1) { throw 'Expected exactly one native tool package.' }
@@ -31,6 +32,8 @@ try {
         foreach ($nativeLibrary in @('nowui-msdf','nowui-vg','msdf-atlas-gen','msdfgen-core','msdfgen-ext')) {
             $required = "tools/net9.0/any/runtimes/$nativeRid/native/$nativePrefix$nativeLibrary$nativeSuffix"
             if (-not $nativeArchive.GetEntry($required)) { throw "Tool package is missing $required." }
+            $duplicate = "tools/net9.0/any/$nativePrefix$nativeLibrary$nativeSuffix"
+            if ($nativeArchive.GetEntry($duplicate)) { throw "Tool package contains a duplicate app-local native library: $duplicate." }
         }
     }
     if (Test-Path -LiteralPath (Join-Path $nativeRepository 'Assets/NowUI/Native~/browser/kit.json')) {

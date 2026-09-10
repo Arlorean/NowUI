@@ -71,10 +71,20 @@ namespace NowUI.Standalone.Tests
             Assert.IsNotNull(family.bold, "bold");
             Assert.IsNotNull(family.italic, "italic");
             Assert.IsNotNull(family.boldItalic, "boldItalic");
+            Assert.AreEqual("NotoSans-Regular.ttf", family.regular.name);
+            Assert.AreEqual("NotoSans-Bold.ttf", family.bold.name);
+            Assert.AreEqual("NotoSans-Italic.ttf", family.italic.name);
+            Assert.AreEqual("NotoSans-BoldItalic.ttf", family.boldItalic.name);
 
             NowFont resolved;
             Assert.IsTrue(family.TryResolveFont(NowFontStyle.Regular, out resolved));
             Assert.AreSame(family.regular, resolved);
+
+            Assert.IsTrue(family.TryResolveFont(NowFontStyle.Bold, out resolved));
+            Assert.AreSame(family.bold, resolved);
+
+            Assert.IsTrue(family.TryResolveFont(NowFontStyle.Italic, out resolved));
+            Assert.AreSame(family.italic, resolved);
 
             Assert.IsTrue(family.TryResolveFont(NowFontStyle.BoldItalic, out resolved));
             Assert.AreSame(family.boldItalic, resolved);
@@ -83,6 +93,11 @@ namespace NowUI.Standalone.Tests
             // sees the same shape it would for a family authored without fallbacks.
             Assert.IsNotNull(family.fallbacks);
             Assert.AreEqual(0, family.fallbacks.Count);
+            foreach (NowFont face in new[] { family.regular, family.bold, family.italic, family.boldItalic })
+            {
+                Assert.IsNotNull(face.fallbacks, face.name);
+                Assert.AreEqual(0, face.fallbacks.Count, face.name);
+            }
         }
 
         [Test]

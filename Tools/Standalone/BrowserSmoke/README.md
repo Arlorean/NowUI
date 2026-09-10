@@ -34,3 +34,11 @@ C# frame CPU samples after 120 warmup frames (median/p95 and startup time in
 `?time=0.5&dpr=1`. Captures preserve the WebGL drawing buffer; CPU timings are
 diagnostic and exclude GPU completion, so they are not a native/browser speed
 comparison. The optional CI job uses the asset-free scaffold smoke by default.
+
+`browser.json` also records the cold initial download in a fresh `en-US` browser
+context, before controls or the second capture page. Resource Timing reports each
+response's encoded and decoded body size and estimated transfer bytes including
+headers. Its buffer is enlarged and overflow fails the smoke instead of silently
+undercounting. These are same-origin measurements without network throttling;
+they are distinct from the complete-site totals in `nowui-size.json`, which also
+include unrequested ICU partitions, notices and other deployment files.

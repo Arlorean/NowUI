@@ -32,8 +32,12 @@ internal static class BrowserRunner
             throw new InvalidOperationException("The optional browser kit is missing. Install a complete NowUI CLI bundle, or run Tools/Build-NowUIBrowserKit.ps1 and rebuild the CLI.");
         string assembly = ProjectBuilder.Build(new RenderOptions(options.Project, "", options.Scene, 960, 640, 0,
             options.Configuration, options.NoBuild, UnityProject: options.UnityProject));
-        string sceneName;
-        using (var loaded = LoadedScene.Create(assembly, options.Scene)) sceneName = loaded.SceneType.FullName!;
+        SceneFactoryOptions sceneFactory;
+        using (var loaded = LoadedScene.Create(assembly, options.Scene))
+        {
+            sceneFactory = SceneFactoryOptions.FromType(loaded.SceneType);
+        }
+        string sceneName = sceneFactory.SceneName, sceneAssemblyName = sceneFactory.AssemblyName;
         var references = Dependencies(assembly, kit);
         string? unity = options.UnityProject ?? NowProjectAssets.FindProjectRoot(options.Project)
             ?? NowProjectAssets.FindProjectRoot(Environment.CurrentDirectory);
@@ -46,10 +50,10 @@ internal static class BrowserRunner
         var assets = BrowserAssets.Stage(unity, Path.Combine(AppContext.BaseDirectory, "NowUI", "Resources"),
             Path.Combine(work, "assets"), roots: options.AllAssets ? null : BrowserAssetSelection.FromAssemblies(references.Values));
         Console.Error.WriteLine($"Browser assets: {assets.ProjectFiles + assets.HostFiles} files, {assets.Bytes:N0} bytes.");
-        string config = Path.Combine(work, "scene.json");
-        string assemblyName = Path.GetFileNameWithoutExtension(assembly);
-        File.WriteAllText(config, JsonSerializer.Serialize(new { assembly = assemblyName, scene = sceneName,
-            assemblies = references.Keys.ToArray() }));
+        string setup = BrowserEntrySource.ReflectionRegistration(references.Keys);
+        string entrySource = Path.Combine(work, "BrowserEntry.cs");
+        File.WriteAllText(entrySource, BrowserEntrySource.Create(File.ReadAllText(Path.Combine(kit, "App", "BrowserEntry.cs")), sceneFactory,
+            setup));
         string webRoot = Path.Combine(work, "wwwroot");
         CopyTree(Path.Combine(kit, "wwwroot"), webRoot);
         string html = Path.Combine(webRoot, "index.html");
@@ -61,14 +65,21 @@ internal static class BrowserRunner
             P("JsonSerializerIsReflectionEnabledByDefault", "true"), P("EnableDefaultCompileItems", "false"),
             P("RunAOTCompilation", options.Aot ? "true" : "false"), P("WasmAppDir", site),
             P("WasmMainJSPath", Path.Combine(webRoot, "main.js")), P("WasmMainHTMLPath", html),
+            P("WasmEmitSymbolMap", options.NativeSymbols ? "true" : "false"),
             P("WasmEmitSourceMap", "false"), P("DebugType", "none"), P("WasmDebugLevel", "0"));
-        var items = new XElement("ItemGroup", new XElement("Compile", A("Include", Path.Combine(kit, "App", "BrowserEntry.cs"))),
-            new XElement("WasmFilesToIncludeInFileSystem", A("Include", config), A("TargetPath", "/host/scene.json")));
+        var items = new XElement("ItemGroup", new XElement("Compile", A("Include", entrySource)));
+        string reflectionRoots = BrowserReflectionRoots.Write(references, Path.Combine(work, "NowUI.ReflectionRoots.xml"));
+        items.Add(new XElement("TrimmerRootDescriptor", A("Include", reflectionRoots)));
+        var preserved = BrowserTrimming.PreservedAssemblies(references, trimNowUi: true);
+        bool trimScene = BrowserSceneTrimming.CanTrimSceneAssembly(references, sceneFactory);
+        if (trimScene) preserved.Remove(sceneAssemblyName);
         foreach (var pair in references)
         {
-            items.Add(new XElement("Reference", A("Include", pair.Key), P("HintPath", pair.Value)));
-            // NowUI and scene initialization use reflection, including fields read from Unity serialization.
-            items.Add(new XElement("TrimmerRootAssembly", A("Include", pair.Key)));
+            items.Add(new XElement("Reference", A("Include", pair.Key), P("HintPath", pair.Value),
+                pair.Key == sceneAssemblyName ? P("Aliases", "global," + BrowserEntrySource.SceneAssemblyAlias) : null));
+            // The descriptor covers known host reflection; consumer reflection retains full roots.
+            if (preserved.Contains(pair.Key))
+                items.Add(new XElement("TrimmerRootAssembly", A("Include", pair.Key)));
         }
         string project = Path.Combine(work, "Browser.csproj");
         new XDocument(new XElement("Project", new XAttribute("Sdk", "Microsoft.NET.Sdk"), properties, items,
@@ -80,7 +91,9 @@ internal static class BrowserRunner
         CopyTree(webRoot, site);
         File.Copy(assets.ReportPath, Path.Combine(site, "nowui-assets.json"));
         File.WriteAllText(Path.Combine(site, "nowui-build.json"), JsonSerializer.Serialize(new { target = "web", scene = sceneName,
-            aot = options.Aot, allAssets = options.AllAssets, assetBytes = assets.Bytes }, new JsonSerializerOptions { WriteIndented = true }));
+            aot = options.Aot, allAssets = options.AllAssets, nativeSymbols = options.NativeSymbols,
+            trimmedSceneAssembly = trimScene,
+            assetBytes = assets.Bytes }, new JsonSerializerOptions { WriteIndented = true }));
         CopyTree(Path.Combine(AppContext.BaseDirectory, "ThirdPartyLicenses"), Path.Combine(site, "ThirdPartyLicenses"));
         File.Copy(Path.Combine(AppContext.BaseDirectory, "THIRD_PARTY_NOTICES.md"), Path.Combine(site, "THIRD_PARTY_NOTICES.md"));
         string notices = Path.Combine(site, "BrowserNotices");
@@ -89,8 +102,10 @@ internal static class BrowserRunner
             File.Copy(Path.Combine(kit, name), Path.Combine(notices, name));
         foreach (string name in new[] { "HarfBuzz-LICENSE.txt", "FreeType-LICENSE.txt", "harfbuzz.json", "nowui-browser.json" })
             File.Copy(Path.Combine(kit, "native", name), Path.Combine(notices, "native", name));
-        var compressed = BrowserCompression.Compress(site);
-        Console.Error.WriteLine($"Browser payload: {compressed.SourceBytes:N0} bytes before compression; {compressed.BrotliBytes:N0} bytes with Brotli for compressible files.");
+        BrowserCompression.Compress(site, optimizeSize: !options.Preview);
+        var sizes = BrowserSizeReport.Write(site);
+        Console.Error.WriteLine($"Browser site: {sizes.OriginalBytes:N0} original bytes; {sizes.BrotliBytes:N0} bytes with Brotli; {sizes.StoredBytes:N0} bytes stored including all encodings.");
+        Console.Error.WriteLine("Size totals include all assets and locale variants, not just initial downloads. Details: nowui-size.json.");
         if (options.Preview)
         {
             try { BrowserServer.Run(site, options.Port, !options.NoOpen); }

@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Reflection;
+using System.Runtime.CompilerServices;
 using System.Text.Json;
 using NowUI;
 using NowUI.Engine;
@@ -45,15 +45,6 @@ namespace NowUI.Hosting
             "NowUI/SDF Scene",              // NowSdf
             "Hidden/NowUI/SDF Image Field", // NowSdfImageField
         };
-
-        // NowFontFamily has no setters (design H.7): the slots are [SerializeField] privates that Unity fills in from
-        // the asset. Reflection is how the standalone provider fills them, which is what NowFontResolutionTests
-        // already does to build its own families - so this uses no access the oracle does not use itself.
-        private static readonly FieldInfo k_RegularField = FamilyField("_regular");
-        private static readonly FieldInfo k_BoldField = FamilyField("_bold");
-        private static readonly FieldInfo k_ItalicField = FamilyField("_italic");
-        private static readonly FieldInfo k_BoldItalicField = FamilyField("_boldItalic");
-        private static readonly FieldInfo k_FallbacksField = FallbacksField();
 
         private readonly string m_ResourceRoot;
 
@@ -385,15 +376,15 @@ namespace NowUI.Hosting
                 family.name = root.GetProperty("name").GetString();
                 family.hideFlags = HideFlags.HideAndDontSave;
 
-                k_RegularField.SetValue(family, BuildFace(faces, "regular"));
-                k_BoldField.SetValue(family, BuildFace(faces, "bold"));
-                k_ItalicField.SetValue(family, BuildFace(faces, "italic"));
-                k_BoldItalicField.SetValue(family, BuildFace(faces, "boldItalic"));
+                RegularField(family) = BuildFace(faces, "regular");
+                BoldField(family) = BuildFace(faces, "bold");
+                ItalicField(family) = BuildFace(faces, "italic");
+                BoldItalicField(family) = BuildFace(faces, "boldItalic");
 
                 // The exporter omits the CJK/Arabic/emoji/icon fallback families (they are 5-10 MB each and no gate
                 // test misses a glyph, so traversal never reaches them). An empty array, not null, so the family
                 // reports the same shape a Unity asset with no fallbacks configured would.
-                SetFallbacks(family, RequireNoFallbacks(root, "NotoSans.family.json"));
+                FallbacksField(family) = RequireNoFallbacks(root, "NotoSans.family.json");
 
                 return family;
             }
@@ -470,7 +461,7 @@ namespace NowUI.Hosting
                 font.dynamicMaxAtlasSize = face.GetProperty("dynamicMaxAtlasSize").GetInt32();
                 font.dynamicMaxAtlasBytes = face.GetProperty("dynamicMaxAtlasBytes").GetInt32();
 
-                SetFallbacks(font, RequireNoFallbacks(face, fileName));
+                FallbacksField(font) = RequireNoFallbacks(face, fileName);
 
                 return font;
             }
@@ -492,34 +483,25 @@ namespace NowUI.Hosting
             return Array.Empty<NowFontAsset>();
         }
 
-        private static void SetFallbacks(NowFontAsset asset, NowFontAsset[] fallbacks)
-        {
-            k_FallbacksField.SetValue(asset, fallbacks);
-        }
+        // Unity hydrates these private serialized slots. This .NET-only host uses
+        // typed field accessors so trimming/AOT sees each exact field dependency,
+        // without retaining runtime reflection for the built-in fixture schema.
+        // Binding checks the declaring type, name and field type; a mismatched
+        // runtime fails when the accessor is compiled or first called.
+        [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "_regular")]
+        private static extern ref NowFont RegularField(NowFontFamily family);
 
-        private static FieldInfo FamilyField(string name)
-        {
-            return RequireField(typeof(NowFontFamily), name);
-        }
+        [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "_bold")]
+        private static extern ref NowFont BoldField(NowFontFamily family);
 
-        private static FieldInfo FallbacksField()
-        {
-            return RequireField(typeof(NowFontAsset), "_fallbacks");
-        }
+        [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "_italic")]
+        private static extern ref NowFont ItalicField(NowFontFamily family);
 
-        private static FieldInfo RequireField(Type type, string name)
-        {
-            FieldInfo field = type.GetField(name, BindingFlags.Instance | BindingFlags.NonPublic);
+        [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "_boldItalic")]
+        private static extern ref NowFont BoldItalicField(NowFontFamily family);
 
-            if (field == null)
-            {
-                throw new MissingFieldException(
-                    type.Name + " has no field '" + name + "'. The standalone provider fills the font slots by " +
-                    "reflection; the exported font schema must match the installed runtime.");
-            }
-
-            return field;
-        }
+        [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "_fallbacks")]
+        private static extern ref NowFontAsset[] FallbacksField(NowFontAsset asset);
 
         // -------------------------------------------------------------------------------------------------------
         // JSON helpers

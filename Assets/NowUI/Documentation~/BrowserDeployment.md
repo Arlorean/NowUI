@@ -36,6 +36,26 @@ asset files. The local preview server negotiates these automatically. A deployed
 static host can serve the variants with their matching `Content-Encoding`;
 the original files remain available for hosts that do not use precompression.
 
+Publish uses Brotli quality 11; browser preview uses quality 6 to shorten
+iteration. Both also generate gzip, keeping the smaller result if the previous
+fast encoding wins for an individual file. Native symbol maps are omitted by
+default; use `--native-symbols` when diagnosing native browser stack traces.
+Font faces, glyphs, globalization data and supported asset formats are retained.
+The publisher also trims unused NowUI methods while retaining the metadata needed
+to load supported assets and run lifecycle hooks. Consumer reflection, inspectors
+and serializer use trigger conservative preservation automatically; no scene API
+changes or manual asset-export step are needed.
+For simple static applications, publishing a selected scene also strips unused
+code from the scene assembly, including other scenes in the same project.
+Applications with dynamic behavior or additional dependencies retain conservative
+preservation. `nowui-build.json` records whether scene-assembly trimming applied.
+
+Every build writes `nowui-size.json`, listing original files from largest to
+smallest, with their Brotli and gzip sizes. The totals include uncompressed files,
+all locale variants and notices; stored bytes also include both encoding copies.
+The report excludes itself. A cold browser load requests only a subset of this
+site, so measure network transfers separately when budgeting initial downloads.
+
 | Option | Use |
 | --- | --- |
 | `--scene <type>` | Select an `INowScene` when the assembly contains several. |
@@ -45,6 +65,7 @@ the original files remain available for hosts that do not use precompression.
 | `--title <text>` | Set the page title. |
 | `--aot` | Request ahead-of-time C# compilation, adding a longer build step. |
 | `--all-assets` | Include all supported project assets when their paths are fully computed. |
+| `--native-symbols` | Include the optional native function-name map for diagnostics. |
 
 `render` and `animate` retain their native capture behavior. Their deterministic
 clock, PNG sequence and input replay contracts are unchanged.

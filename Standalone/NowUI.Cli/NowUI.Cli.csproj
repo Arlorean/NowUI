@@ -30,4 +30,14 @@
              CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Pack="false" />
     <InternalsVisibleTo Include="NowUI.Native.Tests" />
   </ItemGroup>
+  <Target Name="RemoveDuplicateNativeToolPackageFiles" AfterTargets="PackTool" Condition="'$(PackAsTool)' == 'true'">
+    <!-- Desktop builds retain their app-local native libraries. The portable tool
+         resolves the complete runtimes/<rid>/native set, so packing the build
+         machine's identical app-local copies adds bytes without another use. -->
+    <ItemGroup>
+      <TfmSpecificPackageFile Remove="@(TfmSpecificPackageFile)"
+        Condition="'%(TfmSpecificPackageFile.PackagePath)' == 'tools/$(TargetFramework)/any/' and
+          $([System.Text.RegularExpressions.Regex]::IsMatch('%(TfmSpecificPackageFile.Filename)%(TfmSpecificPackageFile.Extension)', '^(lib)?(nowui-msdf|nowui-vg|msdf-atlas-gen|msdfgen-core|msdfgen-ext)\.(dll|so|dylib)$'))" />
+    </ItemGroup>
+  </Target>
 </Project>

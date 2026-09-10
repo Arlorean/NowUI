@@ -17,7 +17,12 @@ assert(process.argv[3], 'An artifact directory is required');
 const output = path.resolve(process.argv[3]);
 await fs.mkdir(output, { recursive: true });
 const browser = await chromium.launch({ headless: true, args: ['--enable-unsafe-swiftshader'] });
-const context = await browser.newContext({ viewport, deviceScaleFactor: 1 });
+const context = await browser.newContext({ viewport, deviceScaleFactor: 1, locale: 'en-US' });
+await context.addInitScript(() => {
+  performance.setResourceTimingBufferSize(16384);
+  window.__nowuiResourceTimingOverflow = false;
+  performance.addEventListener('resourcetimingbufferfull', () => { window.__nowuiResourceTimingOverflow = true; });
+});
 const page = await context.newPage();
 const failures = [], messages = [];
 function observe(current) {
@@ -33,7 +38,7 @@ function observe(current) {
   current.on('requestfailed', request => failures.push(`${request.failure()?.errorText}: ${request.url()}`));
 }
 observe(page);
-let timing = null;
+let timing = null, network = null;
 
 async function frames(count) {
   const start = await page.evaluate(() => window.__nowuiDiagnostics.frames);
@@ -47,6 +52,18 @@ try {
   assert.equal(await page.evaluate(() => document.documentElement.dataset.nowuiStatus), 'ready',
     await page.locator('#nowui-status').textContent());
   await frames(30);
+  // A fresh context makes this a cold load; record before screenshots, controls, or the second scene.
+  network = await page.evaluate(() => {
+    const resources = [...performance.getEntriesByType('navigation'), ...performance.getEntriesByType('resource')]
+      .map(entry => ({ path: new URL(entry.name).pathname, encodedBodySize: entry.encodedBodySize,
+        decodedBodySize: entry.decodedBodySize, transferSize: entry.transferSize }));
+    return { locale: navigator.language, overflow: window.__nowuiResourceTimingOverflow,
+      encodedBodyBytes: resources.reduce((sum, entry) => sum + entry.encodedBodySize, 0),
+      decodedBodyBytes: resources.reduce((sum, entry) => sum + entry.decodedBodySize, 0),
+      transferBytes: resources.reduce((sum, entry) => sum + entry.transferSize, 0), resources,
+      note: 'Fresh Chromium context, initial page through 30 rendered frames; same-origin Resource Timing includes navigation and response bodies. Transfer bytes include browser-estimated headers. No network throttling.' };
+  });
+  assert.equal(network.overflow, false, 'Resource Timing buffer overflowed; cold-load byte totals are incomplete');
   const canvas = page.locator('#nowui-canvas');
   const pixels = await canvas.evaluate(element => {
     const copy = document.createElement('canvas');
@@ -150,6 +167,6 @@ try {
   throw error;
 } finally {
   const diagnostics = await page.evaluate(() => window.__nowuiDiagnostics).catch(() => null);
-  await fs.writeFile(path.join(output, 'browser.json'), JSON.stringify({ diagnostics, timing, failures, messages }, null, 2));
+  await fs.writeFile(path.join(output, 'browser.json'), JSON.stringify({ diagnostics, timing, network, failures, messages }, null, 2));
   await browser.close();
 }

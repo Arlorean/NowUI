@@ -12,6 +12,8 @@
     <ProjectReference Include="../NowUI.Cli/NowUI.Cli.csproj" />
     <ProjectReference Include="../Samples/NativePreview/NativePreview.csproj" ReferenceOutputAssembly="false" />
     <ProjectReference Include="Scenes/Scenes.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="TrimmingConsumer/TrimmingConsumer.csproj" />
     <Compile Remove="Scenes/**/*.cs" />
+    <Compile Remove="TrimmingConsumer/**/*.cs" />
   </ItemGroup>
 </Project>

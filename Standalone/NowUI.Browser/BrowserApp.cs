@@ -1,9 +1,6 @@
 using System;
-using System.IO;
-using System.Reflection;
 using System.Runtime.InteropServices.JavaScript;
 using System.Runtime.Versioning;
-using System.Text.Json;
 using System.Threading.Tasks;
 using NowUI.Engine;
 using NowUI.Hosting;
@@ -23,36 +20,22 @@ namespace NowUI.Browser
         static INowScene scene;
         static bool failed;
 
-        public static async Task RunAsync()
+        public static async Task RunAsync(Func<INowScene> createScene)
         {
             try
             {
-                using var config = JsonDocument.Parse(File.ReadAllText("/host/scene.json"));
-                var settings = config.RootElement;
-                string assemblyName = settings.GetProperty("assembly").GetString();
-                string typeName = settings.GetProperty("scene").GetString();
                 string baseUri = BaseUri();
                 resources = BrowserResources.Create();
                 host = new BrowserHost(resources);
                 host.screen = new NowScreenInfo(CanvasWidth(), CanvasHeight(), (float)(96 * DevicePixelRatio()));
                 backend = await WebGL2Backend.CreateAsync("#nowui-canvas");
-                NowRuntime.RegisterAssembly(typeof(Now).Assembly);
-                var assembly = Assembly.Load(new AssemblyName(assemblyName));
-                foreach (var item in settings.GetProperty("assemblies").EnumerateArray())
-                    NowRuntime.RegisterAssembly(Assembly.Load(new AssemblyName(item.GetString())));
-                foreach (var loaded in AppDomain.CurrentDomain.GetAssemblies())
-                    if (loaded.GetName().Name.StartsWith("NowUI", StringComparison.Ordinal) || loaded == assembly)
-                        NowRuntime.RegisterAssembly(loaded);
                 NowRuntime.Initialize(host, backend);
                 NowRuntime.colorSpace = ColorSpace.Gamma;
                 NowRuntime.isPlaying = true;
                 input = await BrowserInput.CreateAsync("#nowui-canvas", (float)DevicePixelRatio(), new Uri(new Uri(baseUri), "nowui-input.js").ToString());
                 input.Install();
                 host.clipboard = input.Clipboard;
-                Type type = assembly.GetType(typeName, throwOnError: true);
-                if (type.IsAbstract || !typeof(INowScene).IsAssignableFrom(type))
-                    throw new InvalidOperationException("The selected browser scene must implement INowScene: " + typeName);
-                scene = (INowScene)Activator.CreateInstance(type);
+                scene = createScene();
             }
             catch { Shutdown(); throw; }
         }

@@ -12,5 +12,6 @@
     <PackageReference Include="NUnit3TestAdapter" Version="4.6.0" />
     <ProjectReference Include="../NowUI.Hosting/NowUI.Hosting.csproj" />
     <Compile Include="../NowUI.Browser/BrowserInput.cs" Link="BrowserInput.cs" />
+    <Compile Include="../NowUI.Browser/BrowserResources.cs" Link="BrowserResources.cs" />
   </ItemGroup>
 </Project>

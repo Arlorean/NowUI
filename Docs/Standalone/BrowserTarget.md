@@ -143,14 +143,69 @@ Unity render-pipeline integrations remain outside this host.
 
 ## Trimming and reflection
 
-The generated executable enables trimming but adds every collected application
-assembly as a `TrimmerRootAssembly`. This preserves scene constructors, shared
-runtime initialization methods, ScriptableObject lifecycle methods, serialized
-fields and helper types used through reflection. JSON reflection remains enabled.
-The framework is still trimmed, and preserving an application's assemblies does
-not make arbitrary reflection into framework types safe.
+The generated executable enables trimming. The publisher generates a direct
+factory for the selected scene, with an assembly alias to disambiguate identical
+type names across dependencies. Required-member or obsolete-constructor cases
+use a typed constructor accessor; types that C# cannot reference retain the
+original reflective construction. The scene contract remains unchanged.
 
-An expanded linker audit on 2026-09-10 produced 54 warnings: 15 from NowUI's scene
+`BrowserSceneTrimming` removes the selected scene assembly's whole-assembly root
+only for simple static applications. It retains the previous root for dynamic
+discovery, inspectors, serializers, custom asset subclasses/reset hooks, enums,
+interop and additional dependencies outside the audited host. Other application
+and plugin assemblies remain rooted. This lets an eligible project containing
+several scenes publish only the code reachable from the selected scene.
+
+The four known NowUI
+host assemblies can trim unused methods. `BrowserReflectionRoots` reads the exact
+referenced Engine/Runtime DLL metadata and emits an
+[ILLink descriptor](https://github.com/dotnet/runtime/blob/main/docs/tools/illink/data-formats.md#descriptor-format)
+for their reflection contracts. It does not load the assemblies or execute their
+initializers while building the descriptor.
+
+Built-in font fixtures use five typed field accessors for font-family slots and
+fallbacks. These declare the exact private field dependencies using .NET's
+[UnsafeAccessor](https://learn.microsoft.com/en-us/dotnet/api/system.runtime.compilerservices.unsafeaccessorattribute?view=net-9.0).
+The generic Unity asset reader and Unity-style lifecycle/reset dispatch still
+use their existing narrow reflection contracts. Replacing the latter with
+generated registries was measured and rejected: it added maintenance for
+negligible download savings. The experiment is recorded in
+[Browser Reflection Size](BrowserReflectionSize.md).
+
+The descriptor keeps every core runtime reset hook, known ScriptableObject asset
+constructors and inherited lifecycle methods, and the recursive serialized field
+graph, including font-family slots, fallback arrays, font atlas structs, theme
+data, Engine colors/vectors and enum names. Currently it names 70 types, 46 methods
+and 328 fields. Reset hooks are unconditional to retain the previous lifecycle
+behavior. A regression compares the descriptor with the actual Hosting asset
+whitelist so adding an asset kind requires its schema to remain covered.
+
+`BrowserTrimming` permits unused code removal from `AssetsTools.NET`, `YamlDotNet`
+and `StbImageSharp` only when their use is exclusive to the audited hosting code.
+The host uses statically reachable binary asset/image readers and YAML
+representation nodes. If an application or extension references one of those
+libraries, its whole-assembly root is restored because consumers may use its
+reflection-based APIs. All other dependencies remain rooted by default.
+Consumer calls to dynamic type discovery, assembly loading, or reflective
+invocation conservatively restore the infrastructure and NowUI roots as well. This
+covers configured type names that leave no direct assembly reference in the
+consumer DLL. Known shipped host discovery code is exempt from that fallback;
+direct library references outside the asset hosting code still retain roots.
+Core roots also return for consumer `NowInspector` calls, member inspection,
+component type descriptors and supported reflection-based serializer API calls
+(JSON, XML/data contracts or YAML). The scan is conservative, including member
+references in unused consumer methods. The browser's own fixed alias map now uses
+`JsonDocument`, avoiding serializer metadata for that internal string dictionary.
+
+Browser JS exports have preservation emitted by the .NET interop generator's
+module initializer. Embedded stock shader resources remain present and rendering
+continues using the shared shader sources. JSON reflection remains enabled for
+consumer code. The framework is still trimmed; these rules do not make arbitrary
+reflection into framework types or every external library safe. See
+[Browser Code Size](BrowserCodeSize.md) for measured effects and validation.
+
+Before narrowing these infrastructure roots, an expanded linker audit on
+2026-09-10 produced 54 warnings: 15 from NowUI's scene
 construction, initialization discovery, lifecycle dispatch, asset fields and
 constructors, inspector and alias JSON; 39 from YamlDotNet reflection,
 TypeConverter and F# serialization helpers. Rooting YamlDotNet retains public
@@ -238,7 +293,10 @@ checkout. All 41 managed assemblies compiled ahead of time; Chromium startup,
 two persistent button clicks, resize and error checks passed. Its output was
 31.72 MB before compression and 10.16 MB with Brotli, versus 15.62 MB and 5.94 MB
 for that scaffold without AOT. These are scaffold payload comparisons, not
-Motion Room timing comparisons. The build log and captures are under
+Motion Room timing comparisons. Those historical figures counted only
+compression-eligible files, not the complete site or actual browser requests.
+Current complete totals and cold downloads are in [Deliverable Sizes](DeliverableSizes.md).
+The build log and captures are under
 `artifacts/local/browser-ci-aot-publish.log` and
 `artifacts/local/browser-ci-smoke-aot/`. The optional GitHub workflow was added
 and syntax checked; the equivalent checks ran locally, not on GitHub Actions.

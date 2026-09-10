@@ -1,7 +1,8 @@
 namespace NowUI.Cli;
 
 internal sealed record BrowserOptions(string Project, string? Output, string? Scene, string? UnityProject,
-    string Configuration, bool NoBuild, bool Preview, bool Aot, bool AllAssets, string Title, int Port, bool NoOpen)
+    string Configuration, bool NoBuild, bool Preview, bool Aot, bool AllAssets, string Title, int Port, bool NoOpen,
+    bool NativeSymbols = false)
 {
     internal const string Help = """
 
@@ -14,6 +15,7 @@ internal sealed record BrowserOptions(string Project, string? Output, string? Sc
           --title <text>             Browser page title (default NowUI)
           --aot                      Compile C# ahead of time; slower build, faster execution
           --all-assets               Include all supported assets for fully computed asset paths
+          --native-symbols           Include native function names for browser diagnostics
           --port <number>            Preview port, 0..65535 (default 0: choose a free port)
           --no-open                  Preview: print URL without opening a browser
 
@@ -36,7 +38,7 @@ internal sealed record BrowserOptions(string Project, string? Output, string? Sc
         for (int i = 2; i < args.Length; i++)
         {
             string key = args[i];
-            if (key is "--no-build" or "--aot" or "--all-assets" or "--no-open")
+            if (key is "--no-build" or "--aot" or "--all-assets" or "--no-open" or "--native-symbols")
             {
                 if (!flags.Add(key)) throw new ArgumentException($"{key} was supplied twice.");
                 continue;
@@ -69,6 +71,6 @@ internal sealed record BrowserOptions(string Project, string? Output, string? Sc
         if (unity != null) unity = Path.GetFullPath(unity);
         return new(project, output, values.GetValueOrDefault("--scene"), unity, configuration,
             flags.Contains("--no-build"), preview, flags.Contains("--aot"), flags.Contains("--all-assets"),
-            values.GetValueOrDefault("--title", "NowUI"), port, flags.Contains("--no-open"));
+            values.GetValueOrDefault("--title", "NowUI"), port, flags.Contains("--no-open"), flags.Contains("--native-symbols"));
     }
 }

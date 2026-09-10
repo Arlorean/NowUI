@@ -16,11 +16,15 @@ public class BrowserOptionsTests
     public void BrowserIsExplicitAndPreservesSceneOptions()
     {
         var options = BrowserOptions.Parse(["preview", "Scene.csproj", "--target", "web", "--scene", "Demo",
-            "--aot", "--all-assets", "--no-open", "--port", "12345"]);
-        Assert.That(options.Preview && options.Aot && options.AllAssets && options.NoOpen, Is.True);
+            "--aot", "--all-assets", "--native-symbols", "--no-open", "--port", "12345"]);
+        Assert.That(options.Preview && options.Aot && options.AllAssets && options.NativeSymbols && options.NoOpen, Is.True);
         Assert.That(options.Scene, Is.EqualTo("Demo"));
         Assert.That(options.Port, Is.EqualTo(12345));
     }
+
+    [Test]
+    public void NativeSymbolsAreExcludedUnlessExplicitlyRequested() => Assert.That(
+        BrowserOptions.Parse(["preview", "Scene.csproj", "--target", "web"]).NativeSymbols, Is.False);
 
     [TestCase("--target", "native")]
     [TestCase("--port", "65536")]
