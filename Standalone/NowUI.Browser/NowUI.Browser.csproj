@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net9.0-browser</TargetFramework>
+    <AssemblyName>NowUI.Browser</AssemblyName>
+    <RootNamespace>NowUI.Browser</RootNamespace>
+    <LangVersion>latest</LangVersion>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <IsPackable>false</IsPackable>
+    <NowUIBrowserShaderRoot Condition="'$(NowUIBrowserShaderRoot)' == ''">../NowUI.Desktop/Shaders</NowUIBrowserShaderRoot>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Remove="App/**/*.cs" />
+    <ProjectReference Include="../NowUI.Hosting/NowUI.Hosting.csproj" />
+    <EmbeddedResource Include="$(NowUIBrowserShaderRoot)/*.vert;$(NowUIBrowserShaderRoot)/*.frag;$(NowUIBrowserShaderRoot)/*.glsl"
+                      LogicalName="NowUI.Browser.Shaders.%(Filename)%(Extension)" />
+  </ItemGroup>
+</Project>

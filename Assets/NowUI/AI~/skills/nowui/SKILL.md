@@ -1,6 +1,6 @@
 ---
 name: nowui
-description: Build, review, or debug Unity UI with the installed NowUI package. Use when the user names NowUI, project instructions select it, or the affected code uses it. Do not select NowUI merely because it is installed when the task uses another UI framework.
+description: Build, preview, review, or debug C# UI with the installed NowUI package. Use when the user names NowUI, project instructions select it, or the affected code uses it. Do not select NowUI merely because it is installed when the task uses another UI framework.
 ---
 
 # NowUI
@@ -32,24 +32,20 @@ essential contracts, then only the feature guides relevant to the task. Search
 the installed public source and XML comments for uncertain signatures; do not
 guess from model memory or GitHub `main`. Use a nearby example when helpful.
 
-Consumer code belongs under the project's `Assets` directory; PackageCache is
-read-only. For package contributions, also read `<package-root>/AGENTS.md`.
+Unity consumer code belongs under the project's `Assets` directory; native
+preview projects belong under `NowUI/apps` as described in the preview guide.
+PackageCache is read-only. For package contributions, also read `<package-root>/AGENTS.md`.
 An embedded or local dependency does not imply that it should be modified.
 
-## Showing a prototype
+## Showing a prototype or animation
 
-The package can also run NowUI in the user's browser and record a still or a
-short animation of a running page. Read
-`<package-root>/Documentation~/WebPreview.md` before using either. Offer a
-browser prototype alongside Unity work, never as a substitute for it, and report
-only captures that exist on disk.
-
-**Host it yourself.** Write the app to `<ProjectRoot>/NowUI/apps/NAME.js`, run
-`python <package-root>/WebBundle~/serve.py --app NAME` in the background, read
-the port it prints, and hand over the URL. Do not ask the user to open the Unity
-Editor or a menu item to see their own prototype - the Editor's preview is for
-live reload while authoring, not for showing someone a result. A plain static
-server will NOT work: the bundle is brotli-only and needs `Content-Encoding: br`.
+Use native C# previews by default. Read
+`<package-root>/Documentation~/NativePreview.md`, then use the packaged launcher
+or the source checkout's `Tools/NowUI-Native.ps1` to scaffold, run and capture actual
+NowUI code. Reuse project assets directly and share drawing code with Unity.
+Create and launch the preview yourself. Use an interactive animation app when the
+user needs to explore it, or capture a deterministic frame sequence for sharing.
+Report only files and applications that were successfully produced.
 
 ## Verify the change
 

@@ -8,6 +8,10 @@ installed NowUI revision. AI coding agents should begin with the
 
 - [AI Guide](AI_GUIDE.md): host and API selection, feature routing, universal
   correctness rules, ownership, performance, and verification.
+- [Native Preview](NativePreview.md): actual C# apps, live source and asset reload,
+  direct project assets, stills, and deterministic animation recording.
+- [Browser Deployment](BrowserDeployment.md): optional WebAssembly deployment of
+  the same C# scene, automatic asset inclusion and browser limits.
 - [Feature Usage](Features.md): core drawing lifecycle, rectangles, text, UGUI,
   and font compilation examples.
 - [Text Gradients And Animation](TextStyling.md): adaptive text outlines,

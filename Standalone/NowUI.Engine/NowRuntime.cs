@@ -9,7 +9,7 @@ using System.Reflection;
 namespace NowUI.Engine
 {
     /// <summary>
-    /// Process-wide state for the engine-free NowUI build. A browser frame is
+    /// Process-wide state for the engine-free NowUI build. A native host frame is
     /// <c>BeginFrame(); using (Now.StartUI(scale)) app.Draw(); EndFrame();</c> and nothing else, because the standalone
     /// halves of the core subscribe themselves to <see cref="onFrame"/>.
     /// </summary>
@@ -52,7 +52,7 @@ namespace NowUI.Engine
         public static UnityEngine.ColorSpace colorSpace { get; set; } = UnityEngine.ColorSpace.Gamma;
 
         /// <summary>
-        /// Whether the runtime behaves like a player. True by default, which is what a browser host wants; the tests
+        /// Whether the runtime behaves like a player. True by default, which is what an interactive host wants; the tests
         /// host sets false so every core site that branches on <c>Application.isPlaying</c> takes its edit-mode path.
         /// </summary>
         public static bool isPlaying { get; set; } = true;
@@ -129,7 +129,7 @@ namespace NowUI.Engine
 
         /// <summary>
         /// Declares an assembly that <see cref="ResetAll"/> should scan for <c>[RuntimeInitializeOnLoadMethod]</c>.
-        /// Registering even one assembly replaces the domain-wide scan, which is the point: a browser host knows its
+        /// Registering even one assembly replaces the domain-wide scan, which is the point: a native host knows its
         /// own assemblies and should not pay for a reflection walk of everything loaded.
         /// </summary>
         public static void RegisterAssembly(Assembly assembly)
@@ -142,6 +142,16 @@ namespace NowUI.Engine
 
             s_RegisteredAssemblies.Add(assembly);
             s_InitializeMethods = null;
+        }
+
+        /// <summary>
+        /// Removes an explicitly registered assembly and its cached reset methods, allowing a host to unload a
+        /// collectible scene after shutdown. Invoke its reset hooks before unregistering it.
+        /// </summary>
+        public static void UnregisterAssembly(Assembly assembly)
+        {
+            if (assembly == null) throw new ArgumentNullException(nameof(assembly));
+            if (s_RegisteredAssemblies.Remove(assembly)) s_InitializeMethods = null;
         }
 
         /// <summary>

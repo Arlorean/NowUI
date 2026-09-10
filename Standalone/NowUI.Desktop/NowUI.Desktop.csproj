@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>NowUI.Desktop</AssemblyName>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../NowUI.Hosting/NowUI.Hosting.csproj" />
+    <PackageReference Include="OpenTK.Graphics" Version="4.9.4" />
+    <PackageReference Include="OpenTK.Windowing.Desktop" Version="4.9.4" />
+    <InternalsVisibleTo Include="NowUI.Native.Tests" />
+    <Content Include="Shaders/*.vert;Shaders/*.frag;Shaders/*.glsl"
+             Link="Shaders/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+  <PropertyGroup>
+    <_NowUINativeRid Condition="'$(RuntimeIdentifier)' != ''">$(RuntimeIdentifier)</_NowUINativeRid>
+    <_NowUINativeRid Condition="'$(_NowUINativeRid)' == ''">$(NETCoreSdkRuntimeIdentifier)</_NowUINativeRid>
+    <_NowUINativeFolder Condition="'$(_NowUINativeRid)' == 'win-x64'">Windows/x86_64</_NowUINativeFolder>
+    <_NowUINativeFolder Condition="'$(_NowUINativeRid)' == 'linux-x64'">Linux/x86_64</_NowUINativeFolder>
+    <_NowUINativeFolder Condition="'$(_NowUINativeRid)' == 'osx-x64'">macOS/x86_64</_NowUINativeFolder>
+    <_NowUINativeFolder Condition="'$(_NowUINativeRid)' == 'osx-arm64'">macOS/arm64</_NowUINativeFolder>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(_NowUINativeFolder)' != ''">
+    <!-- Include the native plugin's sibling libraries so shaping works from builds and standalone publishes. -->
+    <Content Include="../../Assets/NowUI/Plugins/$(_NowUINativeFolder)/*.dll;../../Assets/NowUI/Plugins/$(_NowUINativeFolder)/*.so;../../Assets/NowUI/Plugins/$(_NowUINativeFolder)/*.dylib"
+             Link="%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- A tool package is portable across these desktop RIDs, regardless of the machine that packed it. -->
+    <Content Include="../../Assets/NowUI/Plugins/Windows/x86_64/*.dll"
+             Link="runtimes/win-x64/native/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="../../Assets/NowUI/Plugins/Linux/x86_64/*.so"
+             Link="runtimes/linux-x64/native/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="../../Assets/NowUI/Plugins/macOS/x86_64/*.dylib"
+             Link="runtimes/osx-x64/native/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="../../Assets/NowUI/Plugins/macOS/arm64/*.dylib"
+             Link="runtimes/osx-arm64/native/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

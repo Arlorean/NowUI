@@ -12,5 +12,8 @@
   <ItemGroup>
     <InternalsVisibleTo Include="NowUI.Engine.Tests" />
     <InternalsVisibleTo Include="Tests" />
+    <InternalsVisibleTo Include="NowUI.Hosting" />
+    <InternalsVisibleTo Include="NowUI.Desktop" />
+    <InternalsVisibleTo Include="NowUI.Browser" />
   </ItemGroup>
 </Project>

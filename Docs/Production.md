@@ -28,6 +28,34 @@ provide the licensed editor and platform modules required by these tests. The
 externally provisioned automation. Do not pass `-quit` to Unity test runs; the
 Unity Test Framework exits batchmode after writing results.
 
+## Native preview bundle
+
+Agents use the native C# host for mockups and animation apps. The maintained
+workflow is in [Native CLI](Standalone/NativeCLI.md); the package ships its
+launcher and tool payload under `Assets/NowUI/Native~`.
+
+After changing native code, shared runtime code, shaders or bundled resources,
+run `Tools/Build-NowUINativeBundle.ps1` and include its updated package and
+`bundle.json` together. Verify the packaged launcher can `init` and `render`
+from outside the source checkout's working directory. No global tool install
+or Unity asset export is required. The bundle hash selects a fresh local tool
+cache while existing preview projects follow the new assembly paths.
+
+The `standalone.yml` workflow builds the shared source, runs the engine and
+native suites (GPU tests under software OpenGL), packs the CLI, and checks an
+installed tool's generated project. Local Windows graphics and Unity checks
+remain necessary for changes to rendering or native input. See the native guide
+for commands and explicit platform limits.
+
+The optional `browser.yml` workflow runs only when manually dispatched. It adds
+the .NET 9 `wasm-tools` workload, prepares the browser kit, tests C# input and DOM
+transport, and publishes a fresh installed CLI scaffold outside the checkout.
+Chromium then checks rendering, persistent button state and resize behavior.
+See [Browser smoke](../Tools/Standalone/BrowserSmoke/README.md) for local commands
+and the saved diagnostics. Native CI and ordinary native builds do not require
+the browser workload or Playwright. This smoke does not replace physical IME,
+mobile keyboard, gamepad or cross-browser validation.
+
 ## Feature Benchmarks
 
 Run `pwsh -File Tools/NowUI-Harness.ps1 -Mode Benchmark -BenchmarkRuns 3`

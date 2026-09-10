@@ -45,8 +45,10 @@ rendering can copy/blur camera color and optionally replay other
 `NowWorldGraphic.glassBackdropMode`. Blurred world glass automatically requests
 camera depth and samples a sharp backdrop where opaque scene geometry is in
 front of the pane.
-Built-in `Now.StartUI()` screen rendering falls back to the same rounded
-tint/outline appearance without sampling the target behind it.
+Built-in `Now.StartUI()` screen rendering replays earlier NowUI batches into
+a temporary backdrop and blurs them for each glass pane. Content drawn after
+the pane stays sharp. This replay does not include arbitrary scene or native
+UI content already present on the screen.
 
 ## Shared SRP Source
 

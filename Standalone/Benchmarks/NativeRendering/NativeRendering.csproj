@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../NowUI.Desktop/NowUI.Desktop.csproj" />
+    <ProjectReference Include="../../Extensions/NowUI.Extensions.Sdf/NowUI.Extensions.Sdf.csproj" />
+    <Compile Include="../../Samples/NativePreview/InteractiveContent.cs" Link="InteractiveContent.cs" />
+    <None Include="../../../Assets/NowUI/Assets/AnimatedEmoji/*.lottie" Link="Animations/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

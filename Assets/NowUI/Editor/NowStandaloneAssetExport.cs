@@ -4,9 +4,10 @@
 // process anywhere. Thirty-one of the thirty-six gate files reach Now.defaultFont, and every one of them expects the
 // real NotoSans metrics: label widths decide hit rectangles, so a synthetic font would move every pointer position in
 // NowDockingTests and every extras-channel assertion in NowTextStylingTests. The glyph table, the material templates
-// and the shader property declarations only exist inside Unity's serialized assets (NowFont is
-// [PreferBinarySerialization], the materials are YAML, the shaders are source), so exactly one Editor pass has to lift
-// them out into a format a plain dotnet process can read. That pass is this file.
+// and the shader property declarations come from Unity's serialized assets (NowFont is
+// [PreferBinarySerialization], the materials are YAML, the shaders are source). This Editor pass preserves the
+// checked-in test fixtures and native host's built-in templates. Direct project assets now load through
+// NowProjectAssets; users do not run this exporter to preview their assets.
 //
 // It is EDITOR-ONLY on purpose (design H.7 / work unit U24): it lives in the NowUI.Editor asmdef, so it cannot change
 // the runtime assembly, its public API, or anything a player ships. It writes OUTSIDE Assets/ - into
@@ -34,8 +35,9 @@
 // the same code and the same input Unity uses. That is why every face here ships its TTF and why the exported
 // atlasInfo is (correctly) empty; if a prebaked asset ever lands, the same fields carry it with no format change.
 //
-// THIS PASS ONCE ALSO BAKED PRINTABLE ASCII into a .page<N>.bin sidecar per face and declared it under a "bakedPages"
-// member, to spare the browser bundle's first frame the rasterisation. THAT STEP WAS REMOVED, and the reason is worth
+// HISTORICAL BROWSER MEASUREMENT: this pass once baked printable ASCII into a .page<N>.bin sidecar per face and
+// declared it under a "bakedPages" member. The standalone browser bundle is now retired. That export step was removed
+// earlier, and the reason is worth
 // keeping because the numbers point the other way round from the intuition that put it here.
 //
 // Measured in a real browser, on the shipped bundle, with the frame pump blocked so nothing consumed the first frame
@@ -48,7 +50,7 @@
 // 875 KB. Probe apps drawing 0 / 1 / 95 glyphs agree.
 //
 // The MECHANISM is untouched and still supported: NowFont.BakedPage / SetBakedPages / EnsureBakedPagesLoaded, the
-// Editor's own bake buttons (NowFontEditor), and WebResourceProvider.InstallBakedPages, which still reads a
+// Editor's own bake buttons (NowFontEditor), and NowFileResources, which reads a
 // "bakedPages" member if a fixture carries one. Only this export stopped writing one. Anyone re-enabling it should
 // re-measure the decode first: at 32/8 a page is a quarter of the pixels, so the cost is roughly a quarter too, and
 // the trade may swing back.
@@ -905,7 +907,6 @@ namespace NowUI.Editor
             json.String("fontBytesFile", fontBytesFile);
             json.Number("fontByteCount", font.GetSourceByteCount());
 
-            // Printable ASCII, baked here so the browser's first frame does not have to rasterize it. See
             // Reserved: an atlas image, and the bytes inline, for a consumer that cannot read the sidecar.
             json.Null("atlasPng");
             json.Null("fontBytesBase64");

@@ -78,8 +78,10 @@ Android (armeabi-v7a) is not currently built.
 
 - Test density scaling in the editor with `Now.StartUI(2f)` or the Device
   Simulator package.
-- Rectangle positions snap to whole UI units; at scale 2 that is 2 physical
-  pixels, which keeps edges crisp but means hairlines should be drawn at
-  scale-aware sizes.
+- Rectangle, SDF quad, and sliced-image edges snap to physical pixels using
+  `Now.uiScale`. A one-physical-pixel rectangle is `1f / Now.uiScale` units wide.
+  Halfway edges consistently round toward the positive coordinate, so adjacent
+  shapes share a boundary and one-pixel spans keep their width. Geometry inside
+  `Now.Transform(...)` stays fractional for smooth movement and scaling.
 - Lottie tessellation is CPU work on the main thread; cap busy animations with
   `SetPlaybackFrameRate(15)` on phones.

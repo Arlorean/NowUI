@@ -2164,7 +2164,7 @@ namespace NowUI
 
                 RenderTexture.active = previousActive;
                 NowGlassRenderer.EnableBackdropGlobal(blurred, capture.backdropUvTransform);
-                DrawLegacyReplayBatch(batchIndex, drawMatrix, false);
+                DrawLegacyReplayBatch(batchIndex, drawMatrix, false, preserveBackdrop: true);
                 NowGlassRenderer.DisableBackdropGlobal();
             }
             finally
@@ -2175,7 +2175,7 @@ namespace NowUI
             }
         }
 
-        static void DrawLegacyReplayBatch(int batchIndex, Matrix4x4 drawMatrix, bool recordGlassFallback)
+        static void DrawLegacyReplayBatch(int batchIndex, Matrix4x4 drawMatrix, bool recordGlassFallback, bool preserveBackdrop = false)
         {
             if (_legacyGlassReplayMesh == null ||
                 batchIndex < 0 ||
@@ -2191,7 +2191,8 @@ namespace NowUI
 
             if (batch.kind == NowMeshKind.Glass)
             {
-                NowGlassRenderer.DisableBackdropGlobal();
+                // Prefix replay uses tint-only glass, but the final pane consumes the backdrop just prepared above.
+                if (!preserveBackdrop) NowGlassRenderer.DisableBackdropGlobal();
 
                 if (recordGlassFallback)
                 {
@@ -2250,6 +2251,21 @@ namespace NowUI
         static float RectangleVisualPadding(float blur, float outline)
         {
             return 2f + Mathf.Max(0f, blur) + Mathf.Max(0f, outline);
+        }
+
+        internal static float SnapToPhysicalPixel(float coordinate)
+        {
+            // Every shared edge uses the same physical-pixel grid. Ties always
+            // go toward the positive edge: ties-to-even can collapse a one-pixel
+            // span at .5 or expand it to two pixels at 1.5 (also below zero).
+            float pixels = coordinate * _uiScale;
+            // Dividing by a fractional UI scale and adding a one-pixel width can
+            // land a float just below a half-pixel (e.g. -0.50000006 at 1.25x).
+            // Stabilize that rounding error within one relative float epsilon,
+            // capped at 1/10000 pixel so distant coordinates cannot widen it.
+            float tolerance = Mathf.Min(0.0001f,
+                Mathf.Max(1f, Mathf.Abs(pixels)) * 1.1920929e-7f);
+            return (float)(Math.Floor((double)pixels + 0.5d + tolerance) / _uiScale);
         }
 
         /// <summary>Draws a rounded rectangle. The style constructor defaults the mask to
@@ -2312,10 +2328,9 @@ namespace NowUI
                 }
             }
 
-            // Snap to pixels by rounding EDGES, not origin + size: truncating them
-            // independently shifted fractional-position rects by up to a pixel, so
-            // nested glyphs (a radio dot inside its circle) came out visibly
-            // off-center depending on where layout placed the control.
+            // Snap shared edges in physical pixels, including density scaling.
+            // Rounding origin and size independently would open gaps or overlaps
+            // between adjacent rectangles.
             // Skip pixel snapping when transform is active for smooth zooming.
             bool hasTransform = _transformStack.Count > 0;
             float x0, y0, rectWidth, rectHeight;
@@ -2329,10 +2344,10 @@ namespace NowUI
             }
             else
             {
-                x0 = Mathf.RoundToInt(position.x);
-                y0 = Mathf.RoundToInt(position.y);
-                rectWidth = Mathf.RoundToInt(position.x + position.width) - x0;
-                rectHeight = Mathf.RoundToInt(position.y + position.height) - y0;
+                x0 = SnapToPhysicalPixel(position.x);
+                y0 = SnapToPhysicalPixel(position.y);
+                rectWidth = SnapToPhysicalPixel(position.x + position.width) - x0;
+                rectHeight = SnapToPhysicalPixel(position.y + position.height) - y0;
             }
 
             if (rectWidth <= 0 || rectHeight <= 0)
@@ -2504,11 +2519,10 @@ namespace NowUI
             }
             else
             {
-                // Use pixel rounding for crisp edges when no transform
-                x0 = Mathf.RoundToInt(rect.x);
-                y0 = Mathf.RoundToInt(rect.y);
-                rectWidth = Mathf.RoundToInt(rect.x + rect.width) - x0;
-                rectHeight = Mathf.RoundToInt(rect.y + rect.height) - y0;
+                x0 = SnapToPhysicalPixel(rect.x);
+                y0 = SnapToPhysicalPixel(rect.y);
+                rectWidth = SnapToPhysicalPixel(rect.x + rect.width) - x0;
+                rectHeight = SnapToPhysicalPixel(rect.y + rect.height) - y0;
             }
 
             if (rectWidth <= 0 || rectHeight <= 0)
@@ -2603,10 +2617,10 @@ namespace NowUI
             }
             else
             {
-                xLeft = x0 + Mathf.RoundToInt(border.x * scale);
-                xRight = x0 + rectWidth - Mathf.RoundToInt(border.z * scale);
-                yTop = y0 + Mathf.RoundToInt(border.w * scale);
-                yBottom = y0 + rectHeight - Mathf.RoundToInt(border.y * scale);
+                xLeft = SnapToPhysicalPixel(x0 + border.x * scale);
+                xRight = SnapToPhysicalPixel(x0 + rectWidth - border.z * scale);
+                yTop = SnapToPhysicalPixel(y0 + border.w * scale);
+                yBottom = SnapToPhysicalPixel(y0 + rectHeight - border.y * scale);
             }
 
             Vector4 uv = rectangle.uvRect;
@@ -2651,10 +2665,13 @@ namespace NowUI
                     }
                     else
                     {
-                        _tmpVertex.position.x = Mathf.RoundToInt(cellX);
-                        _tmpVertex.position.y = -Mathf.RoundToInt(cellY + cellHeight);
-                        _tmpVertex.position.z = Mathf.RoundToInt(cellWidth);
-                        _tmpVertex.position.w = Mathf.RoundToInt(cellHeight);
+                        // The grid boundaries were snapped once above. Rounding
+                        // cell sizes again would discard the density scale and
+                        // separate boundaries that neighboring cells share.
+                        _tmpVertex.position.x = cellX;
+                        _tmpVertex.position.y = -cellY - cellHeight;
+                        _tmpVertex.position.z = cellWidth;
+                        _tmpVertex.position.w = cellHeight;
                     }
 
                     _tmpVertex.uvwh = new Vector4(
@@ -2673,7 +2690,11 @@ namespace NowUI
             style.rangeOutline = style.outline;
             style.outlineOnlyPass = false;
             bool hasTransform = _transformStack.Count > 0;
+            // Keep animated text fractional even when its final draw is optimized
+            // into the static run path; snapping on completion would move the baseline.
+            style.baselineSnap &= !hasTransform && !style.animation.isAnimated;
             float motionOutset = style.animation.isAnimated ? style.animation.boundedOutset : 0f;
+            float snapOutset = style.baselineSnap ? ScreenPixelsToUiUnits(0.5f) : 0f;
             float outlineOutset = Mathf.Max(0f, style.outline * style.fontSize);
             bool hasAutomaticMask = !style.hasExplicitMask && !style.mask.isEmpty;
 
@@ -2690,14 +2711,14 @@ namespace NowUI
             }
             else if (hasAutomaticMask)
             {
-                style.mask = style.mask.Outset(4f + outlineOutset + motionOutset);
+                style.mask = style.mask.Outset(4f + outlineOutset + motionOutset + snapOutset);
             }
 
             style.mask = ApplyAmbientMask(style.mask);
             NowRect overlapRect = hasTransform ? ApplyTransformRect(style.rect) : style.rect;
             float overlapOutset = hasTransform
                 ? ApplyTransformScalar(8f + outlineOutset + motionOutset)
-                : 8f + outlineOutset + motionOutset;
+                : 8f + outlineOutset + motionOutset + snapOutset;
 
             if (style.mask.isEmpty || !style.mask.Overlaps(overlapRect.Outset(overlapOutset)))
                 return false;
@@ -3093,6 +3114,13 @@ namespace NowUI
             return true;
         }
 
+        static float TextLineOriginY(in NowText style, float baseline)
+        {
+            return style.baselineSnap
+                ? SnapToPhysicalPixel(style.rect.y + baseline) - baseline
+                : style.rect.y;
+        }
+
         static void DrawStringCodepoints(NowText style, ReadOnlySpan<char> value)
         {
             bool hasTransform = _transformStack.Count > 0;
@@ -3188,7 +3216,7 @@ namespace NowUI
 
                             // Transform position before drawing glyph
                             float glyphX = style.rect.x;
-                            float glyphY = style.rect.y;
+                            float glyphY = TextLineOriginY(style, scaledBaseline);
 
                             if (hasTransform)
                             {
@@ -3587,7 +3615,7 @@ namespace NowUI
                     i,
                     end,
                     penX,
-                    style.rect.y,
+                    TextLineOriginY(style, baseline),
                     fontSize,
                     baseline,
                     style.mask,
@@ -4062,7 +4090,7 @@ namespace NowUI
                     g,
                     end,
                     penX,
-                    style.rect.y,
+                    TextLineOriginY(style, baseline),
                     fontSize,
                     baseline,
                     style.mask,
@@ -4231,7 +4259,7 @@ namespace NowUI
             float scaledBaseline = baseline * textScale;
 
             float glyphX = style.rect.x;
-            float glyphY = style.rect.y;
+            float glyphY = TextLineOriginY(style, scaledBaseline);
 
             if (hasTransform)
             {

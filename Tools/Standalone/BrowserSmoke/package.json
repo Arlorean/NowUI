@@ -1,0 +1,12 @@
+{
+  "name": "nowui-browser-smoke",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "smoke": "node smoke.mjs",
+    "validate": "node validate-site.mjs"
+  },
+  "devDependencies": {
+    "playwright": "1.63.0"
+  }
+}

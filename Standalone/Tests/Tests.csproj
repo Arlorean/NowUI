@@ -19,7 +19,7 @@
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
     <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
-    <DefineConstants>$(DefineConstants);NOWUI_STANDALONE</DefineConstants>
+    <DefineConstants>$(DefineConstants);NOWUI_STANDALONE;NOWUI_INPUT_SYSTEM</DefineConstants>
     <SignAssembly>false</SignAssembly>                    <!-- InternalsVisibleTo("Tests") carries no public key -->
     <NoWarn>$(NoWarn);CS1591;CS0649;CS0169;CS0414</NoWarn>
   </PropertyGroup>
@@ -40,6 +40,7 @@
   <ItemGroup>
     <ProjectReference Include="../NowUI.Engine/NowUI.Engine.csproj" />
     <ProjectReference Include="../NowUI.Runtime/NowUI.Runtime.csproj" />
+    <ProjectReference Include="../NowUI.Hosting/NowUI.Hosting.csproj" />
     <ProjectReference Include="../Extensions/NowUI.Extensions.Markdown/NowUI.Extensions.Markdown.csproj" />
     <ProjectReference Include="../Extensions/NowUI.Extensions.Markup/NowUI.Extensions.Markup.csproj" />
     <ProjectReference Include="../Extensions/NowUI.Extensions.Markdown.Markup/NowUI.Extensions.Markdown.Markup.csproj" />
@@ -56,13 +57,7 @@
     <!-- Our own support layer: the Unity-test-runner surface dotnet does not have, plus the standalone host. -->
     <Compile Include="Shims/**/*.cs" />
     <Compile Include="Support/**/*.cs" />
-    <!--
-      The browser's PNG decoder, compiled in BY REFERENCE so NowStandaloneBakedFontPageTests checks the shipped font
-      atlas pages with the very decoder the browser runs rather than a second implementation that could agree with the
-      encoder about the same mistake. NowUI.Web itself cannot be referenced: it targets net9.0-browser. The file
-      depends on System.IO.Compression and UnityEngine.Color32 only, both of which are here.
-    -->
-    <Compile Include="../Web/NowUI.Web/NowWebPng.cs" LinkBase="Web" />
+    <!-- Baked atlas tests use the actual managed PNG codec from NowUI.Hosting. -->
   </ItemGroup>
 
   <ItemGroup>
@@ -100,12 +95,13 @@
       file. The test plan predicts 783 for the gate; the one-case difference is NowControlsTests, where the plan's 84
       counts the #if NOWUI_UGUI case that no standalone run can execute (83 here, 84 attributes in the file).
 
-      The deferred Tier D files (NowIMGUIKeyInputRoutingTests, NowIMGUITextInputRoutingTests, NowKeyBindingFieldTests,
+      The deferred Tier D files (NowIMGUIKeyInputRoutingTests, NowIMGUITextInputRoutingTests,
       NowContextMenuOwnerLifetimeTests) are never added in M1 - see the "excluded" note at the bottom of this file.
     -->
     <Compile Include="../../Assets/NowUITests/NowRectTests.cs" LinkBase="UnityTests" />
     <Compile Include="../../Assets/NowUITests/NowResolvedIdTests.cs" LinkBase="UnityTests" />
     <Compile Include="../../Assets/NowUITests/NowControlStateResolvedIdTests.cs" LinkBase="UnityTests" />
+    <Compile Include="../../Assets/NowUITests/NowKeyBindingFieldTests.cs" LinkBase="UnityTests" />
     <Compile Include="../../Assets/NowUITests/NowFocusResolvedIdTests.cs" LinkBase="UnityTests" />
     <Compile Include="../../Assets/NowUITests/NowOverlayResolvedIdTests.cs" LinkBase="UnityTests" />
     <Compile Include="../../Assets/NowUITests/NowIdentityIntegrationTests.cs" LinkBase="UnityTests" />
@@ -118,11 +114,13 @@
     <Compile Include="../../Assets/NowUITests/NowFocusHostRegistryTests.cs" LinkBase="UnityTests" />
     <Compile Include="../../Assets/NowUITests/NowMaskShapeTests.cs" LinkBase="UnityTests" />
     <Compile Include="../../Assets/NowUITests/NowCornerRadiusTests.cs" LinkBase="UnityTests" />
+    <Compile Include="../../Assets/NowUITests/NowPixelSnappingTests.cs" LinkBase="UnityTests" />
     <Compile Include="../../Assets/NowUITests/NowNodeGraphIndexedEvaluationTests.cs" LinkBase="UnityTests" />
     <Compile Include="../../Assets/NowUITests/NowTextWrapTests.cs" LinkBase="UnityTests" />
     <Compile Include="../../Assets/NowUITests/NowFontStackTests.cs" LinkBase="UnityTests" />
     <Compile Include="../../Assets/NowUITests/NowDockingTests.cs" LinkBase="UnityTests" />
     <Compile Include="../../Assets/NowUITests/NowTextStylingTests.cs" LinkBase="UnityTests" />
+    <Compile Include="../../Assets/NowUITests/NowTextBaselineSnappingTests.cs" LinkBase="UnityTests" />
     <Compile Include="../../Assets/NowUITests/NowFontResolutionTests.cs" LinkBase="UnityTests" />
     <Compile Include="../../Assets/NowUITests/Simple.cs" LinkBase="UnityTests" />
     <Compile Include="../../Assets/NowUITests/NowContextInputRoutingTests.cs" LinkBase="UnityTests" />
@@ -155,7 +153,6 @@
 
       NowIMGUIKeyInputRoutingTests.cs   IMGUI Event/GUIUtility.hotControl + Input System Key + NowIMGUIInputProvider
       NowIMGUITextInputRoutingTests.cs  IMGUI Event.current/GUI.changed + NowGUI, a Unity host adapter by definition
-      NowKeyBindingFieldTests.cs        UnityEngine.InputSystem Key/Keyboard (whole file is #if NOWUI_INPUT_SYSTEM)
       NowContextMenuOwnerLifetimeTests.cs  GameObject/MonoBehaviour/Component + NowOverlay.Host(Component) (H.4)
 
     plus every file the dependency inventory classifies as graphics-device or Unity-host bound (renderer, SDF, mask

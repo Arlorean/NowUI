@@ -1,6 +1,12 @@
 # M1 — engine-free NowUI core: status report
 
-Everything below was measured on 2026-09-07, not estimated. Every command is reproducible from the repository root.
+Historical milestone report. The engine-free core remains the native host's
+foundation; the M2/M3 standalone browser host and JavaScript API described below
+were retired. The current optional browser target uses shared C# scenes;
+current usage is in [Native CLI](NativeCLI.md).
+
+Everything below was measured on 2026-09-07, not estimated. Commands and counts
+record that checkout and may differ from the current build.
 
 ## Result: all four exit criteria met
 

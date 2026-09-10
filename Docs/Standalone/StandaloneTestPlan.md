@@ -1,5 +1,10 @@
 # Standalone Test Plan (M1)
 
+Historical M1 test plan. Counts, shaping exclusions and the M2/M3 browser roadmap
+below describe that milestone, not the current native build. The standalone
+browser host has been retired. See [Native CLI](NativeCLI.md) for current host
+capabilities and validation commands.
+
 Scope: which files under `Assets/NowUITests` the `Standalone/Tests` project (AssemblyName `Tests`, NUnit, `dotnet test`, null render backend) compiles and runs in M1, what each file needs from the shim (`NowUI.Engine`), the null backend and the host clock, how Unity's NUnit usage maps to the NUnit NuGet, and the risks. Every candidate file listed in inventory §G.4 was read in full (40 test files + `Simple.cs` + `Support/NowInputReplay.cs` + `Support/NowPopupTestDriver.cs`, plus `BenchmarkSupport/NowBenchmarkAllocations.cs` which four of them depend on). Counts below are executed test *cases* (each `[TestCase]` row counts once), not attributes.
 
 Companion documents: `UnityDependencyInventory.md` (shim inventory A, dispositions B, seams C, hazards D, open questions H) and `UnityValueTypeSemantics.md`.

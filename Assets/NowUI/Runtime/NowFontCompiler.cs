@@ -13,9 +13,9 @@
 // valve on everywhere else: off Unity, LIBRARY_NAME is the module NAME
 // "nowui-msdf", never "__Internal", so a host that does not link the plugin
 // gets a catchable DllNotFoundException on first use and falls back to the
-// managed baker. The browser host links it (see
-// Standalone/Web/NowUI.Web/NowUI.Web.csproj); the desktop test hosts do not,
-// and keep the managed path they already had.
+// managed baker. The desktop host distributes the native plugin for HarfBuzz
+// shaping, CFF outlines and color glyphs. TrueType SDF baking remains managed
+// by default whether or not the plugin is present.
 #if !NOWUI_STANDALONE || NOWUI_STANDALONE_MSDF_NATIVE
 #define NOWUI_MSDF_NATIVE
 #endif
@@ -31,7 +31,7 @@ using UnityEngine;
 
 namespace NowUI
 {
-    public static class NowFontCompiler
+    public static partial class NowFontCompiler
     {
         /// <summary>
         /// Restricts glyph baking to the managed compiler; fonts it cannot handle
@@ -145,7 +145,23 @@ namespace NowUI
             [Out] byte[] errorBuffer,
             int errorBufferLength);
 
-        [DllImport(LIBRARY_NAME, CallingConvention = CallingConvention.Cdecl)]
+        [DllImport(LIBRARY_NAME, EntryPoint = "nowui_compile_font_from_memory_with_codepoints", CallingConvention = CallingConvention.Cdecl)]
+#if NOWUI_STANDALONE
+        static extern int nowui_compile_font_from_memory_with_codepoints_native(
+            byte[] fontData,
+            int fontDataLength,
+            int size,
+            int pixelRange,
+            int[] codepoints,
+            int codepointCount,
+            [Out] byte[] atlasRgba,
+            int atlasRgbaLength,
+            [Out] NativeGlyph[] glyphs,
+            int glyphCapacity,
+            ref NativeAtlasInfo info,
+            [Out] byte[] errorBuffer,
+            int errorBufferLength);
+#else
         static extern int nowui_compile_font_from_memory_with_codepoints(
             byte[] fontData,
             int fontDataLength,
@@ -160,6 +176,7 @@ namespace NowUI
             ref NativeAtlasInfo info,
             [Out] byte[] errorBuffer,
             int errorBufferLength);
+#endif
 #else
         static int nowui_compile_font_from_memory(
             byte[] fontData,

@@ -1,5 +1,11 @@
 # NowUI Standalone Core — Unity Dependency Inventory
 
+Historical inventory used to design the M1 engine shim. Source line numbers and
+browser-specific recommendations below are preserved as research evidence;
+the original standalone WASM host and JavaScript authoring API were retired.
+Current native usage and the optional shared C# browser target are documented
+in [Native CLI](NativeCLI.md).
+
 Source of truth for the next design phase (shim spec, render-backend interface, file split). Synthesised from 171 per-file reader reports (all of `Runtime/` incl. `URP/` and `HDRP/`, and all of `Extensions/`) plus the assembly-structure report. Line numbers are those quoted by the readers. Nothing below is invented beyond what the reports contain; where readers disagreed or hedged, the disagreement is recorded rather than resolved.
 
 Conventions: **core** = compiles against the shim unchanged; **core-with-guards** = needs a few `#if` regions or a small hook; **split-file** = classes/members move to a Unity host partial/file; **host-only-exclude** = excluded from the core build.

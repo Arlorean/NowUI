@@ -1,5 +1,12 @@
 # NowUI Standalone Core — M1 Design (final)
 
+Historical design, retained for the engine shim's original contracts and decisions.
+Its M2/M3 browser roadmap and milestone limits describe the plan at that time;
+the original standalone WASM host and JavaScript authoring API were retired.
+The current native workflow and optional browser target share C# scenes; for
+asset loading, shaping and validation, use
+[Native CLI](NativeCLI.md).
+
 **Status:** binding design for M1 (engine-free core build). Supersedes the three candidate designs.
 **Milestone:** M1 = the standalone solution builds with plain `dotnet build`, the chosen test subset passes with `dotnet test`
 against a null render backend, and the Unity EditMode/PlayMode results are identical to the recorded baseline.
@@ -444,7 +451,8 @@ DontRecalculateBounds=8 }`;
 `VertexAttributeFormat { Float32=0, Float16=1, UNorm8=2, SNorm8=3, UNorm16=4, SNorm16=5, UInt8=6, SInt8=7, UInt16=8,
 SInt16=9, UInt32=10, SInt32=11 }`;
 `BuiltinRenderTextureType { None=0, CurrentActive=1, CameraTarget=2, Depth=3, DepthNormals=4, ResolvedDepth=5 }`;
-`GraphicsDeviceType { Direct3D11=2, Null=4, OpenGLES3=11, Metal=16, Direct3D12=18, Vulkan=21 }`.
+`GraphicsDeviceType { Direct3D11=2, Null=4, OpenGLES3=11, Metal=16, OpenGLCore=17, Direct3D12=18, Vulkan=21 }`.
+`OpenGLCore` was added for the native capture host; value 17 was checked against Unity 6000.4.0f1's CoreModule.
 `ShadowSamplingMode` and `RenderTextureMemoryless` are omitted.
 
 ### 3.3 `Engine/Attributes/Attributes.cs` — `namespace UnityEngine`

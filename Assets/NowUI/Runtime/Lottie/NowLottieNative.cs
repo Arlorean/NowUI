@@ -16,7 +16,7 @@ namespace NowUI.Internal
     /// Define the NOWUI_VG_DISABLE_NATIVE scripting symbol to compile the bindings
     /// out entirely and always use the managed tessellator.
     /// </summary>
-    public static class NowLottieNative
+    public static partial class NowLottieNative
     {
         /// <summary>
         /// Forces the managed tessellator even when the native library is present.
@@ -639,7 +639,27 @@ namespace NowUI.Internal
             float trimOffset,
             int trimIndividual);
 
-        [DllImport(LIBRARY_NAME, CallingConvention = CallingConvention.Cdecl)]
+        [DllImport(LIBRARY_NAME, EntryPoint = "nowui_vg_stroke", CallingConvention = CallingConvention.Cdecl)]
+#if NOWUI_STANDALONE
+        static extern int nowui_vg_stroke_native(
+            float[] contours,
+            int contourFloatCount,
+            int contourCount,
+            float[] clipContours,
+            int clipFloatCount,
+            int clipContourCount,
+            int clipInvert,
+            float[] paint,
+            int paintFloatCount,
+            float width,
+            int cap,
+            int join,
+            int hasTrim,
+            float trimStart,
+            float trimEnd,
+            float trimOffset,
+            int trimIndividual);
+#else
         static extern int nowui_vg_stroke(
             float[] contours,
             int contourFloatCount,
@@ -658,6 +678,7 @@ namespace NowUI.Internal
             float trimEnd,
             float trimOffset,
             int trimIndividual);
+#endif
 
         [DllImport(LIBRARY_NAME, CallingConvention = CallingConvention.Cdecl)]
         static extern int nowui_vg_end(out int vertexCount, out int indexCount, [Out] float[] bounds);
@@ -670,7 +691,34 @@ namespace NowUI.Internal
             int vertexCapacity,
             int indexCapacity);
 
-        [DllImport(LIBRARY_NAME, CallingConvention = CallingConvention.Cdecl)]
+        [DllImport(LIBRARY_NAME, EntryPoint = "nowui_vg_blit_mesh", CallingConvention = CallingConvention.Cdecl)]
+#if NOWUI_STANDALONE
+        static extern unsafe void nowui_vg_blit_mesh_native(
+            float* srcPositions,
+            float* srcColors,
+            int vertexCount,
+            int* srcIndices,
+            int indexCount,
+            float positionScale,
+            float offsetX,
+            float offsetY,
+            float* tint4,
+            float* mask4,
+            float* rect4,
+            float* dstVerts,
+            float* dstUvs,
+            float* dstRawUv,
+            float* dstRect,
+            float* dstRadius,
+            float* dstColor,
+            float* dstOutline,
+            float* dstExtra,
+            float* dstMask,
+            int dstVertexBase,
+            int* dstIndices,
+            int dstIndexBase,
+            int indexOffset);
+#else
         static extern unsafe void nowui_vg_blit_mesh(
             float* srcPositions,
             float* srcColors,
@@ -696,8 +744,39 @@ namespace NowUI.Internal
             int* dstIndices,
             int dstIndexBase,
             int indexOffset);
+#endif
 
-        [DllImport(LIBRARY_NAME, CallingConvention = CallingConvention.Cdecl)]
+        [DllImport(LIBRARY_NAME, EntryPoint = "nowui_vg_blit_text_run", CallingConvention = CallingConvention.Cdecl)]
+#if NOWUI_STANDALONE
+        static extern unsafe void nowui_vg_blit_text_run_native(
+            float* glyphs,
+            int start,
+            int end,
+            float x,
+            float y,
+            float fontSize,
+            float baseline,
+            float* mask4,
+            float* color4,
+            float* outline4,
+            float outline,
+            float pixelRange,
+            float* dstVerts,
+            float* dstUvs,
+            float* dstRawUv,
+            float* dstRect,
+            float* dstRadius,
+            float* dstColor,
+            float* dstOutline,
+            float* dstExtra,
+            float* dstMask,
+            int dstVertexBase,
+            int* dstIndices,
+            int dstIndexBase,
+            float* outPenX,
+            int* outCounts,
+            float* outBounds);
+#else
         static extern unsafe void nowui_vg_blit_text_run(
             float* glyphs,
             int start,
@@ -726,8 +805,27 @@ namespace NowUI.Internal
             float* outPenX,
             int* outCounts,
             float* outBounds);
+#endif
 
-        [DllImport(LIBRARY_NAME, CallingConvention = CallingConvention.Cdecl)]
+        [DllImport(LIBRARY_NAME, EntryPoint = "nowui_vg_pack_canvas", CallingConvention = CallingConvention.Cdecl)]
+#if NOWUI_STANDALONE
+        static extern unsafe void nowui_vg_pack_canvas_native(
+            float* srcVerts,
+            float* srcUvs,
+            float* srcRadius,
+            float* srcRawUv,
+            float* srcColors,
+            float* srcRect,
+            float* srcMask,
+            float* srcExtra,
+            float* srcOutline,
+            int vertexCount,
+            int isText,
+            float offsetX,
+            float offsetY,
+            float* dst,
+            int dstVertexBase);
+#else
         static extern unsafe void nowui_vg_pack_canvas(
             float* srcVerts,
             float* srcUvs,
@@ -744,8 +842,26 @@ namespace NowUI.Internal
             float offsetY,
             float* dst,
             int dstVertexBase);
+#endif
 
-        [DllImport(LIBRARY_NAME, CallingConvention = CallingConvention.Cdecl)]
+        [DllImport(LIBRARY_NAME, EntryPoint = "nowui_vg_pack_render", CallingConvention = CallingConvention.Cdecl)]
+#if NOWUI_STANDALONE
+        static extern unsafe void nowui_vg_pack_render_native(
+            float* srcVerts,
+            float* srcUvs,
+            float* srcRadius,
+            float* srcRawUv,
+            float* srcColors,
+            float* srcRect,
+            float* srcMask,
+            float* srcExtra,
+            float* srcOutline,
+            int vertexCount,
+            float offsetX,
+            float offsetY,
+            float* dst,
+            int dstVertexBase);
+#else
         static extern unsafe void nowui_vg_pack_render(
             float* srcVerts,
             float* srcUvs,
@@ -761,6 +877,7 @@ namespace NowUI.Internal
             float offsetY,
             float* dst,
             int dstVertexBase);
+#endif
 
         [DllImport(LIBRARY_NAME, CallingConvention = CallingConvention.Cdecl)]
         static extern int nowui_vg_version();

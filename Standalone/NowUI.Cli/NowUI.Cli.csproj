@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>nowui</AssemblyName>
+    <RootNamespace>NowUI.Cli</RootNamespace>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>true</IsPackable>
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>nowui</ToolCommandName>
+    <PackageId>NowUI.Cli</PackageId>
+    <Version>0.1.0</Version>
+    <Description>Render and preview actual C# NowUI scenes with direct Unity project assets.</Description>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../NowUI.Desktop/NowUI.Desktop.csproj" />
+    <ProjectReference Include="../Extensions/*/*.csproj" />
+    <None Include="README.md" Pack="true" PackagePath="/" />
+    <None Include="../../Assets/NowUI/LICENSE.md" Link="LICENSE.md"
+          CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <None Include="../../Assets/NowUI/Native~/THIRD_PARTY_NOTICES.md" Link="THIRD_PARTY_NOTICES.md"
+          CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <None Include="../../Assets/NowUI/Native~/ThirdPartyLicenses/**/*" Link="ThirdPartyLicenses/%(RecursiveDir)%(Filename)%(Extension)"
+          CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <!-- Prepared optional content only: native build/pack has no browser project
+         reference and does not require the wasm-tools workload. -->
+    <Content Include="../../Assets/NowUI/Native~/browser/**/*" Link="BrowserKit/%(RecursiveDir)%(Filename)%(Extension)"
+             CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Pack="false" />
+    <InternalsVisibleTo Include="NowUI.Native.Tests" />
+  </ItemGroup>
+</Project>

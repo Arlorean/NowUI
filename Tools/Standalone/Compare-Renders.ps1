@@ -2,10 +2,10 @@
 
 <#
 .SYNOPSIS
-    Differences a browser render against its Unity reference and gates on a stated tolerance.
+    Differences a native render against its Unity reference and gates on a stated tolerance.
 
 .DESCRIPTION
-    Given two PNGs of identical size - typically Unity's render of a scene and the browser's render of the same
+    Given two PNGs of identical size - typically Unity's render of a scene and the native CLI's render of the same
     scene - it reports, per channel and overall:
 
         max          the single largest absolute difference. Diagnostic only; see "Why not the maximum" below.
@@ -18,13 +18,10 @@
 
 .NOTES
     WHY NOT THE MAXIMUM.
-    Peak difference is the wrong statistic for anything containing text, and this is measured rather than assumed.
-    Docs/Standalone/M2-Scouting.md records the quick-start comparison: median 2/255 across the whole image, and a
-    maximum of 252/255 - at x=415, which is precisely the one-pixel overhang where the browser's glyph run ends a
-    pixel wider than Unity's at 2x. On a hard black-to-white glyph edge a HALF-pixel disagreement produces a
-    255-wide channel difference. Two independent rasterisers of the same distance field are expected to disagree
-    by half a pixel. So a gate on the maximum would fail every text scene forever while telling you nothing, and
-    lowering it until things passed would be tuning the instrument to the answer.
+    A high peak at an antialiased glyph edge can dominate an otherwise close image. The current comparison and
+    measured distributions are documented in Docs/Standalone/NativeRenderingComparison.md. Inspect the diff and
+    its spatial extent alongside the percentile and differing-pixel ratio; the maximum alone does not establish
+    whether the whole scene matches. Flat opaque interiors should agree much more closely than glyph edges.
 
     WHERE THE DEFAULTS COME FROM.
     -Threshold 8. The same per-channel tolerance NowVisualHarnessRunner's own golden comparison uses for its
@@ -33,7 +30,7 @@
 
     -MaxDifferingRatio 0.02. Twice the 1% that same comparison allows, and the reason for the factor is the
     difference in what is being compared: Unity-against-Unity differs only by GPU non-determinism, where
-    Unity-against-browser differs by two independent rasterisers, two independent glyph-quad roundings and two
+    Unity-against-native differs by two rendering backends, potentially different glyph-quad roundings and two
     independent derivative evaluations. Glyph outline pixels are where that lands, and in these scenes text
     covers of the order of one to two percent of the image. 2% is therefore the smallest round number that does
     not fail on antialiasing alone. It is a ceiling on how much of the image may disagree, not a licence: a real
@@ -54,7 +51,7 @@
     The Unity render: a PNG, or a directory of them (from `NowUI-Harness.ps1 -Mode Visual`).
 
 .PARAMETER Candidate
-    The browser render: a PNG, or a directory of them. A directory is paired with the reference directory by
+    The candidate render: a PNG, or a directory of them. A directory is paired with the reference directory by
     file name, and only names present in both are compared; names present in only one are reported.
 
 .PARAMETER DiffPath
@@ -249,7 +246,7 @@ function Compare-OnePair {
 
     if ($reference.width -ne $candidate.width -or $reference.height -ne $candidate.height) {
         # Not a tolerance failure and not comparable: a size mismatch means the two hosts were asked for
-        # different things (usually the browser at ?dpr=1 against a Unity render at renderScale 2), and every
+        # different things (for example a native capture at 1x against a Unity render at renderScale 2), and every
         # per-pixel number below would be meaningless.
         return [pscustomobject]@{
             name = $Name

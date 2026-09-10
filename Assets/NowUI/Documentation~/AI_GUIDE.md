@@ -46,6 +46,8 @@ without an explicit reason.
 
 | Context | Explicit placement | Measured layout | Frame owner |
 | --- | --- | --- | --- |
+| Native preview / animation app | `Now` | `NowLayout` | Native CLI |
+| Optional C# browser deployment | `Now` | `NowLayout` | CLI web target |
 | UGUI Canvas | `NowGraphic` | `NowLayoutGraphic` | Host |
 | UI Toolkit/UXML | `NowVisualElement` | `NowLayoutVisualElement` | Host |
 | URP/HDRP overlay | `NowPipelineGraphic` | `NowPipelineLayoutGraphic` | Host plus pipeline integration |
@@ -66,23 +68,18 @@ gamepad navigation requires the Input System because legacy mappings are
 project-defined. `KeyBindingField`, `NowKeyInput`, and `NowKeyNames` require
 resolved `com.unity.inputsystem`; their public API uses its `Key` type.
 
-The browser is not one of these hosts. The package also ships a WebAssembly
-build of NowUI with a JavaScript surface, for prototypes a person can open and
-click; it is a strict subset with no arbitrary transforms, SDF, node graph or
-code editor, and it is never a substitute for the Unity work a task asked for.
-`ui.markdown` renders a document in the flow - put one in a `ui.scroll` and the
-scroll sizes it - and returns the link the reader clicked, so a viewer navigates
-between documents without a parser. Pictures and Lottie animations DO work there, from a URL rather than
-from the bundle: `ui.image(box, url)` and `ui.lottie(box, url)` fetch at runtime
-and cache by URL, and the preview serves the project's own `Assets` folder under
-`/assets/`, so a prototype can use the art the project already has.
+For mockups, interactive demonstrations, screenshots and animations, use the native
+C# CLI by default. It runs the actual `Now` / `NowLayout` code and reads supported
+Unity project assets directly. Read [Native Preview](NativePreview.md). Create and
+launch the scene yourself; the user should not need an export step or Editor menu.
+Use `preview` for a live app, `render` for a still, and `animate` for repeatable
+frames. When browser deployment is requested, use `publish --target web` or
+`preview --target web` with the same C# scene; read [Browser Deployment](BrowserDeployment.md).
+The previous JavaScript authoring API and separate browser demo bridge remain removed.
 
-Serving it is your job, not the user's: `python <package>/WebBundle~/serve.py`
-puts the bundle, the project's `NowUI/apps` folder and its `Assets` folder on a
-loopback port with no Unity, no SDK and nothing to install, and prints a URL per
-application. The Editor's **Tools > NowUI > Web Preview** does the same and adds
-reload-on-save, which makes it the authoring tool rather than the one to reach
-for when someone just needs to see a result. See [Web Preview](WebPreview.md).
+Keep reusable drawing code shared with the Unity implementation. A preview does
+not by itself validate Unity-specific components, scenes or render pipelines;
+use the relevant Unity host and tests when those are part of the requested work.
 
 Read [Render Pipeline Integrations](RenderPipelines.md) before creating UGUI,
 UI Toolkit, URP, or HDRP integration. Read [World Space](WorldSpace.md) for
@@ -150,7 +147,7 @@ Host lifecycle rules:
 | Runtime or editor `OnGUI` | `NowGUI`, `NowEditorGUI` | [IMGUI](EditorGUI.md) |
 | Inspector preview of a UI host | `NowPreviewEditor`, `INowPreviewHost` | [IMGUI](EditorGUI.md) |
 | Warmup and allocation expectations | Warmup APIs | [Performance](Performance.md) |
-| Showing a user a running prototype, a still, or a short animation | Web Preview and its capture flags | [Web Preview](WebPreview.md) |
+| Showing a user a running prototype, a still, or an animation | Native C# CLI | [Native Preview](NativePreview.md) |
 
 ## Correctness rules
 

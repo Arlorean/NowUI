@@ -132,6 +132,7 @@ namespace UnityEngine.Rendering
         Null = 4,
         OpenGLES3 = 11,
         Metal = 16,
+        OpenGLCore = 17,
         Direct3D12 = 18,
         Vulkan = 21,
     }

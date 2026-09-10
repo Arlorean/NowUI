@@ -137,9 +137,8 @@ namespace NowUI.Engine
         public string[] layerNames => m_LayerNames;
 
         /// <summary>
-        /// Maps the OS onto Unity's desktop <i>player</i> platforms. Deliberately not WebGLPlayer even though the
-        /// browser is the eventual target: NowTextEditTests asserts the desktop platform convention, and a browser
-        /// host sets <c>WebGLPlayer</c> explicitly through its own <see cref="INowHostServices"/> (design §3.2).
+        /// Maps the OS onto Unity's desktop <i>player</i> platforms. Native input and text editing use these desktop
+        /// conventions. A custom host can provide its own platform through <see cref="INowHostServices"/>.
         /// </summary>
         private static UnityEngine.RuntimePlatform DetectPlatform()
         {

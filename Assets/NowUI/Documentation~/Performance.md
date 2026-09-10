@@ -31,6 +31,14 @@ Measure the actual host and feature combination after warmup. A smaller
 synthetic frame can miss glyph, ID, material, input, or effect state used by the
 real interface.
 
+The native C# host uses the same drawing code with native vector tessellation
+and OpenGL mesh submission. In a source checkout,
+`Docs/Standalone/NativePerformance.md` records reproducible native/Unity
+benchmarks, startup and frame timing boundaries, and allocation attribution.
+Run `Standalone/Benchmarks/NativeRendering` to measure a changed renderer;
+compare representative pixels as well as timings. The standalone scalar job
+implementation does not imply general performance parity with Unity Burst.
+
 SDF scenes upload each distinct graph as a contiguous range and pack its start
 and count into existing layer metadata. A layer evaluates only the shapes in
 its graph rather than scanning every uploaded scene shape, and repeated graph

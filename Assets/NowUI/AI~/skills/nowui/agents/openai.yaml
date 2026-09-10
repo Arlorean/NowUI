@@ -1,4 +1,4 @@
 interface:
-  display_name: "NowUI for Unity"
-  short_description: "Build Unity interfaces with installed NowUI"
-  default_prompt: "Use $nowui to build this Unity interface with the installed NowUI package."
+  display_name: "NowUI"
+  short_description: "Build C# interfaces and native previews with NowUI"
+  default_prompt: "Use $nowui to build and preview this C# interface with the installed NowUI package."

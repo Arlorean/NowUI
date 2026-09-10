@@ -184,11 +184,21 @@ namespace NowUI
         static readonly Dictionary<Key, CachedName> _displayNames = new Dictionary<Key, CachedName>(32);
         static readonly Dictionary<Key, string> _fallbackNames = new Dictionary<Key, string>(32);
         static readonly StringBuilder _builder = new StringBuilder(24);
+#if NOWUI_STANDALONE
+        // The desktop host supplies cached native layout names without exposing another public keyboard API.
+        internal static Func<Key, string> nativeDisplayName;
+#endif
 
         public static string GetName(Key key)
         {
             if (key == Key.None)
                 return "None";
+
+#if NOWUI_STANDALONE
+            string nativeName = nativeDisplayName?.Invoke(key);
+            if (!string.IsNullOrWhiteSpace(nativeName))
+                return FormatDisplayName(key, nativeName);
+#endif
 
 #if ENABLE_INPUT_SYSTEM
             var keyboard = Keyboard.current;

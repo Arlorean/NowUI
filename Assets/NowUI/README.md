@@ -93,60 +93,21 @@ Dedicated hosts own the frame and, for layout hosts, the measure/draw cycle.
 Do not call `Now.StartUI` or `NowLayout.RunMeasured` inside their
 `DrawNowUI(...)` methods.
 
-## Run NowUI in a browser
+## Native C# previews and animation apps
 
-NowUI ships a precompiled WebAssembly build of itself inside this package, at
-`WebBundle~/`. You do not need the .NET SDK, emscripten, a terminal or a network
-connection to use it.
+Run actual NowUI C# in an interactive native window or capture stills and animation
+frames. The CLI reads existing textures, sprite metadata, fonts and NowUI themes
+straight from the Unity project. No asset export or separate authoring API is needed.
 
-Choose **Tools > NowUI > Web Preview**. The Editor starts a loopback web server
-on `http://127.0.0.1:8973/` and opens your browser on it. The first launch also
-creates `<ProjectRoot>/NowUI/apps/app.js` with a small sample application.
+Agents use this workflow by default. The packaged launcher at `Native~/nowui.ps1`
+uses the bundled tool and a project-local installation. It requires the .NET 9 SDK
+and an OpenGL 3.3 desktop session. See [Native Preview](Documentation~/NativePreview.md)
+for scaffolding, reload, screenshots, animation and input replay.
 
-The Editor is a convenience, not a requirement. `WebBundle~/serve.py` puts the
-same bundle on the same kind of loopback port with nothing but Python 3, which
-is how a teammate with Unity closed, a CI job, or an assistant working in the
-project can hand someone a running page:
-
-```
-python WebBundle~/serve.py --app app
-```
-
-It finds the project and your `NowUI/apps` folder by itself and prints a URL for
-each application. What it does not do is reload on save or receive captures;
-both of those are the Editor window's.
-
-That folder is yours. It sits outside `Assets/` and outside this package, so
-updating NowUI can never overwrite it and Unity never reimports it. Edit
-`apps/app.js` in any editor, save, and press F5 — or leave the preview's watch
-option on and the page reloads itself.
-
-- `?app=NAME` serves `<ProjectRoot>/NowUI/apps/NAME.js`, falling back to the
-  sample of that name inside the package.
-- The bare URL opens the C# feature gallery.
-
-The application API is JavaScript. `WebBundle~/nowui/nowui.js` is the surface
-itself and documents every function in comments beside it; the longer written
-specification is `Docs/Standalone/M3-Spec.md` in the source repository, which a
-package install does not carry.
-
-[Web Preview](Documentation~/WebPreview.md) covers the rest: writing an
-application, the mistakes the surface refuses by name, and how to record a still
-or a short animation of a running page into `<ProjectRoot>/NowUI/captures/` so it
-can be shown to someone who is not at the machine. Add `&shot=1` or
-`&clip=SECONDS` to a preview URL, and keep the browser window in front — a
-hidden tab draws nothing, and NowUI writes an explanation rather than a blank
-picture when that happens.
-
-The browser surface is a subset of the C# API. It covers layout, containers,
-controls, values and the drawing primitives — `ui.canvas`, `ui.rect`,
-`ui.circle`, `ui.line`, `ui.bezier`, `ui.triangle`, `ui.polygon`, `ui.gradient`
-and `ui.mask`. It has no textures, no transforms, no SDF, no node graph and no
-markdown or code editor, and `ui.reset`, `ui.overlay` and `ui.contextMenu`
-throw a named error rather than working.
-
-Everything is served from your own machine. Nothing is downloaded and nothing
-leaves it.
+For browser deployment, the optional [web target](Documentation~/BrowserDeployment.md)
+publishes the same C# `INowScene` to a static WebGL2 application. It includes
+supported assets automatically and needs the .NET 9 `wasm-tools` workload only
+when building for the browser.
 
 ## Agent integration
 

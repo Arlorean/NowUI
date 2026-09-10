@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <EnableDynamicLoading>true</EnableDynamicLoading>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../NowUI.Hosting/NowUI.Hosting.csproj" />
+    <ProjectReference Include="../../Extensions/NowUI.Extensions.Sdf/NowUI.Extensions.Sdf.csproj" />
+  </ItemGroup>
+</Project>

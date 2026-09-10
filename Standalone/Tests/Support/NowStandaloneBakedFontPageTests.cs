@@ -29,7 +29,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text.Json;
 using NowUI;
-using NowUI.Web;
+using NowUI.Hosting;
 using NUnit.Framework;
 using UnityEngine;
 
@@ -283,7 +283,7 @@ namespace NowUI.Standalone.Tests
 
             int width, height;
             byte[] rgba;
-            if (!NowWebPng.TryDecode(encoded, out width, out height, out rgba, out error))
+            if (!NowPngCodec.TryDecode(encoded, out width, out height, out rgba, out error))
                 return null;
 
             if (width != page.GetProperty("width").GetInt32() || height != page.GetProperty("height").GetInt32())

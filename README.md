@@ -149,6 +149,22 @@ legacy axes and buttons are project-defined. `KeyBindingField`, `NowKeyInput`,
 and `NowKeyNames` are also available only when `com.unity.inputsystem` resolves;
 their public API uses `UnityEngine.InputSystem.Key`.
 
+## Native C# previews
+
+The package includes a native CLI for interactive C# apps, stills and animation
+capture using the same `Now` / `NowLayout` API. It reloads source and project
+assets on save, reads supported Unity assets directly, and renders stock UI,
+glass and SDF effects in Gamma or Linear color. Agents use this workflow by default.
+Start with the [native preview guide](Assets/NowUI/Documentation~/NativePreview.md)
+and [C# sample](Standalone/Samples/NativePreview/README.md). The host requires
+.NET 9 and OpenGL 3.3; detailed contracts and platform limits are in the
+[maintainer guide](Docs/Standalone/NativeCLI.md).
+
+The optional [browser target](Assets/NowUI/Documentation~/BrowserDeployment.md)
+publishes the same C# scene as a static WebGL2 application, with automatic asset
+inclusion. Use `publish --target web` or `preview --target web`; web builds also
+require the .NET 9 `wasm-tools` workload. Native remains the default.
+
 ## AI coding agents
 
 The UPM package ships version-matched documentation, a scoped `AGENTS.md`, and

@@ -1,5 +1,9 @@
 # Shim gap probe — measured, 2026-09-07
 
+Historical pre-implementation probe. Its missing members and M2 references are
+not a current backlog. See [Native CLI](NativeCLI.md) for the maintained native
+host and current validation workflow.
+
 An empirical check of how much of `Assets/NowUI/Runtime` the standalone shim must still cover. It exists because the
 dependency inventory was produced by reading code, and a compiler is a better witness than a reader.
 

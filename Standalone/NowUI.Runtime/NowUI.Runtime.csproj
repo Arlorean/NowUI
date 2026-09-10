@@ -14,17 +14,22 @@
       NOWUI_STANDALONE_MSDF_NATIVE compiles the native msdf bindings IN for the engine-free build. See the
       header of Assets/NowUI/Runtime/NowFontCompiler.cs: off Unity the DllImport names the module
       "nowui-msdf" rather than "__Internal", so a host that does not link the plugin raises a catchable
-      DllNotFoundException on first use and drops to the managed baker. Only the browser host links it, and
-      only the browser host needs it - there Burst is an attribute-only shim, so the managed baker's
-      parallel job runs interpreted and single threaded. The desktop test hosts keep the managed path.
+      DllNotFoundException on first use and drops to the managed baker. Desktop hosts distribute this
+      plugin for HarfBuzz shaping, CFF fonts, and color glyphs; TrueType SDF baking stays managed by default.
     -->
-    <DefineConstants>$(DefineConstants);NOWUI_STANDALONE;NOWUI_VG_DISABLE_NATIVE;NOWUI_STANDALONE_MSDF_NATIVE</DefineConstants>
+    <DefineConstants>$(DefineConstants);NOWUI_STANDALONE;NOWUI_INPUT_SYSTEM;NOWUI_STANDALONE_MSDF_NATIVE</DefineConstants>
     <NoWarn>$(NoWarn);CS1591;CS0649;CS0169;CS0414</NoWarn>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(NowUIUseNativeVg)'=='false'">
+    <DefineConstants>$(DefineConstants);NOWUI_VG_DISABLE_NATIVE</DefineConstants>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)'=='Debug'">
     <DefineConstants>$(DefineConstants);DEVELOPMENT_BUILD</DefineConstants>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="NativePluginResolver.cs" />
+    <Compile Include="BrowserNowLottieNative.cs" />
+    <Compile Include="BrowserNowFontCompiler.cs" />
     <Compile Include="../../Assets/NowUI/Runtime/**/*.cs" LinkBase="Runtime" Exclude="
       ../../Assets/NowUI/Runtime/URP/**;
       ../../Assets/NowUI/Runtime/HDRP/**;
@@ -43,17 +48,10 @@
       ../../Assets/NowUI/Runtime/NowModelPreview.cs;
       ../../Assets/NowUI/Runtime/Input/NowWorldInputProvider.cs;
       ../../Assets/NowUI/Runtime/Input/NowRectTransformInputProvider.cs;
-      ../../Assets/NowUI/Runtime/Input/NowKeyInput.cs;
-      ../../Assets/NowUI/Runtime/Controls/NowKeyBindingField.cs;
       ../../Assets/NowUI/Runtime/Lottie/NowLottieGraphic.cs;
       ../../Assets/NowUI/Runtime/Lottie/NowLottieBurstTessellator.cs" />
-    <!--
-      The browser provider installs pre-baked font atlas pages, and NowFont.BakedPage / NowFont.SetBakedPages are
-      internal. Declared here rather than in Assets/NowUI/Runtime/AssemblyInfo.cs on purpose: NowUI.Web exists only in
-      this tree, so a friendship to it has no meaning inside Unity, and MSBuild generating it touches no file under
-      Assets/ - which is what keeps the 1878 EditMode and 163 PlayMode gates out of this change entirely.
-    -->
-    <InternalsVisibleTo Include="NowUI.Web" />
+    <InternalsVisibleTo Include="NowUI.Native.Tests" />
+    <InternalsVisibleTo Include="NowUI.Desktop" />
     <ProjectReference Include="../NowUI.Engine/NowUI.Engine.csproj" />
     <Analyzer Include="../../Assets/NowUI/Runtime/Analyzers/NowUI.Analyzers.dll" />
   </ItemGroup>

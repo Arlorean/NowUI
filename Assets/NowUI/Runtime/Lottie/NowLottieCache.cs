@@ -49,6 +49,9 @@ namespace NowUI
         /// <summary>Current number of queued, loaded, or failed URL entries.</summary>
         public static int cachedEntryCount => _entries.Count;
 
+        /// <summary>Queued and running automatic downloads, including results awaiting the next frame.</summary>
+        public static int pendingDownloadCount => _pending.Count + _activeLoads;
+
         public static NowLottieAsset GetAsset(string url)
         {
             GetState(url, out var asset, out _);

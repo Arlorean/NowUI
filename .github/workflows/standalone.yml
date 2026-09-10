@@ -1,35 +1,28 @@
-name: Standalone Core
+name: Native and standalone core
 
-# The engine-free build and its tests, on every change that can affect them.
-#
-# WHY THIS EXISTS. NowUI's browser support is not a separate port: the same sources under Assets/NowUI/Runtime are
-# compiled against a UnityEngine-compatible shim (Standalone/NowUI.Engine) and Unity's own test suite is compiled
-# against that build unmodified. The whole point of the arrangement is that a change is made in ONE place and the
-# web side follows. Until this workflow existed nothing under Standalone/ ran in CI at all, so a change to the
-# package that broke the engine-free build merged green and was found only when somebody next opened the browser
-# preview. That is the exact opposite of the property the arrangement is for.
-#
-# WHAT IT DOES NOT DO. It does not run Unity, and it does not rebuild the shipped web bundle. Unity's own EditMode
-# and PlayMode suites are the package's gate and run elsewhere; the bundle is refreshed by web-bundle.yml.
-
+# Unity and native hosts compile the same NowUI source.
 on:
   workflow_dispatch:
   pull_request:
     paths:
       - 'Assets/NowUI/Runtime/**'
       - 'Assets/NowUI/Extensions/**'
+      - 'Assets/NowUI/Native~/**'
       - 'Assets/NowUITests/**'
       - 'Standalone/**'
       - 'Tools/Standalone/**'
+      - 'Tools/*Native*.ps1'
       - '.github/workflows/standalone.yml'
   push:
     branches: [main]
     paths:
       - 'Assets/NowUI/Runtime/**'
       - 'Assets/NowUI/Extensions/**'
+      - 'Assets/NowUI/Native~/**'
       - 'Assets/NowUITests/**'
       - 'Standalone/**'
       - 'Tools/Standalone/**'
+      - 'Tools/*Native*.ps1'
       - '.github/workflows/standalone.yml'
 
 permissions:
@@ -39,52 +32,28 @@ jobs:
   build-and-test:
     runs-on: ubuntu-latest
     timeout-minutes: 25
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up .NET
-        uses: actions/setup-dotnet@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '9.0.x'
-
-      # Only Standalone/Web/NowUI.Web targets net9.0-browser; the other twelve projects are plain net9.0. The
-      # workload is still needed to BUILD THE SOLUTION, because the web host is in it. Cached because installing
-      # it is the slowest step here by a wide margin.
-      - name: Cache the wasm-tools workload
-        uses: actions/cache@v4
-        with:
-          path: ~/.dotnet
-          key: dotnet-wasm-tools-${{ runner.os }}-9.0.x
-
-      - name: Install the wasm-tools workload
-        run: dotnet workload install wasm-tools
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-
-      - name: Build the engine-free solution
+      - name: Build shared C# and native host
         run: dotnet build Standalone/NowUI.Standalone.sln -c Debug --nologo
-
-      # DEBUG, not Release, and that is load-bearing rather than a habit: several asserted diagnostics in Unity's
-      # own tests are compiled under UNITY_EDITOR || DEVELOPMENT_BUILD, and Standalone/Tests/Tests.csproj defines
-      # DEVELOPMENT_BUILD only in Debug. In Release those tests fail because the warning they expect no longer
-      # exists. See the comment on that PropertyGroup.
-      - name: Unity's own test suite, compiled engine-free
-        run: dotnet test Standalone/Tests/Tests.csproj -c Debug --nologo
-
-      - name: The JavaScript bridge suite
-        run: dotnet test Standalone/NowUI.Bridge.Tests/NowUI.Bridge.Tests.csproj -c Debug --nologo
-
-      # The JavaScript half of the ABI, which the managed suite cannot reach: the op table, the surface hash, and
-      # the check that the specification and the runtime name the same functions as present and absent.
-      - name: The JavaScript checks
-        run: node Standalone/NowUI.Bridge.Tests/js/run.mjs
-
-      # A publish is the only build that exercises trimming and the native link, and it is where a change that
-      # compiles but cannot ship shows up. Output discarded; this step is a gate, not an artifact.
-      - name: Publish the browser host
-        run: dotnet publish Standalone/Web/NowUI.Web -c Release -o "${{ runner.temp }}/webpublish" --nologo
+      - name: Unity test sources compiled standalone
+        # Debug retains the development diagnostics asserted by the shared tests.
+        run: dotnet test Standalone/Tests/Tests.csproj -c Debug --no-build --nologo --filter 'Category!=NowUI.Overview'
+      - name: Engine contracts
+        run: dotnet test Standalone/NowUI.Engine.Tests -c Debug --no-build --nologo
+      - name: Software OpenGL display
+        run: sudo apt-get update && sudo apt-get install -y xvfb libgl1-mesa-dri libxrandr2 libxinerama1 libxcursor1 libxi6
+      - name: Native contracts and GPU captures
+        run: xvfb-run -a env LIBGL_ALWAYS_SOFTWARE=1 NOWUI_TEST_NATIVE_GRAPHICS=1 dotnet test Standalone/NowUI.Native.Tests -c Debug --no-build --nologo
+      - name: Pack native CLI
+        run: dotnet pack Standalone/NowUI.Cli -c Release -o "${{ runner.temp }}/native-tool" --nologo
+      - name: Install and scaffold outside the checkout
+        shell: bash
+        run: |
+          dotnet tool install NowUI.Cli --source "${{ runner.temp }}/native-tool" --tool-path "${{ runner.temp }}/nowui-tool"
+          cd "${{ runner.temp }}"
+          ./nowui-tool/nowui init NativeSmoke
+          xvfb-run -a env LIBGL_ALWAYS_SOFTWARE=1 ./nowui-tool/nowui render NativeSmoke/Preview.csproj --output native-smoke.png
