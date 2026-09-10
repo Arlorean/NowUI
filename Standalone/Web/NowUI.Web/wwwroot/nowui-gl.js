@@ -5,8 +5,10 @@
 //   * Attribute locations 0..8 are fixed here and in NowMeshLayout on the C# side.
 //   * The uniform block is a flat Float32Array of UNIFORM_FLOATS entries whose slot map is duplicated as
 //     WebGL2Backend.UniformSlots. Change one, change both.
-//   * Every Span<byte>/Span<int> argument arrives as a .NET MemoryView, valid only for the duration of the call.
-//     Copy it (`asBytes`/`asInts`) before doing anything asynchronous with it. Nothing here is asynchronous.
+//   * Every Span<byte>/Span<int> argument arrives as a .NET MemoryView, valid only for the duration of the
+//     call. `asBytes`/`asInts` unwrap one to a typed array over the wasm heap WITHOUT COPYING - see the note
+//     above them for why that is safe and what would make it unsafe. Nothing here is asynchronous, and nothing
+//     here may retain one of those arrays past its call.
 //
 // Colour space is Gamma (Docs/Standalone/M2-ShaderPort.md §6): no SRGB8_ALPHA8, no sRGB framebuffer, no
 // UNPACK_COLORSPACE_CONVERSION. `NowUIColorToWorkingSpace` below is deliberately the identity function.
@@ -3665,18 +3667,100 @@ function requireGl() {
     return gl;
 }
 
-// A .NET MemoryView is valid only for the duration of the call. `slice()` copies it out; a plain typed array is
-// accepted too so this file stays usable from a test harness that calls it directly.
+// ?glcopy=1 restores the copying behaviour these two used to have unconditionally. It exists so the change
+// below can be A/B'd from ONE bundle build, and so a browser that ever objects to a heap-backed view has a
+// one-parameter way out that does not need a rebuild.
+const COPY_MEMORY_VIEWS = (() => {
+    try {
+        return typeof location !== 'undefined' && new URLSearchParams(location.search).get('glcopy') === '1';
+    }
+    catch (error) {
+        return false;
+    }
+})();
+
+// ?glstats=1 publishes the per-frame byte volume these two hand over, so the claim that the copy mattered stays
+// checkable instead of being a comment. Off by default: it is a counter and a global write per call.
+const TRACK_VIEW_BYTES = (() => {
+    try {
+        return typeof location !== 'undefined' && new URLSearchParams(location.search).get('glstats') === '1';
+    }
+    catch (error) {
+        return false;
+    }
+})();
+
+let viewBytes = 0;
+let viewCalls = 0;
+
+const EMPTY_BYTES = new Uint8Array(0);
+const EMPTY_INTS = new Int32Array(0);
+
+/**
+ * A .NET MemoryView, unwrapped to a typed array this file can hand to WebGL.
+ *
+ * WHY THIS DOES NOT COPY, AND WHY THAT IS SAFE.
+ *
+ * A MemoryView's own slice() is literally `this._unsafe_create_view().slice(...)` - it builds a typed array over
+ * the wasm heap and then copies it. Only the copy is optional, and it was costing real time: a CPU profile of
+ * the documentation viewer put 8.4% of the frame in dotnet.runtime.js's `slice`, all of it arriving through
+ * asBytes from uploadMesh and toBlock. That is the whole mesh, memcpy'd out of the heap and handed to
+ * gl.bufferData, which immediately copies it AGAIN into GPU memory. The middle copy buys nothing.
+ *
+ * It is safe here for one reason, stated as a rule so it can be checked: EVERY CALLER IN THIS FILE CONSUMES ITS
+ * BYTES SYNCHRONOUSLY AND RETAINS NOTHING. The view is a window onto WebAssembly.Memory, and two things
+ * invalidate it - the memory growing (which detaches the ArrayBuffer) and the GC moving the managed array it
+ * points at. Both can only happen while wasm is running, and nothing between the unwrap and the last use of the
+ * result re-enters wasm: they are gl.* calls, arithmetic, and fail() throwing.
+ *
+ * SO THE RULE IS: if you ever retain one of these past its call - stash it in `meshes`, close over it in a
+ * callback, hand it to anything with an `await` in it - copy it first with .slice(). setSdfUniforms is the one
+ * place that keeps the data, and it already copies into the module's own sdfBlock.
+ *
+ * A plain typed array is passed straight through, so this file stays usable from a harness that calls it
+ * directly; and if a future .NET drops _unsafe_create_view, the slice() fallback keeps everything correct and
+ * merely slow.
+ */
+function unwrap(view, empty) {
+    if (view === null || view === undefined) return empty;
+
+    // Already ours - a direct caller or a test harness. Nothing to unwrap, nothing worth copying.
+    if (ArrayBuffer.isView(view)) return view;
+
+    let out;
+
+    if (!COPY_MEMORY_VIEWS && typeof view._unsafe_create_view === 'function') out = view._unsafe_create_view();
+    else if (typeof view.slice === 'function') out = view.slice();
+    else return empty;
+
+    if (TRACK_VIEW_BYTES) {
+        viewBytes += out.byteLength;
+        viewCalls += 1;
+        globalThis.__nowuiGlViewBytes = { bytes: viewBytes, calls: viewCalls, copying: COPY_MEMORY_VIEWS };
+    }
+
+    return out;
+}
+
 function asBytes(view) {
-    if (view === null || view === undefined) return new Uint8Array(0);
-    if (typeof view.slice === 'function') return view.slice();
-    return view;
+    return unwrap(view, EMPTY_BYTES);
 }
 
 function asInts(view) {
-    if (view === null || view === undefined) return new Int32Array(0);
-    if (typeof view.slice === 'function') return view.slice();
-    return view;
+    return unwrap(view, EMPTY_INTS);
+}
+
+/**
+ * The uniform block, as floats over whatever asBytes returned.
+ *
+ * THE ALIGNMENT GUARD IS NOT DECORATION. A copy always starts at byteOffset 0; a heap view starts at an
+ * arbitrary wasm pointer, and Float32Array throws RangeError on a byteOffset that is not a multiple of 4. The
+ * C# side hands over float data, so it is aligned in practice - but "in practice" is not worth a hard crash
+ * inside a draw call, so an unaligned block quietly takes the copy it used to take anyway.
+ */
+function asFloats(bytes) {
+    if ((bytes.byteOffset & 3) === 0) return new Float32Array(bytes.buffer, bytes.byteOffset, bytes.byteLength >> 2);
+    return new Float32Array(bytes.slice().buffer);
 }
 
 // ---------------------------------------------------------------------------------------------- init
@@ -4455,8 +4539,7 @@ function applyUniformBlock(u, block) {
 export function setSdfUniforms(uniforms) {
     requireGl();
 
-    const bytes = asBytes(uniforms);
-    const floats = new Float32Array(bytes.buffer, bytes.byteOffset, bytes.byteLength / 4);
+    const floats = asFloats(asBytes(uniforms));
 
     if (floats.length !== S.COUNT) {
         fail(`setSdfUniforms: the block is ${floats.length} floats; ${S.COUNT} were expected. The slot map ` +
@@ -4938,8 +5021,7 @@ function ensureEmptyVao() {
 }
 
 function toBlock(uniforms) {
-    const raw = asBytes(uniforms);
-    const block = new Float32Array(raw.buffer, raw.byteOffset, raw.byteLength >> 2);
+    const block = asFloats(asBytes(uniforms));
 
     if (block.length < U.COUNT)
         fail(`the uniform block is ${block.length} floats; ${U.COUNT} were expected.`);
