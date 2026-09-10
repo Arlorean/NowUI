@@ -15,18 +15,32 @@
       CompressionEnabled=false      drops the .br and .gz siblings (~3.95 MB) that buy exactly nothing over a
                                     loopback socket at memory speed.
 
-    Baseline for comparison, measured on this repository:
+    Baseline for comparison, measured on this repository. The first three rows are the INTERPRETED build the
+    bundle used to be; the last two are what it is now:
       dotnet publish -c Release with SDK defaults ... 191 files, 13,733,363 B (13.10 MiB)
       + the three properties above ................  87 files,  9,780,373 B ( 9.33 MiB)
-      + the exclude list ..........................  86 files,  8,483,668 B ( 8.09 MiB)   <- the shipped bundle
+      + the exclude list ..........................  86 files,  8,483,668 B ( 8.09 MiB)
+      + storing the staged tree brotli (d2) .......  90 files,  2,678,979 B ( 2.55 MiB)
+      + RunAOTCompilation (c1) ....................  90 files,  4,618,592 B ( 4.40 MiB)   <- the shipped bundle
+    AOT is 1,939,613 B of that, all of it in dotnet.native.wasm.br, and it buys roughly 2.5x the frame rate.
+    The assemblies themselves get SMALLER when AOT is on - NowUI.Runtime.wasm.br went 226,955 B to 123,167 B -
+    which is why the total less than doubles for a native-compiled runtime.
 
     -Compress produces the same tree WITH .br/.gz siblings, for anyone dropping it on a real web server. That is
     not what the Editor serves and it is not what is committed.
+
+    A fourth property, RunAOTCompilation, is the difference between a browser that keeps up with Unity and one
+    that does not. See the (c) block.
 
 .PARAMETER OutputRoot
     Where the staged bundle lands. Default: <repo>/Assets/NowUI/WebBundle~ - the trailing tilde is what keeps it
     out of Unity's AssetDatabase entirely (no import, no .meta, no compile), the same mechanism already carrying
     AI~, Analyzers~, Documentation~ and Samples~ in this package.
+
+.PARAMETER NoAot
+    Publish the C# for the .NET WebAssembly INTERPRETER instead of compiling it to native wasm. The bundle is
+    about a third of the size and builds about two minutes faster, and every frame costs roughly 2.5x as much.
+    Only for a build where size beats speed; the shipped bundle is AOT.
 
 .PARAMETER Compress
     Publish with CompressionEnabled=true, so the staged tree also holds .br/.gz siblings. For hosted deploys.
@@ -60,6 +74,10 @@ param(
     # this host's parser never reads them and HarfBuzz is not linked into wasm; pass this if either
     # of those ever stops being true. See the (d1) block for the two file:line reasons.
     [switch]$NoLeanFonts,
+
+    # Publish the C# interpreted instead of AOT-compiled. AOT is the default because it is worth roughly 2.5x
+    # the frame rate; see the (c) block for the measurement and for what it costs.
+    [switch]$NoAot,
     [long]$MaxBytes = 10000000,
     [int]$MaxFiles = 120,
     [switch]$SkipGuard
@@ -123,13 +141,49 @@ if (Test-Path $fixtureMirror) {
 
 # ----------------------------------------------------------------------------------------------------- (c) publish
 $temp = Join-Path ([System.IO.Path]::GetTempPath()) ("nowui-web-bundle-" + [guid]::NewGuid().ToString('N'))
-Write-Step "Publishing to $temp"
 $compression = if ($Compress) { 'true' } else { 'false' }
+$aot         = if ($NoAot)    { 'false' } else { 'true' }
+
+# ------------------------------------------------------------------------------------------------- (c1) AOT
+#
+# RunAOTCompilation is the single largest performance property in this build, and leaving it at its default is
+# what made the browser feel like a different library from the Unity one.
+#
+# WHAT THE DEFAULT IS. Off. A .NET wasm app publishes to the MONO INTERPRETER unless you ask otherwise: every
+# managed method is walked opcode by opcode by an interpreter loop that is itself compiled into
+# dotnet.native.wasm. In a CPU profile it shows up as one wasm function holding 40% of the samples - which is
+# exactly what a profile of this bundle showed, and is the shape to look for if this ever regresses.
+#
+# WHAT IT IS WORTH, measured on this machine with real GPU rasterisation (Chrome --use-angle=d3d11), timing the
+# requestAnimationFrame callback itself rather than the frame rate, so the number is our CPU cost and not the
+# compositor's:
+#
+#                        interpreted        AOT        the page
+#   apps/macos.js          3.03 ms       1.22 ms      a settings window: sidebar, rows, controls
+#   apps/docs.js          20.34 ms       6.45 ms      the documentation viewer, a whole page re-laid every frame
+#   apps/mdbench.js       23.75 ms       8.23 ms      a 48 kB markdown document
+#
+# A NORMAL APPLICATION LANDS AT 1.2 ms, which is the same range the Unity player draws the same UI in. That was
+# the whole complaint, and this is the whole fix.
+#
+# BOOT DID NOT GET SLOWER, which is the thing to check when a bundle grows by 1.9 MB: time to the first frame
+# went 0.85 s to 0.69 s on the docs viewer and stayed at 0.61 s on the settings window, because the runtime no
+# longer has to warm an interpreter before it can draw. Over a real network the extra megabytes would show; on
+# the loopback server this bundle is built for, they do not.
+#
+# WHAT IT COSTS. The staged bundle roughly triples, and the publish takes about two minutes instead of about
+# twenty seconds. The size is the real price and it is paid in git forever, so it is stated in the report at the
+# end of this script rather than buried here.
+#
+# IT NEEDS THE wasm-tools WORKLOAD (dotnet workload install wasm-tools). Without it the publish fails with a
+# missing-pack error rather than quietly falling back, which is the right way round.
+Write-Step "Publishing to $temp ($(if ($NoAot) { 'interpreted' } else { 'AOT - this takes a couple of minutes' }))"
 
 & dotnet publish $webProj -c Release `
     -p:WasmFingerprintAssets=false `
     -p:WasmFingerprintDotnetJs=false `
     -p:CompressionEnabled=$compression `
+    -p:RunAOTCompilation=$aot `
     -p:DebugType=none `
     -p:DebugSymbols=false `
     -o $temp
@@ -408,6 +462,10 @@ $stamp = [ordered]@{
     builtUtc      = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
     dotnetSdk     = (Try-Run 'dotnet' @('--version'))
     surfaceHash   = $surfaceHash
+    # Which of the two runtimes the C# in this bundle is: AOT-compiled to native wasm, or walked by the Mono
+    # interpreter. It is recorded because it is invisible from the outside and worth ~2.5x per frame - a bundle
+    # that suddenly feels slow is answered by reading this line rather than by profiling.
+    aot           = -not [bool]$NoAot
     compressed    = [bool]$Compress
     bundleBrotli  = -not [bool]$NoCompressBundle
     leanFonts     = -not [bool]$NoLeanFonts
@@ -426,6 +484,11 @@ Write-Step 'Report'
 $largest = $staged | Sort-Object -Property Bytes -Descending | Select-Object -First 10
 Write-Host ("  files        {0}   ({1} payload + bundle.json)" -f $totalFiles, ($totalFiles - 1))
 Write-Host ("  bytes        {0:N0}  ({1:N2} MiB)" -f $totalBytes, ($totalBytes / 1MB))
+Write-Host ("  runtime      {0}" -f $(if ($NoAot) {
+    'interpreted (-NoAot). About a third the size, and roughly 2.5x the CPU cost per frame.'
+} else {
+    'AOT. This is most of the size above, and it is what keeps a frame near 1 ms instead of near 3.'
+}))
 if ($excluded.Count -gt 0) { Write-Host ("  excluded     {0}" -f ($excluded -join ', ')) }
 Write-Host "  largest ten:"
 foreach ($f in $largest) { Write-Host ("    {0,12:N0}  {1}" -f $f.Bytes, $f.Path) }

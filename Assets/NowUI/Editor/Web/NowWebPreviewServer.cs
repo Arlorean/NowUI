@@ -868,10 +868,11 @@ namespace NowUI.Editor.Web
         /// </summary>
         /// <remarks>
         /// <para>The shipped bundle stores its compressible files as <c>NAME.br</c> and does NOT keep the raw
-        /// original, because that is what took the committed tree from 8,570,227 B to 2,845,658 B - a third of
-        /// the size, losslessly, in a folder that lives in git forever. The saving is real on disk and in every
-        /// clone; it is not a transfer optimisation, and it is worth doing even though this server runs on
-        /// loopback where transfer is free.</para>
+        /// original, because that is what took the committed tree from 18,092,569 B to 4,617,843 B - a quarter
+        /// of the size, losslessly, in a folder that lives in git forever. The saving is real on disk and in
+        /// every clone; it is not a transfer optimisation, and it is worth doing even though this server runs on
+        /// loopback where transfer is free. It matters more since the bundle went AOT: most of what it squeezes
+        /// is the 9.9 MB of native wasm the AOT compiler emits.</para>
         /// <para>Two ways out, and the second is why this is safe. When the client sends
         /// <c>Accept-Encoding: br</c> - every browser released this decade does - the compressed bytes go out
         /// under <c>Content-Encoding: br</c> and the browser inflates them. When it does not, this inflates them

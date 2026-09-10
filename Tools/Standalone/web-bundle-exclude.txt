@@ -24,3 +24,10 @@ w9-draw.js
 # Standalone/Web/NowUI.Web/wwwroot/ as a worked example, out of the shipped bundle until someone decides it
 # belongs there. The denylist shape is the real hazard here and is worth revisiting.
 vscope.js
+
+# Python bytecode. serve.py ships in the bundle so anyone can host it without Unity, and running it from a
+# source tree leaves a __pycache__ beside it. The static-web-assets glob then picks that up and the package
+# ships a compiled copy of its own server - 20 KB of noise that changes with the interpreter version. Caught
+# when a `.pyc.br` appeared in the staged tree; gitignore does not help, because the bundle is added with -f.
+__pycache__/*
+*.pyc

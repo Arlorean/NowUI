@@ -342,8 +342,13 @@ namespace NowUI.Editor.Web
                 if (stamp == null) return;
 
                 m_BundleCommit = stamp.commit;
+
+                // The runtime is worth a word here because it is invisible everywhere else and worth about 2.5x
+                // per frame. A bundle built with -NoAot serves and looks identical; it just runs slower, and
+                // this line is what turns "the preview feels sluggish" into an answer.
                 m_BundleSummary = "NowUI " + stamp.nowuiVersion + "  ·  " + stamp.commit + "  ·  " +
                                   stamp.builtUtc + "  ·  surface " + stamp.surfaceHash + "  ·  " +
+                                  (stamp.aot ? "AOT" : "interpreted") + "  ·  " +
                                   stamp.files + " files, " + (stamp.bytes / 1048576f).ToString("0.00") + " MiB" +
                                   "\n" + root;
             }
@@ -384,6 +389,10 @@ namespace NowUI.Editor.Web
             public string commit;
             public string builtUtc;
             public string surfaceHash;
+
+            // Absent from a stamp written before the bundle went AOT, and JsonUtility leaves a missing bool
+            // false - which reads as "interpreted", which is exactly what such a bundle is.
+            public bool aot;
             public int files;
             public long bytes;
         }
