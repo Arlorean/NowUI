@@ -1,3 +1,16 @@
+# [1.17.0](https://github.com/BlenMiner/NowUI/compare/nowui-v1.16.0...nowui-v1.17.0) (2026-09-10)
+
+
+### Features
+
+* **web:** mirror the C# docs browser, and stop waiting on an index to draw it ([9774e49](https://github.com/BlenMiner/NowUI/commit/9774e4954be219e7aa1beac41ee7755e86e97bdb))
+
+
+### Performance Improvements
+
+* **markdown:** cull off-screen ops, and stop ui.rule taking the frame down ([1103ea4](https://github.com/BlenMiner/NowUI/commit/1103ea403594c252db5703944dc05fdc94a15d8c))
+* **web:** compile the browser bundle AOT instead of running it interpreted ([052e3bb](https://github.com/BlenMiner/NowUI/commit/052e3bb80ca7d094f7c14233daab2d90186503fb))
+
 # [1.16.0](https://github.com/BlenMiner/NowUI/compare/nowui-v1.15.0...nowui-v1.16.0) (2026-09-09)
 
 
