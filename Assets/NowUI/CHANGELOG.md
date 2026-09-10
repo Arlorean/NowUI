@@ -1,3 +1,10 @@
+## [1.19.1](https://github.com/BlenMiner/NowUI/compare/nowui-v1.19.0...nowui-v1.19.1) (2026-09-10)
+
+
+### Bug Fixes
+
+* agent guidance documentation ([ed7035b](https://github.com/BlenMiner/NowUI/commit/ed7035b3f40d7ae4f12801a8b5595b86daec8e7c))
+
 # [1.19.0](https://github.com/BlenMiner/NowUI/compare/nowui-v1.18.0...nowui-v1.19.0) (2026-09-10)
 
 
