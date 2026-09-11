@@ -86,6 +86,40 @@ a `RectTransform` like any other graphic. Assign either an imported Animation
 asset or an Animation Url. At runtime, a non-empty URL downloads a transient
 `NowLottieAsset` and supports both plain Lottie JSON and dotLottie archives.
 
+## Native previews and captures
+
+The [native CLI](NativePreview.md) loads existing project `.lottie` files, raw
+Lottie `.json`, and serialized `NowLottieAsset` files directly. No import or
+export step is required for a preview:
+
+```csharp
+var spinner = Resources.Load<NowLottieAsset>("Assets/UI/spinner.lottie");
+Now.Lottie(rect, spinner).SetTime(Time.time).Draw();
+```
+
+Project paths and loading raw `.json` as `NowLottieAsset` are native resource-provider
+extensions. A normal `Resources` alias for an imported `.lottie` asset works in
+both hosts when the file resides in a Resources folder. The
+native loader understands the existing NowUI importer metadata and shares
+loaded assets for the scene's lifetime; the scene must not destroy them.
+
+HTTP/HTTPS URL loading uses the existing Lottie cache with native streaming
+transport. It preserves the URL policy and limits described below, checks
+redirects one hop at a time, and cancels active requests when the preview
+closes or reloads. Live previews remain interactive during downloads. PNG and
+animation capture wait for active resources with a fixed playback clock;
+`--load-timeout` controls the bounded wait and defaults to 30 seconds.
+
+Native and Unity use the same Lottie model, frame cache and drawing API.
+The native host uses the bundled vector tessellator where available and falls
+back to managed tessellation. This does not add support for Lottie features
+the shared renderer does not implement.
+
+The optional [browser deployment target](BrowserDeployment.md) uses the same
+C# scene and Lottie asset parser. Its build includes referenced assets
+automatically. Remote browser URLs require CORS access and must not redirect;
+the browser hides redirect locations needed by the shared URL policy.
+
 ## Remote and parser limits
 
 Runtime loading is bounded with defaults intended to stay invisible in normal

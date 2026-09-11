@@ -1,0 +1,38 @@
+<Project>
+  <!-- Imported by the optional WebAssembly executable, never the native CLI.
+       A distribution carries all four prepared objects beside this target;
+       source checkouts reuse the Unity objects and the prepared HarfBuzz object. -->
+  <PropertyGroup>
+    <NowUIBrowserNativeRoot Condition="'$(NowUIBrowserNativeRoot)' == ''">$(MSBuildThisFileDirectory)native/</NowUIBrowserNativeRoot>
+    <NowUIBrowserNativeRoot>$([MSBuild]::EnsureTrailingSlash('$(NowUIBrowserNativeRoot)'))</NowUIBrowserNativeRoot>
+    <NowUIBrowserMsdfSource Condition="'$(NowUIBrowserMsdfSource)' == '' and Exists('$(NowUIBrowserNativeRoot)nowui-msdf.o')">$(NowUIBrowserNativeRoot)nowui-msdf.o</NowUIBrowserMsdfSource>
+    <NowUIBrowserMsdfSource Condition="'$(NowUIBrowserMsdfSource)' == ''">$(MSBuildThisFileDirectory)../../Assets/NowUI/Plugins/WebGL/nowui-msdf.bc</NowUIBrowserMsdfSource>
+    <NowUIBrowserVgSource Condition="'$(NowUIBrowserVgSource)' == '' and Exists('$(NowUIBrowserNativeRoot)nowui-vg.o')">$(NowUIBrowserNativeRoot)nowui-vg.o</NowUIBrowserVgSource>
+    <NowUIBrowserVgSource Condition="'$(NowUIBrowserVgSource)' == ''">$(MSBuildThisFileDirectory)../../Assets/NowUI/Plugins/WebGL/nowui-vg.bc</NowUIBrowserVgSource>
+    <NowUIBrowserHarfBuzzSource Condition="'$(NowUIBrowserHarfBuzzSource)' == '' and Exists('$(NowUIBrowserNativeRoot)harfbuzz.o')">$(NowUIBrowserNativeRoot)harfbuzz.o</NowUIBrowserHarfBuzzSource>
+    <NowUIBrowserHarfBuzzSource Condition="'$(NowUIBrowserHarfBuzzSource)' == ''">$(NowUIBrowserNativeRoot)harfbuzz.bc</NowUIBrowserHarfBuzzSource>
+    <NowUIBrowserBridgeSource Condition="'$(NowUIBrowserBridgeSource)' == ''">$(NowUIBrowserNativeRoot)nowui-browser.o</NowUIBrowserBridgeSource>
+    <NowUIBrowserNativeStaging Condition="'$(NowUIBrowserNativeStaging)' == ''">$(MSBuildProjectDirectory)/obj/nowui-browser-native/</NowUIBrowserNativeStaging>
+    <NowUIBrowserNativeStaging>$([MSBuild]::EnsureTrailingSlash('$(NowUIBrowserNativeStaging)'))</NowUIBrowserNativeStaging>
+  </PropertyGroup>
+  <ItemGroup>
+    <NativeFileReference Include="$(NowUIBrowserNativeStaging)nowui-msdf.o" />
+    <NativeFileReference Include="$(NowUIBrowserNativeStaging)nowui-vg.o" />
+    <NativeFileReference Include="$(NowUIBrowserNativeStaging)harfbuzz.o" />
+    <NativeFileReference Include="$(NowUIBrowserNativeStaging)nowui-browser.o" />
+  </ItemGroup>
+  <Target Name="StageNowUIBrowserNative" BeforeTargets="PrepareForBuild;ResolveStaticWebAssetsInputs"
+          Inputs="$(NowUIBrowserMsdfSource);$(NowUIBrowserVgSource);$(NowUIBrowserHarfBuzzSource);$(NowUIBrowserBridgeSource)"
+          Outputs="$(NowUIBrowserNativeStaging)nowui-msdf.o;$(NowUIBrowserNativeStaging)nowui-vg.o;$(NowUIBrowserNativeStaging)harfbuzz.o;$(NowUIBrowserNativeStaging)nowui-browser.o">
+    <Error Condition="!Exists('$(NowUIBrowserMsdfSource)')" Text="Missing browser msdf object: $(NowUIBrowserMsdfSource)" />
+    <Error Condition="!Exists('$(NowUIBrowserVgSource)')" Text="Missing browser vector object: $(NowUIBrowserVgSource)" />
+    <Error Condition="!Exists('$(NowUIBrowserHarfBuzzSource)')" Text="Missing browser HarfBuzz object: $(NowUIBrowserHarfBuzzSource). Maintainers can regenerate it with Tools/Standalone/Build-BrowserHarfBuzz.ps1." />
+    <Error Condition="!Exists('$(NowUIBrowserBridgeSource)')" Text="Missing browser ABI bridge: $(NowUIBrowserBridgeSource). Maintainers can regenerate it with Tools/Standalone/Build-BrowserBridge.ps1." />
+    <MakeDir Directories="$(NowUIBrowserNativeStaging)" />
+    <!-- The .bc files are wasm relocatable objects; emcc requires .o to link
+         them as objects instead of attempting to parse them as source. -->
+    <Copy SourceFiles="$(NowUIBrowserMsdfSource);$(NowUIBrowserVgSource);$(NowUIBrowserHarfBuzzSource);$(NowUIBrowserBridgeSource)"
+          DestinationFiles="$(NowUIBrowserNativeStaging)nowui-msdf.o;$(NowUIBrowserNativeStaging)nowui-vg.o;$(NowUIBrowserNativeStaging)harfbuzz.o;$(NowUIBrowserNativeStaging)nowui-browser.o"
+          SkipUnchangedFiles="true" />
+  </Target>
+</Project>

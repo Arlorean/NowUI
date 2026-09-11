@@ -157,6 +157,8 @@ namespace NowUI
 
         public NowFontStyle fontStyle;
 
+        public bool baselineSnap;
+
         internal bool gradientEnabled;
 
         internal NowGradientKind gradientKind;
@@ -212,6 +214,7 @@ namespace NowUI
             mask = rect;
             fontSize = 50;
             fontStyle = NowFontStyle.Regular;
+            baselineSnap = false;
             color = new Vector4(1, 1, 1, 1);
             outlineColor = new Vector4(0, 0, 0, 1);
             this.font = font;
@@ -273,6 +276,19 @@ namespace NowUI
         public NowText SetFontSize(float fontSize)
         {
             this.fontSize = fontSize;
+            return this;
+        }
+
+        /// <summary>
+        /// Opts static text into snapping each line's baseline to a physical pixel.
+        /// Preserves fractional glyph spacing, contours, and shaping offsets. Disabled
+        /// during a Now.Transform scope or when a glyph animation is configured.
+        /// This changes drawing only; measured bounds and explicit masks stay unchanged.
+        /// Defaults to false. Leave disabled for text whose position moves smoothly.
+        /// </summary>
+        public NowText SetBaselineSnap(bool enabled = true)
+        {
+            baselineSnap = enabled;
             return this;
         }
 

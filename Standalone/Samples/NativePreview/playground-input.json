@@ -1,0 +1,17 @@
+[
+  { "time": 0.2, "type": "click", "x": 154, "y": 218 },
+  { "time": 0.25, "type": "keyDown", "key": "LeftControl" },
+  { "time": 0.27, "type": "keyDown", "key": "A" },
+  { "time": 0.29, "type": "keyUp", "key": "A" },
+  { "time": 0.31, "type": "keyUp", "key": "LeftControl" },
+  { "time": 0.35, "type": "type", "text": "This is running in C#." },
+  { "time": 0.6, "type": "down", "x": 215, "y": 388 },
+  { "time": 0.75, "type": "up", "x": 215, "y": 388 },
+  { "time": 1.0, "type": "click", "x": 788, "y": 696 },
+  { "time": 1.4, "type": "click", "x": 155, "y": 560 },
+  { "time": 1.6, "type": "keyDown", "key": "F8" },
+  { "time": 1.65, "type": "keyUp", "key": "F8" },
+  { "time": 2.0, "type": "click", "x": 800, "y": 44 },
+  { "time": 2.4, "type": "down", "x": 650, "y": 499 },
+  { "time": 2.6, "type": "up", "x": 650, "y": 499 }
+]

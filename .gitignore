@@ -43,8 +43,17 @@ ExportedObj/
 !Assets/NowUI/Analyzers~/**/*.csproj
 Assets/NowUI/Analyzers~/**/bin/
 Assets/NowUI/Analyzers~/**/obj/
+# ...and the hand-written engine-free (standalone) build, which Unity never generates
+!Standalone/**/*.csproj
+!Tools/**/*.csproj
+Tools/**/bin/
+Tools/**/obj/
+Standalone/**/bin/
+Standalone/**/obj/
+Standalone/**/TestResults/
 *.unityproj
 *.sln
+!Standalone/NowUI.Standalone.sln
 *.slnx
 *.suo
 *.tmp
@@ -90,3 +99,6 @@ crashlytics-build.properties
 # Python benchmark-report tooling
 __pycache__/
 *.py[cod]
+
+# User-owned native preview projects, captures and local tool installations.
+/NowUI/

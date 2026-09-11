@@ -80,8 +80,19 @@ The automatic image loader is bounded but deliberately roomy: by default it
 allows four concurrent downloads, 64 MiB per response chain, 30 seconds per
 request hop, eight redirects, 16,384 pixels on either decoded dimension, and
 100 Mi pixels per decoded texture. Its least-recently-used cache keeps at most
-128 entries and 128 Mi pixels. Redirects are followed manually and every hop
-is checked by the same URL policy before the next request starts.
+128 entries and 128 Mi pixels, counting every mip level a texture holds rather
+than just its base image. Redirects are followed manually and every hop is
+checked by the same URL policy before the next request starts.
+
+Decoded images are given a mipmap chain by default. Without one, a picture drawn
+smaller than its source samples a single arbitrary texel per pixel, so fine
+detail turns into shimmering moire — and images are routinely minified, both by
+a document clamping them to its column width and by the browser surface's
+`ui.image`, whose default `fit: 'contain'` exists precisely to draw a source
+into a box that is not its size. The chain costs about a third more texture
+memory, which the cache budget above counts. Turn it off with
+`NowMarkdownImages.generateMipmaps = false` for content drawn at its natural
+size, where the extra levels are never sampled.
 
 Applications normally do not need to change these values. They are public
 static fields on `NowMarkdownImages` for products with known content budgets:
@@ -93,6 +104,7 @@ NowMarkdownImages.maxTexturePixels = 48L * 1024 * 1024;
 NowMarkdownImages.maxConcurrentDownloads = 3;
 NowMarkdownImages.maxCacheEntries = 96;
 NowMarkdownImages.maxCachedTexturePixels = 96L * 1024 * 1024;
+NowMarkdownImages.generateMipmaps = true;
 ```
 
 Plain HTTP remains enabled for compatibility with existing local and intranet

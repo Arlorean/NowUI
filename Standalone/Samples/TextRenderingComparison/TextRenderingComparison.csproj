@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Library</OutputType>
+    <EnableDynamicLoading>true</EnableDynamicLoading>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../NowUI.Hosting/NowUI.Hosting.csproj" />
+    <!-- Deliberately confined to this diagnostic; not a NowUI text backend. -->
+    <PackageReference Include="SkiaSharp" Version="4.152.0" />
+  </ItemGroup>
+</Project>

@@ -285,8 +285,10 @@ public class NowKeyBindingFieldTests
     {
         Assert.AreEqual("None", NowKeyNames.GetName(Key.None));
 
+#if ENABLE_INPUT_SYSTEM
         if (Keyboard.current != null)
             return;
+#endif
 
         Assert.AreEqual("Left Shift", NowKeyNames.GetName(Key.LeftShift));
         Assert.AreEqual("5", NowKeyNames.GetName(Key.Digit5));

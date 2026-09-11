@@ -1,0 +1,117 @@
+using System;
+using NowUI.Hosting;
+using NowUI.Sdf;
+using UnityEngine;
+
+namespace NowUI.Native.Tests.Scenes;
+
+public sealed class ColorSpaceScene : INowScene, IDisposable
+{
+    readonly Texture2D color = new(1, 1, TextureFormat.RGBA32, false, false);
+    readonly Texture2D data = new(1, 1, TextureFormat.RGBA32, false, true);
+
+    public ColorSpaceScene()
+    {
+        color.SetPixels32(new[] { new Color32(128, 128, 128, 255) }); color.Apply();
+        data.SetPixels32(new[] { new Color32(128, 128, 128, 255) }); data.Apply();
+    }
+
+    public void Draw(NowRect view)
+    {
+        Now.Rectangle(new NowRect(0, 0, 128, 64)).SetColor(Color.black).Draw();
+        Now.Rectangle(new NowRect(0, 0, 32, 32)).SetColor(new Color(.5f, .5f, .5f, 1)).Draw();
+        Now.Rectangle(new NowRect(32, 0, 32, 32)).SetTexture(color).SetColor(Color.white).Draw();
+        Now.Rectangle(new NowRect(64, 0, 32, 32)).SetTexture(data).SetColor(Color.white).Draw();
+        Now.Rectangle(new NowRect(96, 0, 32, 32)).SetColor(new Color(1, 1, 1, .5f)).Draw();
+        Now.Text(new NowRect(0, 32, 128, 32)).SetFontSize(22).SetColor(new Color(.5f, .5f, .5f, 1)).Draw("Color");
+        Now.Rectangle(new NowRect(0, 64, 32, 32)).SetColor(new Color(.5f, .25f, .75f, .5f)).Draw();
+    }
+
+    public void Dispose() { UnityEngine.Object.Destroy(color); UnityEngine.Object.Destroy(data); }
+}
+
+public sealed class GlassParityScene : INowScene
+{
+    public void Draw(NowRect view)
+    {
+        for (int x = 0; x < 128; x += 8)
+            Now.Rectangle(new NowRect(x, 0, 8, 96)).SetColor(x % 16 == 0 ? Color.white : Color.black).Draw();
+        Now.Glass(new NowRect(24, 16, 80, 64)).SetBlurRadius(12).SetBlurQuality(NowGlassBlurQuality.High)
+            .SetTint(Color.clear).SetVibrancy(1, 1).SetRadius(0).Draw();
+        // Content after the glass must remain sharp.
+        Now.Rectangle(new NowRect(56, 40, 16, 16)).SetColor(Color.red).Draw();
+    }
+}
+
+public sealed class SdfParityScene : INowScene
+{
+    public void Draw(NowRect view)
+    {
+        Now.Rectangle(view).SetColor(Color.black).Draw();
+        NowSdf.Scene(new NowRect(0, 0, 128, 96), "native-parity")
+            .SetOutline(4, Color.green).SetShadow(new Vector2(8, 4), 2, Color.blue, 2)
+            .SetColor(Color.red).Circle(new Vector2(40, 48), 20)
+            .Subtract().Circle(new Vector2(40, 48), 8).Draw();
+        using (NowSdf.Scene(new NowRect(80, 16, 40, 64), "native-mask").Circle(new Vector2(20, 32), 16).BeginMask())
+            Now.Rectangle(new NowRect(80, 16, 40, 64)).SetColor(Color.cyan).Draw();
+    }
+}
+
+public sealed class SdfImageParityScene : INowScene, IDisposable
+{
+    readonly Texture2D image = new(8, 8, TextureFormat.RGBA32, false, false);
+    public SdfImageParityScene()
+    {
+        var pixels = new Color32[64];
+        for (int y = 2; y < 6; y++) for (int x = 2; x < 6; x++) pixels[y * 8 + x] = new Color32(255, 0, 0, 255);
+        image.SetPixels32(pixels); image.Apply();
+    }
+    public void Draw(NowRect view)
+    {
+        Now.Rectangle(view).SetColor(Color.black).Draw();
+        NowSdf.Scene(new NowRect(0, 0, 96, 96), "native-image").SetColor(Color.white)
+            .SetOutline(4, Color.green).Image(new NowRect(16, 16, 64, 64), image).Draw();
+    }
+    public void Dispose() { NowSdf.Reset(); UnityEngine.Object.Destroy(image); }
+}
+
+public sealed class DataTextureParityScene : INowScene, IDisposable
+{
+    readonly Texture2D[] textures = new Texture2D[7];
+    readonly RenderTexture[] targets = new RenderTexture[7];
+
+    public DataTextureParityScene()
+    {
+        TextureFormat[] formats = { TextureFormat.R8, TextureFormat.RHalf, TextureFormat.RFloat,
+            TextureFormat.RGHalf, TextureFormat.RGFloat, TextureFormat.RGBAHalf, TextureFormat.RGBAFloat };
+        RenderTextureFormat[] renderFormats = { RenderTextureFormat.R8, RenderTextureFormat.RHalf, RenderTextureFormat.RFloat,
+            RenderTextureFormat.RGHalf, RenderTextureFormat.RGFloat, RenderTextureFormat.ARGBHalf, RenderTextureFormat.ARGBFloat };
+        var previous = RenderTexture.active;
+        try
+        {
+            for (int i = 0; i < textures.Length; i++)
+            {
+                textures[i] = new Texture2D(1, 1, formats[i], false, true);
+                textures[i].SetPixel(0, 0, new Color(.5f, .25f, .75f, 1)); textures[i].Apply();
+                targets[i] = new RenderTexture(1, 1, 0, renderFormats[i], RenderTextureReadWrite.Linear);
+                targets[i].Create(); Graphics.Blit(textures[i], targets[i]);
+            }
+        }
+        finally { RenderTexture.active = previous; }
+    }
+
+    public void Draw(NowRect view)
+    {
+        for (int i = 0; i < textures.Length; i++)
+        {
+            Now.Rectangle(new NowRect(i * 32, 0, 32, 32)).SetTexture(textures[i]).SetColor(Color.white).Draw();
+            Now.Rectangle(new NowRect(i * 32, 32, 32, 32)).SetTexture(targets[i]).SetColor(Color.white).Draw();
+        }
+    }
+
+    public void Dispose()
+    {
+        foreach (var texture in textures) if (texture != null) UnityEngine.Object.Destroy(texture);
+        foreach (var target in targets) if (target != null) { target.Release(); UnityEngine.Object.Destroy(target); }
+    }
+}

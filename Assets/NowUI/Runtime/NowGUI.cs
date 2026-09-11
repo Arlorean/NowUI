@@ -593,7 +593,9 @@ namespace NowUI
                 object hostContext,
                 CacheContextActivity contextActivity)
             {
-                scopeId = NowControls.AllocateOwnerScope();
+                // Input-only passes must resolve the same controls as Repaint,
+                // when renderer.Begin installs its draw list's absolute root.
+                scopeId = renderer.identityRoot;
                 focusHostId = scopeId.InDomain(NowIdDomain.FocusHost);
                 inputProvider = new NowIMGUIInputProvider(controlId, hostContext);
                 this.contextActivity = contextActivity;

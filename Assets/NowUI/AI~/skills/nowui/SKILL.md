@@ -1,6 +1,6 @@
 ---
 name: nowui
-description: Build, review, or debug Unity UI with the installed NowUI package. Use when the user names NowUI, project instructions select it, or the affected code uses it. Do not select NowUI merely because it is installed when the task uses another UI framework.
+description: Build, preview, publish, review, or debug C# UI with the installed NowUI package. Use when the user names NowUI, project instructions select it, or the affected code uses it. Do not select NowUI merely because it is installed when the task uses another UI framework.
 ---
 
 # NowUI
@@ -32,9 +32,39 @@ essential contracts, then only the feature guides relevant to the task. Search
 the installed public source and XML comments for uncertain signatures; do not
 guess from model memory or GitHub `main`. Use a nearby example when helpful.
 
-Consumer code belongs under the project's `Assets` directory; PackageCache is
-read-only. For package contributions, also read `<package-root>/AGENTS.md`.
+Unity consumer code belongs under the project's `Assets` directory; native
+preview projects belong under `NowUI/apps` as described in the preview guide.
+PackageCache is read-only. For package contributions, also read `<package-root>/AGENTS.md`.
 An embedded or local dependency does not imply that it should be modified.
+
+## Preview, capture, or publish
+
+Use native C# previews by default. Read
+`<package-root>/Documentation~/NativePreview.md`, then use
+`<package-root>/Native~/nowui.ps1` or the source checkout's
+`Tools/NowUI-Native.ps1`. Reuse supported project assets directly; the user does
+not need to export assets or run an Editor menu. Share drawing code with Unity.
+
+Choose the command for the requested result; the guides provide complete arguments:
+
+| Result | Command |
+| --- | --- |
+| New C# scene project | `init` |
+| Interactive mockup or animation app | `preview` |
+| Still image | `render` |
+| Deterministic animation frames | `animate` |
+| Requested website or browser deployment | `publish --target web` |
+| Test the scene in a browser | `preview --target web` |
+| Open an already published site | `serve` |
+
+The web target is optional and uses the same C# scene. Read
+`<package-root>/Documentation~/BrowserDeployment.md` for its additional build
+requirements, asset inclusion and browser limits. Native remains the default.
+
+Create and launch the result yourself. Check startup, inspect the rendered output,
+and exercise the interaction relevant to the request before sharing it. For stills
+or animation captures, inspect the produced images. Report the files, app or local
+URL that actually worked, and state any checks you could not complete.
 
 ## Verify the change
 

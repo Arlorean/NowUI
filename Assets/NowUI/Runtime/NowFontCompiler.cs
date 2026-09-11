@@ -6,7 +6,19 @@
 // DllImport with no plugin is a link error, not a runtime exception.
 // WebGL's plugin is built by Now-UI/Native/build-msdf-webgl.sh, which keeps
 // its symbols disjoint from Unity's player libraries.
+//
+// The engine-free build (NOWUI_STANDALONE) opts in through
+// NOWUI_STANDALONE_MSDF_NATIVE, set by Standalone/NowUI.Runtime/NowUI.Runtime.csproj.
+// It is safe there for the reason the paragraph above gives for keeping the
+// valve on everywhere else: off Unity, LIBRARY_NAME is the module NAME
+// "nowui-msdf", never "__Internal", so a host that does not link the plugin
+// gets a catchable DllNotFoundException on first use and falls back to the
+// managed baker. The desktop host distributes the native plugin for HarfBuzz
+// shaping, CFF outlines and color glyphs. TrueType SDF baking remains managed
+// by default whether or not the plugin is present.
+#if !NOWUI_STANDALONE || NOWUI_STANDALONE_MSDF_NATIVE
 #define NOWUI_MSDF_NATIVE
+#endif
 
 using NowUI.Internal;
 using System;
@@ -19,7 +31,7 @@ using UnityEngine;
 
 namespace NowUI
 {
-    public static class NowFontCompiler
+    public static partial class NowFontCompiler
     {
         /// <summary>
         /// Restricts glyph baking to the managed compiler; fonts it cannot handle
@@ -35,8 +47,8 @@ namespace NowUI
         /// </summary>
         public static bool forceNativeCompiler;
 
-        const int ATLAS_SIZE = 64;
-        const int PIXEL_RANGE = 16;
+        const int ATLAS_SIZE = 32;
+        const int PIXEL_RANGE = 8;
         const int ERROR_CAPACITY = 4096;
         const int NATIVE_OK = 0;
         const int NATIVE_BUFFER_TOO_SMALL = 2;
@@ -133,7 +145,23 @@ namespace NowUI
             [Out] byte[] errorBuffer,
             int errorBufferLength);
 
-        [DllImport(LIBRARY_NAME, CallingConvention = CallingConvention.Cdecl)]
+        [DllImport(LIBRARY_NAME, EntryPoint = "nowui_compile_font_from_memory_with_codepoints", CallingConvention = CallingConvention.Cdecl)]
+#if NOWUI_STANDALONE
+        static extern int nowui_compile_font_from_memory_with_codepoints_native(
+            byte[] fontData,
+            int fontDataLength,
+            int size,
+            int pixelRange,
+            int[] codepoints,
+            int codepointCount,
+            [Out] byte[] atlasRgba,
+            int atlasRgbaLength,
+            [Out] NativeGlyph[] glyphs,
+            int glyphCapacity,
+            ref NativeAtlasInfo info,
+            [Out] byte[] errorBuffer,
+            int errorBufferLength);
+#else
         static extern int nowui_compile_font_from_memory_with_codepoints(
             byte[] fontData,
             int fontDataLength,
@@ -148,6 +176,7 @@ namespace NowUI
             ref NativeAtlasInfo info,
             [Out] byte[] errorBuffer,
             int errorBufferLength);
+#endif
 #else
         static int nowui_compile_font_from_memory(
             byte[] fontData,
@@ -450,23 +479,87 @@ namespace NowUI
                     }
                 }
 
+                // Whether the managed compiler has already had its turn above. When it has not - which is exactly
+                // the forceNativeCompiler case - a missing or broken plugin must not be the end of the road: it
+                // would take every glyph on the page with it. See the fallback below.
+                bool managedAlreadyTried = forceManagedCompiler || !forceNativeCompiler;
+
                 try
                 {
-                    return TryCreateNative(fontData, size, pixelRange, atlasSide, out session, out error);
+                    if (TryCreateNative(fontData, size, pixelRange, atlasSide, out session, out error))
+                        return true;
+
+                    // The plugin loaded and answered, but declined this font. If the managed compiler has not
+                    // been asked yet, ask it before giving up.
+                    if (!managedAlreadyTried &&
+                        TryCreateManaged(fontData, size, pixelRange, atlasSide, packedManagedSdf16, out session))
+                    {
+                        error = null;
+                        return true;
+                    }
+
+                    return false;
                 }
                 catch (DllNotFoundException)
                 {
-                    error = "The font is not supported by the managed compiler and the native font compiler plugin was not found for this platform.";
+                    error = managedAlreadyTried
+                        ? "The font is not supported by the managed compiler and the native font compiler plugin was not found for this platform."
+                        : "The native font compiler plugin was not found for this platform.";
                 }
                 catch (EntryPointNotFoundException)
                 {
-                    error = "The font is not supported by the managed compiler and the native font compiler plugin is outdated.";
+                    error = managedAlreadyTried
+                        ? "The font is not supported by the managed compiler and the native font compiler plugin is outdated."
+                        : "The native font compiler plugin is outdated.";
                 }
                 catch (BadImageFormatException)
                 {
-                    error = "The font is not supported by the managed compiler and the native font compiler plugin has the wrong architecture.";
+                    error = managedAlreadyTried
+                        ? "The font is not supported by the managed compiler and the native font compiler plugin has the wrong architecture."
+                        : "The native font compiler plugin has the wrong architecture for this platform.";
                 }
 
+                // forceNativeCompiler skipped the managed compiler on the way in, so the plugin being absent has
+                // just disqualified the ONLY compiler that was going to be tried. Falling back here is what keeps
+                // forceNativeCompiler a preference rather than a requirement: a host that asks for the native
+                // baker and does not get it draws the same text more slowly, instead of drawing none at all.
+                if (!managedAlreadyTried &&
+                    TryCreateManaged(fontData, size, pixelRange, atlasSide, packedManagedSdf16, out session))
+                {
+                    error = null;
+                    return true;
+                }
+
+                return false;
+            }
+
+            /// <summary>
+            /// The managed baker as a plain attempt, with its error discarded: every caller of this overload
+            /// already holds a more specific message about why the native compiler was unavailable, and that is
+            /// the message worth keeping.
+            /// </summary>
+            static bool TryCreateManaged(
+                byte[] fontData,
+                int size,
+                int pixelRange,
+                int atlasSide,
+                bool packedManagedSdf16,
+                out DynamicSession session)
+            {
+                if (NowManagedFontSession.TryCreate(
+                        fontData,
+                        size,
+                        pixelRange,
+                        atlasSide,
+                        packedManagedSdf16,
+                        out var managed,
+                        out _))
+                {
+                    session = new DynamicSession(managed);
+                    return true;
+                }
+
+                session = null;
                 return false;
             }
 
@@ -505,6 +598,16 @@ namespace NowUI
             /// the native session render unshaped.
             /// </summary>
             public bool supportsGlyphIndexBaking => _managed != null;
+
+            /// <summary>Glyph index for a codepoint. Managed sessions only.</summary>
+            public bool TryGetGlyphIndex(int codepoint, out int glyphIndex)
+            {
+                if (_managed != null)
+                    return _managed.TryGetGlyphIndex(codepoint, out glyphIndex);
+
+                glyphIndex = 0;
+                return false;
+            }
 
             public AddResult TryAddGlyphsByIndex(int[] glyphIndices, int glyphIndexCount, List<NowFontAtlasInfo.Glyph> results, out string error)
             {

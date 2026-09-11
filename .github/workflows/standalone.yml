@@ -1,0 +1,59 @@
+name: Native and standalone core
+
+# Unity and native hosts compile the same NowUI source.
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'Assets/NowUI/Runtime/**'
+      - 'Assets/NowUI/Extensions/**'
+      - 'Assets/NowUI/Native~/**'
+      - 'Assets/NowUITests/**'
+      - 'Standalone/**'
+      - 'Tools/Standalone/**'
+      - 'Tools/*Native*.ps1'
+      - '.github/workflows/standalone.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'Assets/NowUI/Runtime/**'
+      - 'Assets/NowUI/Extensions/**'
+      - 'Assets/NowUI/Native~/**'
+      - 'Assets/NowUITests/**'
+      - 'Standalone/**'
+      - 'Tools/Standalone/**'
+      - 'Tools/*Native*.ps1'
+      - '.github/workflows/standalone.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+      - name: Build shared C# and native host
+        run: dotnet build Standalone/NowUI.Standalone.sln -c Debug --nologo
+      - name: Unity test sources compiled standalone
+        # Debug retains the development diagnostics asserted by the shared tests.
+        run: dotnet test Standalone/Tests/Tests.csproj -c Debug --no-build --nologo --filter 'Category!=NowUI.Overview'
+      - name: Engine contracts
+        run: dotnet test Standalone/NowUI.Engine.Tests -c Debug --no-build --nologo
+      - name: Software OpenGL display
+        run: sudo apt-get update && sudo apt-get install -y xvfb libgl1-mesa-dri libxrandr2 libxinerama1 libxcursor1 libxi6
+      - name: Native contracts and GPU captures
+        run: xvfb-run -a env LIBGL_ALWAYS_SOFTWARE=1 NOWUI_TEST_NATIVE_GRAPHICS=1 dotnet test Standalone/NowUI.Native.Tests -c Debug --no-build --nologo
+      - name: Pack native CLI
+        run: dotnet pack Standalone/NowUI.Cli -c Release -o "${{ runner.temp }}/native-tool" --nologo
+      - name: Install and scaffold outside the checkout
+        shell: bash
+        run: |
+          dotnet tool install NowUI.Cli --source "${{ runner.temp }}/native-tool" --tool-path "${{ runner.temp }}/nowui-tool"
+          cd "${{ runner.temp }}"
+          ./nowui-tool/nowui init NativeSmoke
+          xvfb-run -a env LIBGL_ALWAYS_SOFTWARE=1 ./nowui-tool/nowui render NativeSmoke/Preview.csproj --output native-smoke.png

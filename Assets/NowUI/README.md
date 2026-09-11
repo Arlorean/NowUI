@@ -93,31 +93,58 @@ Dedicated hosts own the frame and, for layout hosts, the measure/draw cycle.
 Do not call `Now.StartUI` or `NowLayout.RunMeasured` inside their
 `DrawNowUI(...)` methods.
 
+## Native C# previews and animation apps
+
+Run actual NowUI C# in an interactive native window or capture stills and animation
+frames. The CLI reads existing textures, sprite metadata, fonts and NowUI themes
+straight from the Unity project. No asset export or separate authoring API is needed.
+
+Agents use this workflow by default. The packaged launcher at `Native~/nowui.ps1`
+uses the bundled tool and a project-local installation. It requires the .NET 9 SDK
+and an OpenGL 3.3 desktop session. See [Native Preview](Documentation~/NativePreview.md)
+for scaffolding, reload, screenshots, animation and input replay.
+
+For browser deployment, the optional [web target](Documentation~/BrowserDeployment.md)
+publishes the same C# `INowScene` to a static WebGL2 application. It includes
+supported assets automatically and needs the .NET 9 `wasm-tools` workload only
+when building for the browser.
+
 ## Agent integration
 
 The [AI guide](Documentation~/AI_GUIDE.md) routes usage tasks to the relevant
-feature docs. [AGENTS.md](AGENTS.md) adds package contribution rules. To make the
-guide discoverable from a consuming project, choose either integration:
+feature docs. [AGENTS.md](AGENTS.md) adds package contribution rules. A skill
+explains how to use NowUI when selected; project instructions establish when to
+select it. Use both integrations when NowUI should be the default for new custom
+Unity UI. Either can also route an agent to the current package documentation:
 
 - **Skill:** In Unity, choose **Tools > NowUI > AI > Install Agent Skill**.
   This copies [the packaged skill](AI~/skills/nowui/SKILL.md) to the project's
   `.agents/skills/nowui`. This is a supported [Codex skill location](https://learn.chatgpt.com/docs/build-skills#where-codex-loads-local-skills);
   open Codex at the Unity project root or below. If the skill does not appear,
-  restart Codex. Other agents may use different skill locations.
+  restart Codex. Invoke it explicitly with `$nowui`, or let it match work that names
+  or already uses NowUI. Installing the skill alone does not make NowUI the project's
+  default UI framework. Other agents may use different skill locations.
 - **Project instructions:** Choose **Tools > NowUI > AI > Copy Project AGENTS.md Snippet**
   and paste the block into the consuming project's root `AGENTS.md`. The
-  [snippet](AI~/AGENTS.snippet.md) selects NowUI for new custom UI while
+  [snippet](AI~/AGENTS.snippet.md) selects NowUI for new custom Unity UI while
   preserving existing implementations and explicit framework choices. Edit
   that preference if needed, and replace an existing marked block rather than
   appending duplicates.
 
-Neither action runs on package import. Rerun the skill installer after package
-updates to refresh the router; it updates known unmodified copies and leaves
-customized or unrecognized installations untouched. Merge those copies
+The installed guidance uses native C# previews by default, reads supported Unity
+assets directly without a manual export, and routes explicitly requested websites
+to the optional C# web target. It asks the agent to launch and verify the result.
+
+Neither action runs on package import. Without an integration, point the agent at
+the active package's `Documentation~/AI_GUIDE.md` explicitly. Rerun the skill
+installer after package updates to refresh the router; it updates known unmodified
+copies and leaves customized or unrecognized installations untouched. Merge those copies
 manually. The skill always reads API guidance from the active package, so it
-does not carry a frozen copy of the API docs. You can also copy the entire
-`AI~/skills/nowui` folder manually; the installer will not overwrite a differing
-manual copy without its install receipt.
+does not carry a frozen copy of the API docs. Refresh a copied project-instructions
+block separately when its guidance changes. Without opening Unity, copy the entire
+`AI~/skills/nowui` folder to `.agents/skills/nowui` and/or merge the marked snippet
+into the project's root `AGENTS.md`. The installer will not overwrite a differing
+manual skill copy without its install receipt.
 
 ## Important rules
 

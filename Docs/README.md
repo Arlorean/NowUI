@@ -8,6 +8,12 @@ shipped public API:
 
 - [Production gates](Production.md): source-checkout validation, CI, visual
   baselines, allocation gates, and release preparation.
+- [Native C# apps and capture](Standalone/NativeCLI.md): live previews, direct
+  Unity assets, source reload, and deterministic animation recording.
+- [Browser deployment](../Assets/NowUI/Documentation~/BrowserDeployment.md): optional
+  static web output for the same C# scenes, with automatic asset provisioning.
+- [Native performance](Standalone/NativePerformance.md): measured mesh submission,
+  Lottie tessellation, allocations, pixel equivalence, and a Unity comparison.
 - [Benchmark guide](Benchmarks.md): feature coverage, repeatable CPU/render runs,
   allocations, cache pressure, timing tails, and known measurement gaps.
 - [Expanded feature overview](BenchmarkOverview-2026-09-06.md): three-run results,

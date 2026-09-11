@@ -70,6 +70,9 @@ namespace NowUI.Internal
         [DllImport(LIBRARY_NAME, CallingConvention = CallingConvention.Cdecl)]
         static extern void nowui_shaper_destroy(IntPtr shaper);
 
+        // Desktop hosts ship the same complete native plugin as Unity. Probe its
+        // shaping API normally; hosts without a compatible plugin retain the
+        // existing per-codepoint fallback after the first failed probe.
         static bool s_unsupported;
 
         IntPtr _handle;

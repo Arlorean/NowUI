@@ -142,14 +142,19 @@ namespace NowUI
             ref int pending = ref NowControlState.Get<int>(id, "pending");
             bool changed = false;
 
-            if (pending > 0 && pending - 1 < optionCount)
+            // Only a live pass may commit the choice. See NowDropdown.Draw for why.
+            // A live pass always drains the latch, even out of range. See NowDropdown.Draw.
+            if (!NowInput.isPassive && pending > 0)
             {
-                int next = pending - 1;
-                changed = next != selected;
-                selected = next;
-            }
+                if (pending - 1 < optionCount)
+                {
+                    int next = pending - 1;
+                    changed = next != selected;
+                    selected = next;
+                }
 
-            pending = 0;
+                pending = 0;
+            }
 
             var textStyle = NowControls.Text(theme, NowTextStyle.Body);
             float lineHeight = textStyle.font != null
@@ -243,16 +248,22 @@ namespace NowUI
             var state = GetState(id);
             bool changed = false;
 
-            if (pending > 0 && pending - 1 < optionCount)
+            // Only a live pass may commit the choice. See NowDropdown.Draw for why.
+            // A live pass always drains the latch, even out of range. See NowDropdown.Draw.
+            if (!NowInput.isPassive && pending > 0)
             {
-                string next = _options[pending - 1] ?? string.Empty;
-                changed = next != value;
-                value = next;
+                if (pending - 1 < optionCount)
+                {
+                    string next = _options[pending - 1] ?? string.Empty;
+                    changed = next != value;
+                    value = next;
+                }
+
+                pending = 0;
             }
 
-            pending = 0;
-
-            if (state.pendingCustomValue != null)
+            // The free-text commit is the same one-shot handover and needs the same guard.
+            if (!NowInput.isPassive && state.pendingCustomValue != null)
             {
                 changed = state.pendingCustomValue != value;
                 value = state.pendingCustomValue;

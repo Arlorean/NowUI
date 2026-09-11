@@ -7,8 +7,8 @@ namespace NowUI.Editor
 {
     public class NowFontCompiler : UnityEditor.Editor
     {
-        const int ATLAS_SIZE = 64;
-        const int PIXEL_RANGE = 16;
+        const int ATLAS_SIZE = 32;
+        const int PIXEL_RANGE = 8;
 
         static string ToProjectFullPath(string assetPath)
         {

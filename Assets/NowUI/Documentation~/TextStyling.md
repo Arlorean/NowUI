@@ -21,6 +21,19 @@ Now.Text(titleRect)
     .Draw("Welcome");
 ```
 
+## Static Text Baselines
+
+`Now.Text(rect).SetBaselineSnap().Draw("Settings")` opts that draw into snapping
+each line's baseline to physical pixels using the host's UI scale. The default
+is disabled. Fractional character advances and shaping offsets stay intact;
+measurement and explicit masks are unchanged. This is a placement option, not
+font hinting or a different antialiasing shader.
+
+Snapping is bypassed inside `Now.Transform` scopes and when a glyph animation
+is configured, including after an entrance animation completes. Leave it disabled
+for text whose position is animated directly through its rectangle. It can help
+static small labels, but does not pixel-fit individual glyph contours.
+
 ## Gradient Fills
 
 `SetGradient(from, to)` enables a two-color, top-to-bottom fill. Linear angles

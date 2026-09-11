@@ -1,0 +1,74 @@
+name: Optional C# browser target
+
+# Native builds remain independent of the WebAssembly workload and browser tooling.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  browser-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: Tools/Standalone/BrowserSmoke/package-lock.json
+      - name: Install optional WebAssembly workload
+        run: dotnet workload install wasm-tools --skip-manifest-update
+      - name: Browser C# input contracts
+        run: dotnet test Standalone/NowUI.Browser.Tests -c Debug --nologo --logger 'trx;LogFileName=browser-input.trx'
+      - name: Browser DOM transport contracts
+        run: node --test Standalone/NowUI.Browser.Tests/BrowserInputTransport.test.mjs
+      - name: Prepare optional browser kit
+        shell: pwsh
+        run: ./Tools/Build-NowUIBrowserKit.ps1
+      - name: Pack CLI with the prepared kit
+        run: dotnet pack Standalone/NowUI.Cli -c Release -o "$RUNNER_TEMP/browser-tool-feed" --nologo
+      - name: Install, initialize, and publish outside the checkout
+        shell: bash
+        run: |
+          cat > "$RUNNER_TEMP/browser-nuget.config" <<EOF
+          <configuration><packageSources><clear/><add key="local" value="$RUNNER_TEMP/browser-tool-feed"/></packageSources></configuration>
+          EOF
+          dotnet tool install NowUI.Cli --configfile "$RUNNER_TEMP/browser-nuget.config" --tool-path "$RUNNER_TEMP/nowui-browser-tool"
+          cd "$RUNNER_TEMP"
+          ./nowui-browser-tool/nowui init BrowserSmoke
+          ./nowui-browser-tool/nowui publish BrowserSmoke/Preview.csproj --target web --output "$RUNNER_TEMP/browser-site"
+      - name: Validate static output and absence of Unity project assets
+        run: node Tools/Standalone/BrowserSmoke/validate-site.mjs "$RUNNER_TEMP/browser-site" --scaffold
+      - name: Install isolated browser test tools
+        working-directory: Tools/Standalone/BrowserSmoke
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+      - name: Run published C# scene in Chromium
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/browser-results"
+          "$RUNNER_TEMP/nowui-browser-tool/nowui" serve "$RUNNER_TEMP/browser-site" --port 8080 --no-open > "$RUNNER_TEMP/browser-results/server.log" 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+          for attempt in {1..60}; do
+            if curl --fail --silent http://127.0.0.1:8080/ > /dev/null; then break; fi
+            sleep 1
+          done
+          node Tools/Standalone/BrowserSmoke/smoke.mjs http://127.0.0.1:8080/ "$RUNNER_TEMP/browser-results" --scaffold
+      - name: Browser diagnostics and captures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: optional-browser-smoke
+          if-no-files-found: warn
+          path: |
+            ${{ runner.temp }}/browser-results
+            ${{ runner.temp }}/browser-site/nowui-build.json
+            ${{ runner.temp }}/browser-site/nowui-assets.json
+            Standalone/NowUI.Browser.Tests/TestResults/*.trx

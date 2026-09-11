@@ -2,6 +2,10 @@
 
 NowUI includes or adapts the third-party software listed below.
 
+The separately bundled native CLI and its managed dependencies have additional
+[native CLI notices](Native~/THIRD_PARTY_NOTICES.md), with full license texts
+included beside the tool.
+
 The native font compiler plugin (`nowui-msdf`) links third-party libraries
 compiled into the prebuilt binaries under `Plugins/`. Their sources are not
 part of this repository; CI fetches them at build time (see

@@ -15,8 +15,8 @@ namespace NowUI.Editor
     /// </summary>
     public static class NowFontFamilyCompiler
     {
-        const int ATLAS_SIZE = 64;
-        const int PIXEL_RANGE = 16;
+        const int ATLAS_SIZE = 32;
+        const int PIXEL_RANGE = 8;
 
         [MenuItem("Assets/NowUI/Compile Font Family")]
         public static void CompileFamily()

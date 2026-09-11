@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>NowUI.Hosting</AssemblyName>
+    <RootNamespace>NowUI.Hosting</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Tests" />
+    <InternalsVisibleTo Include="nowui" />
+    <InternalsVisibleTo Include="NowUI.Browser" />
+    <InternalsVisibleTo Include="NowUI.Browser.Tests" />
+    <InternalsVisibleTo Include="NowUI.Native.Tests" />
+    <PackageReference Include="YamlDotNet" Version="18.1.0" />
+    <PackageReference Include="StbImageSharp" Version="2.30.16" />
+    <PackageReference Include="AssetsTools.NET" Version="3.0.5" />
+    <ProjectReference Include="../NowUI.Runtime/NowUI.Runtime.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Use the existing exported inputs. Preserve these paths in consuming app builds and publishes. -->
+    <None Include="../Tests/Fixtures/shaders.json;../Tests/Fixtures/materials.json"
+          Link="NowUI/Resources/%(Filename)%(Extension)"
+          CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <None Include="../Tests/Fixtures/NowUI/*.font.json;../Tests/Fixtures/NowUI/*.family.json;../Tests/Fixtures/NowUI/*.ttf"
+          Link="NowUI/Resources/NowUI/%(Filename)%(Extension)"
+          CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using NowUI.Internal;
 using UnityEngine;
-using UnityEngine.Networking;
 
 namespace NowUI.Markdown
 {
@@ -19,9 +18,9 @@ namespace NowUI.Markdown
     /// Downloaded textures are owned by this cache; injected and Resources textures
     /// remain caller/Unity owned.
     /// </summary>
-    public static class NowMarkdownImages
+    public static partial class NowMarkdownImages
     {
-        sealed class Entry
+        sealed partial class Entry
         {
             public string url;
             public NowMarkdownImageState state;
@@ -34,18 +33,7 @@ namespace NowUI.Markdown
             public int redirects;
             public string forcedError;
             public Uri currentUri;
-            public UnityWebRequest request;
-            public NowBoundedDownloadHandler downloadHandler;
-            public UnityWebRequestAsyncOperation operation;
             public LinkedListNode<Entry> pendingNode;
-        }
-
-        sealed class Runner : MonoBehaviour
-        {
-            void Update()
-            {
-                Tick();
-            }
         }
 
         static readonly Dictionary<string, Entry> _entries = new Dictionary<string, Entry>(16);
@@ -53,8 +41,6 @@ namespace NowUI.Markdown
         static readonly LinkedList<Entry> _pending = new LinkedList<Entry>();
 
         static readonly List<Entry> _active = new List<Entry>(4);
-
-        static Runner _runner;
 
         static int _version;
 
@@ -71,6 +57,27 @@ namespace NowUI.Markdown
 
         /// <summary>Maximum decoded pixels accepted for one remote image.</summary>
         public static long maxTexturePixels = 100L * 1024L * 1024L;
+
+        /// <summary>
+        /// Whether decoded images are given a mipmap chain. On by default, because these pictures are drawn at
+        /// whatever size the layout gives them and that is usually smaller than the source.
+        /// </summary>
+        /// <remarks>
+        /// <para>WHAT IT BUYS. Without a chain a minified picture samples one arbitrary texel per pixel, so fine
+        /// detail turns into moire that also crawls whenever the box resizes. With one, the same picture resolves
+        /// to a correctly averaged colour. The web surface made this the common case rather than the exceptional
+        /// one: <c>ui.image</c> defaults to <c>fit: 'contain'</c>, and both contain and cover exist precisely to
+        /// draw a source into a box that is not its own size.</para>
+        /// <para>WHAT IT COSTS. About a third more memory per image, and one mip pyramid build on the frame the
+        /// download lands. In the browser that third is paid twice over: the GPU holds the chain, and the
+        /// engine-free Texture2D also sizes its CPU store for every level (Texture2D.ChainByteSize) and keeps it
+        /// for context-loss recovery, even though only level 0 is ever written there - the rest are generated on
+        /// the GPU. <see cref="maxCachedTexturePixels"/> counts the whole chain, so the budget stays honest
+        /// rather than quietly holding a third more than it was told to.</para>
+        /// <para>Turn it off for a document whose images are all drawn at their natural size, where the chain is
+        /// memory spent on levels nothing will ever sample.</para>
+        /// </remarks>
+        public static bool generateMipmaps = true;
 
         /// <summary>Maximum remote image requests in flight at once.</summary>
         public static int maxConcurrentDownloads = 4;
@@ -197,15 +204,7 @@ namespace NowUI.Markdown
             _active.Clear();
             _accessClock = 0L;
 
-            if (_runner != null)
-            {
-                if (Application.isPlaying)
-                    UnityEngine.Object.Destroy(_runner.gameObject);
-                else
-                    UnityEngine.Object.DestroyImmediate(_runner.gameObject);
-
-                _runner = null;
-            }
+            DestroyRunner();
 
             ++_version;
         }
@@ -215,32 +214,6 @@ namespace NowUI.Markdown
             PollDownloads();
             TrimCache();
             PumpDownloads();
-        }
-
-        static void PollDownloads()
-        {
-            long byteLimit = EffectiveLimit(maxDownloadBytes);
-
-            for (int i = _active.Count - 1; i >= 0; --i)
-            {
-                var entry = _active[i];
-
-                if (entry.completed || entry.request == null)
-                    continue;
-
-                long remaining = Math.Max(0L, byteLimit - entry.downloadedBytes);
-
-                if ((entry.downloadHandler?.limitExceeded ?? false) ||
-                    RequestExceedsLimit(entry.request, remaining))
-                {
-                    entry.forcedError =
-                        $"Markdown image download from '{entry.url}' exceeds the configured limit of {byteLimit} bytes across redirects.";
-                    entry.request.Abort();
-                }
-
-                if (entry.operation != null && entry.operation.isDone)
-                    CompleteDownload(entry);
-            }
         }
 
         static void PumpDownloads()
@@ -265,88 +238,24 @@ namespace NowUI.Markdown
             }
         }
 
-        static void StartDownload(Entry entry)
+        /// <summary>
+        /// Applies the completion policy shared by both transports once a request has finished and its response has
+        /// been reduced to plain values: the redirect hop, the transport error, the decode, and the resulting cache
+        /// state. <paramref name="error"/> carries the error already decided before the redirect is considered (the
+        /// forced error and the byte-cap breach); <paramref name="requestError"/> carries the transport's own failure,
+        /// which is applied only after the redirect hop, exactly as it was when this ran inside CompleteDownload.
+        /// </summary>
+        static void FinishDownload(
+            Entry entry,
+            byte[] bytes,
+            long status,
+            string location,
+            string error,
+            string requestError)
         {
-            GetRunner();
-
-            try
-            {
-                long byteLimit = EffectiveLimit(maxDownloadBytes);
-                long remaining = Math.Max(0L, byteLimit - entry.downloadedBytes);
-                var request = new UnityWebRequest(
-                    entry.currentUri.AbsoluteUri,
-                    UnityWebRequest.kHttpVerbGET);
-                entry.request = request;
-                var downloadHandler = new NowBoundedDownloadHandler(remaining);
-                entry.downloadHandler = downloadHandler;
-                request.downloadHandler = downloadHandler;
-                request.disposeDownloadHandlerOnDispose = true;
-                request.timeout = Mathf.Max(1, requestTimeoutSeconds);
-                // Follow redirects ourselves so each target is checked by the URL policy.
-                request.redirectLimit = 0;
-                entry.active = true;
-                _active.Add(entry);
-                entry.operation = request.SendWebRequest();
-                entry.operation.completed += _ => CompleteDownload(entry);
-
-                if (entry.operation.isDone)
-                    CompleteDownload(entry);
-            }
-            catch (Exception exception)
-            {
-                entry.forcedError = $"Failed to start markdown image download from '{entry.url}': {exception.Message}";
-                CompleteDownload(entry);
-            }
-        }
-
-        static void CompleteDownload(Entry entry)
-        {
-            if (entry == null || entry.completed)
-                return;
-
-            entry.completed = true;
-            entry.active = false;
-            _active.Remove(entry);
-
-            var request = entry.request;
-            var downloadHandler = entry.downloadHandler;
-            entry.request = null;
-            entry.downloadHandler = null;
-            entry.operation = null;
-
-            bool current = _entries.TryGetValue(entry.url, out var cached) && ReferenceEquals(cached, entry);
-
-            if (!current)
-            {
-                if (request != null)
-                    request.Dispose();
-                else
-                    downloadHandler?.Dispose();
-
-                PumpDownloads();
-                return;
-            }
-
-            string error = entry.forcedError;
             Texture2D decoded = null;
-            long byteLimit = EffectiveLimit(maxDownloadBytes);
-            long remaining = Math.Max(0L, byteLimit - entry.downloadedBytes);
 
-            if (error == null && (downloadHandler?.limitExceeded ?? false))
-            {
-                error =
-                    $"The image response exceeds the configured limit of {byteLimit} bytes across redirects.";
-            }
-            else if (error == null && request != null && RequestExceedsLimit(request, remaining))
-            {
-                error =
-                    $"The image response exceeds the configured limit of {byteLimit} bytes across redirects.";
-            }
-
-            if (downloadHandler != null)
-                entry.downloadedBytes += downloadHandler.receivedByteCount;
-
-            if (error == null && request != null && IsRedirectStatus(request.responseCode))
+            if (error == null && IsRedirectStatus(status))
             {
                 int redirectLimit = Mathf.Max(0, maxRedirects);
 
@@ -356,7 +265,7 @@ namespace NowUI.Markdown
                 }
                 else if (!TryResolveRedirect(
                     entry.currentUri,
-                    request.GetResponseHeader("Location"),
+                    location,
                     out var redirectUri,
                     out error))
                 {
@@ -368,7 +277,6 @@ namespace NowUI.Markdown
                 }
                 else
                 {
-                    request.Dispose();
                     entry.currentUri = validatedUri;
                     ++entry.redirects;
                     entry.completed = false;
@@ -379,27 +287,20 @@ namespace NowUI.Markdown
                 }
             }
 
-            if (error == null && (request == null || request.result != UnityWebRequest.Result.Success))
-                error = request != null ? request.error : "The image request was not created.";
+            if (error == null && requestError != null)
+                error = requestError;
 
             if (error == null)
             {
-                byte[] data = downloadHandler?.GetBytes();
-
-                if (data == null)
+                if (bytes == null)
                 {
                     error = "The image response contained no data.";
                 }
-                else if (!TryDecodeDownloadedTexture(data, entry.url, out decoded, out error))
+                else if (!TryDecodeDownloadedTexture(bytes, entry.url, out decoded, out error))
                 {
                     decoded = null;
                 }
             }
-
-            if (request != null)
-                request.Dispose();
-            else
-                downloadHandler?.Dispose();
 
             if (decoded != null)
             {
@@ -438,7 +339,11 @@ namespace NowUI.Markdown
                 return false;
             }
 
-            var decoded = new Texture2D(2, 2, TextureFormat.RGBA32, false)
+            // 2x2 is a placeholder: LoadImage re-creates the texture at the decoded image's size. The mip flag
+            // is the one thing it CARRIES ACROSS that re-creation, which is why it has to be decided here rather
+            // than after the bytes have landed. NowImageMipmapContractTests pins that behaviour against real
+            // Unity, and Standalone/NowUI.Engine/Graphics/ImageConversion.cs holds the browser shim to it.
+            var decoded = new Texture2D(2, 2, TextureFormat.RGBA32, generateMipmaps)
             {
                 name = string.IsNullOrEmpty(name) ? "Markdown Image" : name,
                 hideFlags = HideFlags.HideAndDontSave
@@ -451,6 +356,27 @@ namespace NowUI.Markdown
                     error = "Unity could not decode the downloaded image.";
                     DestroyTexture(decoded);
                     return false;
+                }
+
+                // Set after the decode, not in the initialiser above, because these two only mean anything once
+                // there is a real image: they exist to serve the mip chain, and until LoadImage succeeds there is
+                // no chain and no picture. Either order works - the upload carries filter and wrap alongside the
+                // pixels (WebGL2Backend.UploadTexture2D packs them at m_TextureInfo[6..8]) and a later assignment
+                // pushes them again through UpdateSampler - so this is about keeping the mip decisions together
+                // under one guard rather than about correctness.
+                if (generateMipmaps)
+                {
+                    // Trilinear rather than the Bilinear default, because bilinear-with-mips picks the nearest
+                    // level and switches between levels abruptly. In an immediate-mode UI the drawn size changes
+                    // every frame while a window is dragged, so that reads as the picture popping between two
+                    // sharpnesses - trading a shimmer for a flicker. Trilinear blends the two levels instead.
+                    decoded.filterMode = FilterMode.Trilinear;
+
+                    // Clamp rather than the Repeat default. Repeat is invisible while only level 0 is sampled at
+                    // exactly [0,1], but a coarse mip level averages across a wide footprint, and at the edge of
+                    // the picture that footprint wraps and pulls in the opposite edge - a thin band of the wrong
+                    // colour down one side. ui.image's `cover` samples a sub-rect, which makes it likelier still.
+                    decoded.wrapMode = TextureWrapMode.Clamp;
                 }
 
                 if (!AreDimensionsWithinLimits(decoded.width, decoded.height, out error))
@@ -626,15 +552,6 @@ namespace NowUI.Markdown
                 url.StartsWith("https://", StringComparison.OrdinalIgnoreCase);
         }
 
-        static bool RequestExceedsLimit(UnityWebRequest request, long limit)
-        {
-            if (request.downloadedBytes > (ulong)limit)
-                return true;
-
-            string contentLength = request.GetResponseHeader("Content-Length");
-            return long.TryParse(contentLength, out long declaredLength) && declaredLength > limit;
-        }
-
         static bool IsRedirectStatus(long responseCode)
         {
             return responseCode == 301L ||
@@ -693,12 +610,46 @@ namespace NowUI.Markdown
                 if (entry.texture == null)
                     continue;
 
-                long pixels = (long)entry.texture.width * entry.texture.height;
+                long pixels = ResidentPixels(entry.texture);
 
                 if (pixels > long.MaxValue - total)
                     return long.MaxValue;
 
                 total += pixels;
+            }
+
+            return total;
+        }
+
+        /// <summary>
+        /// Every pixel a texture actually holds, mip levels included.
+        /// </summary>
+        /// <remarks>
+        /// <para>The budget this feeds is a MEMORY guard, so it has to count the memory. Counting only the base
+        /// level was correct while nothing here had a mip chain; with <see cref="generateMipmaps"/> on it would
+        /// under-report by a third, and a caller who sized <see cref="maxCachedTexturePixels"/> to fit a real
+        /// budget would quietly overshoot it - the exact failure the setting exists to prevent.</para>
+        /// <para>Summed level by level rather than multiplied by 4/3, because the geometric series only reaches
+        /// 4/3 in the limit: a chain is truncated at 1x1 and each level rounds up, so small and non-square
+        /// textures diverge from the ratio noticeably. The shape is <c>NowFont.GetRgbaTexturePayloadBytes</c>'s,
+        /// in pixels rather than bytes.</para>
+        /// </remarks>
+        static long ResidentPixels(Texture2D texture)
+        {
+            long total = 0L;
+            int width = Mathf.Max(1, texture.width);
+            int height = Mathf.Max(1, texture.height);
+            int levels = Mathf.Max(1, texture.mipmapCount);
+
+            for (int mip = 0; mip < levels; ++mip)
+            {
+                total += (long)width * height;
+
+                if (width == 1 && height == 1)
+                    break;
+
+                width = Mathf.Max(1, width >> 1);
+                height = Mathf.Max(1, height >> 1);
             }
 
             return total;
@@ -730,41 +681,13 @@ namespace NowUI.Markdown
             entry.active = false;
             _active.Remove(entry);
 
-            var request = entry.request;
-            var downloadHandler = entry.downloadHandler;
-            entry.request = null;
-            entry.downloadHandler = null;
-            entry.operation = null;
-
-            if (request != null)
-            {
-                request.Abort();
-                request.Dispose();
-            }
-            else
-            {
-                downloadHandler?.Dispose();
-            }
+            AbortRequest(entry);
 
             if (entry.texture != null && entry.owned)
                 DestroyTexture(entry.texture);
 
             entry.texture = null;
             entry.owned = false;
-        }
-
-        static Runner GetRunner()
-        {
-            if (_runner != null)
-                return _runner;
-
-            var go = new GameObject("Now Markdown Image Cache")
-            {
-                hideFlags = HideFlags.HideAndDontSave
-            };
-            UnityEngine.Object.DontDestroyOnLoad(go);
-            _runner = go.AddComponent<Runner>();
-            return _runner;
         }
 
         static void Touch(Entry entry)

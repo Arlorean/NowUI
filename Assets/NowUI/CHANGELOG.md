@@ -1,3 +1,108 @@
+## [1.19.2](https://github.com/BlenMiner/NowUI/compare/nowui-v1.19.1...nowui-v1.19.2) (2026-09-11)
+
+
+### Bug Fixes
+
+* editor scrolling ([3279537](https://github.com/BlenMiner/NowUI/commit/32795372a850e120e3577e3261048c844a00f62a))
+
+## [1.19.1](https://github.com/BlenMiner/NowUI/compare/nowui-v1.19.0...nowui-v1.19.1) (2026-09-10)
+
+
+### Bug Fixes
+
+* agent guidance documentation ([ed7035b](https://github.com/BlenMiner/NowUI/commit/ed7035b3f40d7ae4f12801a8b5595b86daec8e7c))
+
+# [1.19.0](https://github.com/BlenMiner/NowUI/compare/nowui-v1.18.0...nowui-v1.19.0) (2026-09-10)
+
+
+### Features
+
+* NowUI CLI ([c76d800](https://github.com/BlenMiner/NowUI/commit/c76d8004bb136d5d61917d58ef0ee6727ecfcc4e))
+
+# [1.18.0](https://github.com/BlenMiner/NowUI/compare/nowui-v1.17.0...nowui-v1.18.0) (2026-09-10)
+
+
+### Features
+
+* change wasm for native C# (not dependent on Unity3D) ([4d46f58](https://github.com/BlenMiner/NowUI/commit/4d46f582ae2f09c977388df53c2f531dd072b41f))
+
+
+### Performance Improvements
+
+* **web:** hand WebGL a view onto the wasm heap instead of a copy of it ([435ca1e](https://github.com/BlenMiner/NowUI/commit/435ca1e3b1a9ae7f739f6df9ac30becbb24f6cce))
+
+# [1.17.0](https://github.com/BlenMiner/NowUI/compare/nowui-v1.16.0...nowui-v1.17.0) (2026-09-10)
+
+
+### Features
+
+* **web:** mirror the C# docs browser, and stop waiting on an index to draw it ([9774e49](https://github.com/BlenMiner/NowUI/commit/9774e4954be219e7aa1beac41ee7755e86e97bdb))
+
+
+### Performance Improvements
+
+* **markdown:** cull off-screen ops, and stop ui.rule taking the frame down ([1103ea4](https://github.com/BlenMiner/NowUI/commit/1103ea403594c252db5703944dc05fdc94a15d8c))
+* **web:** compile the browser bundle AOT instead of running it interpreted ([052e3bb](https://github.com/BlenMiner/NowUI/commit/052e3bb80ca7d094f7c14233daab2d90186503fb))
+
+# [1.16.0](https://github.com/BlenMiner/NowUI/compare/nowui-v1.15.0...nowui-v1.16.0) (2026-09-09)
+
+
+### Features
+
+* **web:** ship a server with the bundle so the Editor is not needed to show a prototype ([d708103](https://github.com/BlenMiner/NowUI/commit/d708103c4e8878807d0fc9527478cc9175133fb0))
+
+# [1.15.0](https://github.com/BlenMiner/NowUI/compare/nowui-v1.14.1...nowui-v1.15.0) (2026-09-09)
+
+
+### Bug Fixes
+
+* **draw:** fit sub-pixel texture windows at their true aspect ([b44c968](https://github.com/BlenMiner/NowUI/commit/b44c968b3d1a99df7ec4e866cd1f7d363b3466c2))
+* **images:** give fetched pictures a mip chain, and stop the shim discarding it ([897c136](https://github.com/BlenMiner/NowUI/commit/897c136390f08e26e4fdf69cc9213a0ee359eebb))
+
+
+### Features
+
+* **web:** draw images and Lottie from URLs, and serve the project's assets to the preview ([3a7b0e9](https://github.com/BlenMiner/NowUI/commit/3a7b0e907a858b938205d541abecaca7101dab07))
+* **web:** give ui.image a fit mode, and add cover to NowUI ([33e61f1](https://github.com/BlenMiner/NowUI/commit/33e61f1d16736f6edcc79bc2d1d4f997dde251c6))
+
+## [1.14.1](https://github.com/BlenMiner/NowUI/compare/nowui-v1.14.0...nowui-v1.14.1) (2026-09-09)
+
+
+### Performance Improvements
+
+* decrease webgl time to first draw ([b28cdef](https://github.com/BlenMiner/NowUI/commit/b28cdefabcf44c7357518a463eddd428f0ae8039))
+
+# [1.14.0](https://github.com/BlenMiner/NowUI/compare/nowui-v1.13.0...nowui-v1.14.0) (2026-09-09)
+
+
+### Bug Fixes
+
+* drain popup latches on every live pass and guard the file picker commit ([4747f32](https://github.com/BlenMiner/NowUI/commit/4747f3265809ac5df77de07ca8faa93e2bf51f5c))
+* only let a page-owning theme set the clear colour, and stop the drawing sample labelling controls that have none ([d2b20b9](https://github.com/BlenMiner/NowUI/commit/d2b20b91d6f1f985b2c3b6b16ae3fd75c8360c72))
+* refuse options and values that would be silently ignored, and clear to the theme the frame actually used ([4f429f1](https://github.com/BlenMiner/NowUI/commit/4f429f1810f8b72264775657023080e9162a0542))
+* report time picker changes from the live pass, not the discarded measure pass ([1edd44c](https://github.com/BlenMiner/NowUI/commit/1edd44c596ca63d2be9f4b6089414d6231db4ff0))
+
+
+### Features
+
+* browser host, WebGL2 backend and JavaScript API for NowUI ([d6d4a7d](https://github.com/BlenMiner/NowUI/commit/d6d4a7d99e609f90a891d487e9fb2cb05bb4de00))
+* engine-free build of the NowUI core ([040d11d](https://github.com/BlenMiner/NowUI/commit/040d11d8244744d67f1c36561751f47ea102a40b))
+* ship a precompiled browser bundle in the package and give the JavaScript surface drawing primitives ([7d94cb6](https://github.com/BlenMiner/NowUI/commit/7d94cb669cc4dfde00e4a8109d9cee4e58e297d3))
+
+
+### Performance Improvements
+
+* compress the shipped web bundle and drop unread font tables, from 8.17 MB to 2.35 MB ([8496434](https://github.com/BlenMiner/NowUI/commit/8496434f01195b30c643470fb057a714c7255f54))
+* halve the glyph cell and drop the pre-baked atlases, bundle 3.42MB to 2.51MB and first frame 426ms to 108ms ([775d1ff](https://github.com/BlenMiner/NowUI/commit/775d1fff7a290b2115f4b547782a2a35e13a8fa8))
+* pre-bake ASCII atlas pages and link the native msdf rasterizer, first frame 2061ms to 474ms ([a474c37](https://github.com/BlenMiner/NowUI/commit/a474c3722ce4b5714317afb282cdb2d525f71947))
+
+# [1.13.0](https://github.com/BlenMiner/NowUI/compare/nowui-v1.12.0...nowui-v1.13.0) (2026-09-08)
+
+
+### Features
+
+* bake authored glyph pages into NowFont assets ([3386836](https://github.com/BlenMiner/NowUI/commit/3386836e7d4f2c6d97f230950fd8cb4a5a9591a4))
+
 # [1.12.0](https://github.com/BlenMiner/NowUI/compare/nowui-v1.11.8...nowui-v1.12.0) (2026-09-07)
 
 

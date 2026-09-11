@@ -95,14 +95,30 @@ namespace NowUI
             ref int pending = ref NowControlState.Get<int>(id, "pending");
             bool changed = false;
 
-            if (pending > 0 && pending - 1 < optionCount)
+            // Only a live pass may commit the choice. NowLayout.RunMeasured, NowEffects and NowViewStack draw the
+            // same UI twice and discard the first pass, so committing on a passive pass either eats the choice
+            // outright or, for a caller whose variable persists, leaves the live pass comparing the new value
+            // against itself and reporting changed == false. A passive pass observes without mutating, as
+            // NowControlState.AdvanceTransition and RepeatByStateKey already do.
+            //
+            // This is not a rare path an author opts into. NowLayoutGraphic, NowPipelineLayoutGraphic,
+            // NowWorldLayoutGraphic and the UI Toolkit NowVisualElement all hard-code useLayoutMeasurePass to
+            // true, so every auto-sizing host runs the whole callback twice on every frame.
+            // A live pass ALWAYS drains the latch, even when it cannot be applied. The range test below is not
+            // part of that decision: if the caller's option list shrank between the click and this frame, the
+            // latched index no longer names anything, and keeping it would let it commit silently on some later
+            // frame when the list grew back. That is what happens if the clear moves inside the range test.
+            if (!NowInput.isPassive && pending > 0)
             {
-                int next = pending - 1;
-                changed = next != selected;
-                selected = next;
-            }
+                if (pending - 1 < optionCount)
+                {
+                    int next = pending - 1;
+                    changed = next != selected;
+                    selected = next;
+                }
 
-            pending = 0;
+                pending = 0;
+            }
 
             var textStyle = NowControls.Text(theme, NowTextStyle.Body);
             float lineHeight = textStyle.font != null

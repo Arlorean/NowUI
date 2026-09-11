@@ -1,0 +1,7 @@
+{
+  "purpose": "One-pointer ABI for .NET browser interpreter native calls; forwards to unchanged stock plugins",
+  "emscripten": "3.1.56 (.NET wasm-tools)",
+  "source_sha256": "88D92604D3057603935C8C2EB18D01EBC36C1CB00E727072D89535BEDA44361E",
+  "header_sha256": "454F9FD63F87E26EB0A41D48C817DEFD15061104E0E04F59257F413C5096E9EF",
+  "object_sha256": "59BA7690A877AA3F8F8919F9F9B10FAA91A14D66C364F4CA28ED8A4B12B03039"
+}

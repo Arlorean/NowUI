@@ -29,6 +29,8 @@ namespace NowUI
 
         public bool hasGeometry => _drawList.hasGeometry;
 
+        internal NowResolvedId identityRoot => _drawList.identityRoot;
+
         /// <summary>
         /// Runs a representative draw once to load materials and grow internal
         /// buffers, then clears the resulting geometry. Use this before the first

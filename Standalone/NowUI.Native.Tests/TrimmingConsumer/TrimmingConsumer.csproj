@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>NowUI.TrimmingConsumer</AssemblyName>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+</Project>

@@ -1,0 +1,44 @@
+{
+  "schema": "nowui.standalone.font/1",
+  "unityVersion": "6000.4.0f1",
+  "name": "NotoSans-Bold.ttf",
+  "assetPath": "Assets/NowUI/Assets/Fonts/NotoSans/NotoSans-Bold.ttf.asset",
+  "fileName": "NotoSans-Bold.font.json",
+  "kind": "dynamic",
+  "atlasWidth": 0,
+  "atlasHeight": 0,
+  "atlasTextureFormat": null,
+  "atlasTextureName": null,
+  "isColor": false,
+  "materialTemplate": "NowUI/TxtMaterial",
+  "dynamicAtlasSize": 32,
+  "dynamicPixelRange": 8,
+  "dynamicPageSize": 1024,
+  "dynamicMaxAtlasSize": 2048,
+  "dynamicMaxAtlasBytes": 16777216,
+  "fallbacks": [],
+  "fontBytesFile": "NotoSans-Bold.ttf",
+  "fontByteCount": 630968,
+  "atlasPng": null,
+  "fontBytesBase64": null,
+  "material": null,
+  "atlasInfo": {
+    "atlas": {
+      "type": "",
+      "distanceRange": 0,
+      "size": 0,
+      "width": 0,
+      "height": 0,
+      "yOrigin": ""
+    },
+    "metrics": {
+      "emSize": 0,
+      "lineHeight": 0,
+      "ascender": 0,
+      "descender": 0,
+      "underlineY": 0,
+      "underlineThickness": 0
+    },
+    "glyphs": []
+  }
+}

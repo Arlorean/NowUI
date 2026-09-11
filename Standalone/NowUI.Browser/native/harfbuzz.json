@@ -1,0 +1,8 @@
+{
+  "source_sha256": "0A1CE06D9D90736DF04FC9C47E7B719E3FE4A4E9C05C82EF296A1D986FC6E1BF",
+  "emscripten": "3.1.56 (.NET wasm-tools)",
+  "harfbuzz": "version: '10.1.0',",
+  "object_sha256": "4AE78CF9499B0E1F8887E779CDB1F8957757B452B07FFCA7372944890D669317",
+  "flags": "-O3 -std=c++11 -fno-exceptions -fno-rtti -ffunction-sections -fdata-sections -DHB_NO_MT -DNDEBUG",
+  "upstream_revision": "9ef44a2d67ac870c1f7f671f6dc98d08a2579865"
+}

@@ -1,0 +1,106 @@
+{
+  "format": "NowUI.BrowserKit",
+  "version": 1,
+  "targetFramework": "net9.0-browser",
+  "preparedUtc": "2026-09-10T21:24:56.1441530Z",
+  "authoring": "Shared C# INowScene and NowUI API",
+  "colorSpace": "Gamma",
+  "nativeLibraries": [
+    "nowui-msdf",
+    "nowui-vg",
+    "harfbuzz",
+    "nowui-browser"
+  ],
+  "files": [
+    {
+      "path": "App/BrowserEntry.cs",
+      "bytes": 66,
+      "sha256": "6d2466172b5fde9ad056b9cba4e7f23807f9375ebf8c33461b229c1a34938750"
+    },
+    {
+      "path": "Browser.Native.targets",
+      "bytes": 4085,
+      "sha256": "326e2f6d40263afb471a196823d68a8f769af4123ef70c8a3bb61457992fe388"
+    },
+    {
+      "path": "native/FreeType-LICENSE.txt",
+      "bytes": 6743,
+      "sha256": "08c135755dd589039470f1fdbb400daaabaaa50d0b366d19cebff4d22986baa1"
+    },
+    {
+      "path": "native/HarfBuzz-LICENSE.txt",
+      "bytes": 1971,
+      "sha256": "ba8f810f2455c2f08e2d56bb49b72f37fcf68f1f4fade38977cfd7372050ad64"
+    },
+    {
+      "path": "native/harfbuzz.json",
+      "bytes": 443,
+      "sha256": "0735a4b795c2e2a55dbf3ab98b71800a494024a49c4a457fba679bb3f312e789"
+    },
+    {
+      "path": "native/harfbuzz.o",
+      "bytes": 1545151,
+      "sha256": "4ae78cf9499b0e1f8887e779cdb1f8957757b452b07ffca7372944890d669317"
+    },
+    {
+      "path": "native/nowui-browser.json",
+      "bytes": 426,
+      "sha256": "4cddba47617367ccb520b528b79c302e8ec5a999009468524a169efeca84282b"
+    },
+    {
+      "path": "native/nowui-browser.o",
+      "bytes": 1568,
+      "sha256": "59ba7690a877aa3f8f8919f9f9b10faa91a14d66c364f4ca28ed8a4b12b03039"
+    },
+    {
+      "path": "native/nowui-msdf.o",
+      "bytes": 1162477,
+      "sha256": "3c15718f387c7cbdeafe8eed6be87187afaa26a85c4854b9aa47c3b60607ab23"
+    },
+    {
+      "path": "native/nowui-vg.o",
+      "bytes": 64759,
+      "sha256": "3cc9efc0d7e90b214f5a029af2d8363ed777c6504a8fddb121939c2c4466e5ef"
+    },
+    {
+      "path": "NowUI-LIBRARY-NOTICES.md",
+      "bytes": 6151,
+      "sha256": "23e8b8968ac996cb564421c9b43aa7e768e9666e6f897574ac321fd10291885b"
+    },
+    {
+      "path": "NowUI-LICENSE.md",
+      "bytes": 1068,
+      "sha256": "dad4f5627e9a6c2f33a559f75f47ccca46b1a4ecfd3fe0377671a7163f4a70d5"
+    },
+    {
+      "path": "NowUI.Browser.dll",
+      "bytes": 344576,
+      "sha256": "78bb373b96031560a8583da354222eb4776d8e4884fdc44a812ce7251c58653b"
+    },
+    {
+      "path": "THIRD_PARTY_NOTICES.md",
+      "bytes": 1759,
+      "sha256": "d9559540e36041c45f3c3c650ece2bfcfd3c82f104139fa4dddc1bd2ff948e52"
+    },
+    {
+      "path": "wwwroot/index.html",
+      "bytes": 852,
+      "sha256": "967a37158adf8c856abf7541a503203f94de31e4af78f61546ad9a474e905f4f"
+    },
+    {
+      "path": "wwwroot/main.js",
+      "bytes": 3838,
+      "sha256": "bee836473a33d5797da7af6314e08f3ca3231ae0b67569b2abad347ad46f2706"
+    },
+    {
+      "path": "wwwroot/nowui-gl.js",
+      "bytes": 54371,
+      "sha256": "fd570fe48c5be6ae3885087a5293683ced6b86a83641c4108c21e39d2fccee4b"
+    },
+    {
+      "path": "wwwroot/nowui-input.js",
+      "bytes": 14461,
+      "sha256": "d30eb13a51a84047a0d32c668b8b3c55d5e60a4b20bb586cd08a547448251b4f"
+    }
+  ]
+}

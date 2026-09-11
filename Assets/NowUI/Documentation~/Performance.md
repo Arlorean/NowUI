@@ -19,6 +19,9 @@ representative warmup. First use is not the same as steady state.
 - Warm dynamic font glyphs, Lottie geometry, effect render textures, SDF mask
   coverage textures, material batches, world-space material instances, and
   caller-owned buffers used by the real frame.
+- A font whose first draw must not rasterize can carry
+  [baked pages](Features.md#baked-pages): the authored characters ship resident
+  and only glyphs outside them bake on demand.
 - When glass diagnostics are enabled, call
   `NowGlassSettings.ReserveDiagnostics(maxPanesPerFrame)` during initialization
   and read entries with `TryGetLastFrameDiagnostic` or
@@ -27,6 +30,14 @@ representative warmup. First use is not the same as steady state.
 Measure the actual host and feature combination after warmup. A smaller
 synthetic frame can miss glyph, ID, material, input, or effect state used by the
 real interface.
+
+The native C# host uses the same drawing code with native vector tessellation
+and OpenGL mesh submission. In a source checkout,
+`Docs/Standalone/NativePerformance.md` records reproducible native/Unity
+benchmarks, startup and frame timing boundaries, and allocation attribution.
+Run `Standalone/Benchmarks/NativeRendering` to measure a changed renderer;
+compare representative pixels as well as timings. The standalone scalar job
+implementation does not imply general performance parity with Unity Burst.
 
 SDF scenes upload each distinct graph as a contiguous range and pack its start
 and count into existing layer metadata. A layer evaluates only the shapes in
