@@ -170,6 +170,10 @@ preview it by deriving from `NowPreviewEditor` and overriding `previewHost`.
 - Non-Repaint events suppress drawing but still run control/input logic, so
   MouseDown, MouseUp, and keyboard events are handled in their native IMGUI
   pass without leaking geometry into another NowUI target.
+- Each panel uses the same control identity root in Layout, input, and Repaint
+  passes. Scroll offsets, focus, and other control state written during input
+  therefore remain available when the panel renders. This also applies to
+  runtime `NowGUI` and `NowGUILayout` hosts.
 - IMGUI event identity is `NowInput.current.inputPass`, not
   `Time.frameCount`. Unity may dispatch several keyboard, pointer, Layout, and
   Repaint passes before the frame counter advances. One-shot claims and custom

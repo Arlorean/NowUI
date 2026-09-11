@@ -33,6 +33,8 @@ namespace NowUI
 
         public bool hasGeometry => mesh != null && mesh.vertexCount > 0 && batches.Count > 0;
 
+        internal NowResolvedId identityRoot => _identityRoot;
+
         internal Mesh renderReplayMesh => _renderReplayMesh;
 
         internal List<NowMeshBatch> renderReplayBatches => _renderReplayBatches;
