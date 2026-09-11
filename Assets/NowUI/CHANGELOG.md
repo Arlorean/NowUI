@@ -1,3 +1,10 @@
+## [1.19.2](https://github.com/BlenMiner/NowUI/compare/nowui-v1.19.1...nowui-v1.19.2) (2026-09-11)
+
+
+### Bug Fixes
+
+* editor scrolling ([3279537](https://github.com/BlenMiner/NowUI/commit/32795372a850e120e3577e3261048c844a00f62a))
+
 ## [1.19.1](https://github.com/BlenMiner/NowUI/compare/nowui-v1.19.0...nowui-v1.19.1) (2026-09-10)
 
 
