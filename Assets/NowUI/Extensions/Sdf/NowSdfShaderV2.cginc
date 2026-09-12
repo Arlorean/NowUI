@@ -584,8 +584,13 @@ float2 NowSdfRotatedShapeUvV2(
     float2 relativeScenePos,
     float2 pivot)
 {
-    float2 minPoint;
-    float2 maxPoint;
+    // Seeded so the fxc compiler can see an initial value. Every branch below either
+    // assigns both or returns, so these values are never read -- but fxc's flow analysis
+    // gives up on an if/else-if chain this long that mixes early returns with assignments,
+    // and warns "use of potentially uninitialized variable" for every shader including
+    // this file.
+    float2 minPoint = 0.0;
+    float2 maxPoint = 0.0;
 
     if (type < 0.5)
     {
@@ -671,8 +676,13 @@ float2 shapeUv(int index, float type, float4 data1, float4 data2, float2 scenePo
             pivot);
     }
 
-    float2 minPoint;
-    float2 maxPoint;
+    // Seeded so the fxc compiler can see an initial value. Every branch below either
+    // assigns both or returns, so these values are never read -- but fxc's flow analysis
+    // gives up on an if/else-if chain this long that mixes early returns with assignments,
+    // and warns "use of potentially uninitialized variable" for every shader including
+    // this file.
+    float2 minPoint = 0.0;
+    float2 maxPoint = 0.0;
 
     if (type < 0.5)
     {
