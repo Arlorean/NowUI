@@ -10,6 +10,20 @@
 #include "../../Assets/Shaders/NowUIMask.cginc"
 #include "../../Assets/Shaders/NowUIColorSpace.cginc"
 
+// fxc reports X4000 "use of potentially uninitialized variable" on every shader that includes
+// this file, naming the return slots of shapeUv, shapeFill, shapeDistances and their rotated /
+// unrotated siblings -- 48 warnings per Windows player build across NowUI/SDF Scene and the
+// three NowUI/SDF Examples, on dx11 and dx12 alike.
+//
+// Every one of those functions is exhaustive. Each if/else-if chain ends in a catch-all else,
+// and each branch either assigns both minPoint and maxPoint or returns early; no path reads an
+// unassigned value. fxc simply will not prove it once a chain that long is inlined, and it
+// attributes the result to each enclosing function's return temporary rather than to a local --
+// which is why seeding minPoint/maxPoint at their declarations changes nothing (measured).
+//
+// So this disables that one diagnostic, for this file only. dxc (SM 6.x) does not report it.
+#pragma warning(disable: 4000)
+
 #define NOW_SDF_MAX_SHAPES 64
 #define NOW_SDF_MAX_LAYERS 16
 
@@ -584,13 +598,8 @@ float2 NowSdfRotatedShapeUvV2(
     float2 relativeScenePos,
     float2 pivot)
 {
-    // Seeded so the fxc compiler can see an initial value. Every branch below either
-    // assigns both or returns, so these values are never read -- but fxc's flow analysis
-    // gives up on an if/else-if chain this long that mixes early returns with assignments,
-    // and warns "use of potentially uninitialized variable" for every shader including
-    // this file.
-    float2 minPoint = 0.0;
-    float2 maxPoint = 0.0;
+    float2 minPoint;
+    float2 maxPoint;
 
     if (type < 0.5)
     {
@@ -676,13 +685,8 @@ float2 shapeUv(int index, float type, float4 data1, float4 data2, float2 scenePo
             pivot);
     }
 
-    // Seeded so the fxc compiler can see an initial value. Every branch below either
-    // assigns both or returns, so these values are never read -- but fxc's flow analysis
-    // gives up on an if/else-if chain this long that mixes early returns with assignments,
-    // and warns "use of potentially uninitialized variable" for every shader including
-    // this file.
-    float2 minPoint = 0.0;
-    float2 maxPoint = 0.0;
+    float2 minPoint;
+    float2 maxPoint;
 
     if (type < 0.5)
     {
